@@ -13,6 +13,7 @@ def Request(modele_rkllm):
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
             global_status = -1
+            global_text = []
 
             # Définir la structure de la réponse renvoyée.
             llmResponse = {

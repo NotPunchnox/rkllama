@@ -5,7 +5,7 @@ Déjà fonctionnel mais en cours de développement...
 Mise à jours du repo 31 décembre 2024
 
 ./models = dossier contenant vos modèles llm
-./lib    = lib C rkllm compilé
+./lib    = lib C++ rkllm compilé
 
 ./app.py = serveur rkllm
 ./client.py = client permettant de communiquer avec le serveur
