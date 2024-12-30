@@ -16,3 +16,10 @@ lib C utilisé par défaut: 1.1.4
 versions python supportées:
     - Python 3.8
     - Python 3.9
+
+
+Testé sur `Orange pi 5 pro (16Go RAM)`:
+    - `OS`: Ubuntu 24.04 arm64
+    - `Chip`: Rockchip 3588S
+    - `Processeur`: 8-core 64-bit processor /big.LITTLE Architecture: 4-core Cortex-A76 and 4-core Cortex-A55, big core cluster is 2.4GHz, and little core cluster is 1.8GHz frequency
+    - `NPU`: Embedded NPU supports INT4/INT8/INT16 mixed operation, with up to 6TOPS computing power
