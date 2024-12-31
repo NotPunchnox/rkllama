@@ -117,9 +117,10 @@ def recevoir_message():
     verrou.acquire()
     return Request(modele_rkllm)
 
+# Route par défaut
 @app.route('/', methods=['GET'])
 def default_route():
-    return jsonify({"Welcome to RK-LLama !"}), 200
+    return jsonify({"message": "Welcome to RK-LLama !"}), 200
 
 # Fonction de lancement
 def main():

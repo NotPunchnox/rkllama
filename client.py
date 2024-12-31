@@ -34,6 +34,7 @@ def print_help():
 def check_status():
     try:
         response = requests.get(API_URL)
+        print(response.status_code)
         return response.status_code
     except:
         return 500
@@ -170,15 +171,17 @@ def chat():
 def main():
     # Vérification du nombre d'entrée minimale
 
-    if check_status() != 200:
-        print(f"{RED}Erreur: Le serveur n'est pas lancé!\n{CYAN}Command pour lancer le serveur: {RESET}rkllama serve")
-        sys.exit(0)
-
     if len(sys.argv) < 2:
         print_help()
         return
 
     command = sys.argv[1]
+
+    print(check_status)
+
+    if check_status() != 200 and command != "serve":
+        print(f"{RED}Erreur: Le serveur n'est pas lancé!\n{CYAN}Command pour lancer le serveur: {RESET}rkllama serve")
+        sys.exit(0)
 
     # Début de la suite de condition
     match command:
