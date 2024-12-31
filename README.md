@@ -118,6 +118,8 @@ Puis commencer à discuter
 **Output:**
 ![Image](./documentation/ressources/uninstall.png)
 
+---
+System Monitor:
 
 
 ---
