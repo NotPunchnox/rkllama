@@ -20,13 +20,13 @@ fi
 # Message de début de désinstallation
 echo -e "${CYAN}Démarrage de la désinstallation...${RESET}"
 
-# Vérification si le répertoire RKLLM existe
-if [ -d "$HOME/RKLLM" ]; then
-    echo -e "${YELLOW}Suppression du répertoire ~/RKLLM/...${RESET}"
-    rm -rf ~/RKLLM/
-    echo -e "${GREEN}Répertoire ~/RKLLM/ supprimé avec succès.${RESET}"
+# Vérification si le répertoire RKLLAMA existe
+if [ -d "$HOME/RKLLAMA" ]; then
+    echo -e "${YELLOW}Suppression du répertoire ~/RKLLAMA/...${RESET}"
+    rm -rf ~/RKLLAMA/
+    echo -e "${GREEN}Répertoire ~/RKLLAMA/ supprimé avec succès.${RESET}"
 else
-    echo -e "${RED}Le répertoire ~/RKLLM/ n'existe pas, aucune suppression effectuée.${RESET}"
+    echo -e "${RED}Le répertoire ~/RKLLAMA/ n'existe pas, aucune suppression effectuée.${RESET}"
 fi
 
 # Vérification si l'exécutable rkllama existe dans /usr/local/bin/

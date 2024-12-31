@@ -46,6 +46,7 @@ pip3 install -r ~/RKLLAMA/requirements.txt
 echo -e "${CYAN}Rendre ./client.sh et ./server.sh exécutable${RESET}"
 chmod +x ~/RKLLAMA/client.sh
 chmod +x ~/RKLLAMA/server.sh
+chmod +x ~/RKLLAMA/uninstall.sh
 
 # Exporter client.sh en tant que commande globale
 echo -e "${CYAN}Création d'un exécutable global pour rkllama...${RESET}"
