@@ -31,6 +31,13 @@ def print_help():
     print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
 
 
+def check_status():
+    try:
+        response = requests.get(API_URL)
+        return response.status_code
+    except:
+        return 500
+
 # Récupère la liste des modèles disponibles depuis le serveur.
 def list_models():
     try:
@@ -150,6 +157,11 @@ def chat():
         elif user_input.lower() == "exit":
             print(f"{RED}Fin de la conversation.{RESET}")
             break
+        elif user_input == "set_stream":
+            STREAM_MODE = True
+        
+        elif user_input == "unset_stream":
+            STREAM_MODE = False
 
         # Si le contenu n'est pas une commande, alors envoyer le contenu au modèle
         send_message(user_input)
@@ -157,6 +169,11 @@ def chat():
 
 def main():
     # Vérification du nombre d'entrée minimale
+
+    if check_status() != 200:
+        print(f"{RED}Erreur: Le serveur n'est pas lancé!\n{CYAN}Command pour lancer le serveur: {RESET}rkllama serve")
+        sys.exit(0)
+
     if len(sys.argv) < 2:
         print_help()
         return
@@ -188,12 +205,6 @@ def main():
             if not switch_model(sys.argv[2]):
                 return
             chat()
-
-        case "set_stream":
-            STREAM_MODE = True
-        
-        case "unset_stream":
-            STREAM_MODE = False
         
         case _:
             print(f"{RED}Commande inconnue: {command}.{RESET}")
