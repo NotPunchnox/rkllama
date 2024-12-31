@@ -136,7 +136,8 @@ def main():
             print_color("Erreur : Plateforme cible invalide. Veuillez entrer rk3588 ou rk3576.", "red")
             sys.exit(1)
         print_color(f"Fixation de la fréquence pour la plateforme {args.target_platform}...", "cyan")
-        commande = f"sudo bash ./lib/fix_freq_{args.target_platform}.sh"
+        library_path = os.path.expanduser(f"~/RKLLAMA/lib/fix_freq_{args.target_platform}.sh")
+        commande = f"sudo bash {library_path}"
         subprocess.run(commande, shell=True)
 
     # Définir une limite de ressources
