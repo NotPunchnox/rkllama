@@ -10,7 +10,7 @@ from src.rkllm import *
 from src.variables import * 
 from src.process import Request
 
-def print_colored(message, color):
+def print_color(message, color):
     # Fonction pour afficher des messages en couleur
     colors = {
         "red": "\033[91m",
@@ -125,18 +125,20 @@ def main():
     parser.add_argument('--target_platform', type=str, help="Plateforme cible : par exemple, rk3588/rk3576.")
     args = parser.parse_args()
 
-    if args.target_platform:
+    if not args.target_platform:
+        print_color("Erreur argument manquant: --target_platform")
+    else:
         if args.target_platform not in ["rk3588", "rk3576"]:
-            print_colored("Erreur : Plateforme cible invalide. Veuillez entrer rk3588 ou rk3576.", "red")
+            print_color("Erreur : Plateforme cible invalide. Veuillez entrer rk3588 ou rk3576.", "red")
             sys.exit(1)
-        print_colored(f"Fixation de la fréquence pour la plateforme {args.target_platform}...", "cyan")
-        commande = f"sudo bash fix_freq_{args.target_platform}.sh"
+        print_color(f"Fixation de la fréquence pour la plateforme {args.target_platform}...", "cyan")
+        commande = f"sudo bash ./lib/fix_freq_{args.target_platform}.sh"
         subprocess.run(commande, shell=True)
 
     # Définir une limite de ressources
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
-    print_colored("Démarrage de l'application Flask sur http://0.0.0.0:8080", "blue")
+    print_color("Démarrage de l'application Flask sur http://0.0.0.0:8080", "blue")
     app.run(host='0.0.0.0', port=8080, threaded=True, debug=False)
 
 

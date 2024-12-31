@@ -21,6 +21,7 @@ CYAN = "\033[36m"
 def print_help():
     print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
     print(f"{YELLOW}help{RESET}             : Affiche ce menu d'aide.")
+    print(f"{YELLOW}serve{RESET}            : Lance le serveur ( doit être lancé avec sudo ).")
     print(f"{YELLOW}list{RESET}             : Liste tous les modèles disponibles sur le serveur.")
     print(f"{YELLOW}load model.rkllm{RESET} : Charge un modèle spécifique.")
     print(f"{YELLOW}unload_model{RESET}     : Décharge le modèle actuellement chargé.")
@@ -167,6 +168,9 @@ def main():
         
         case "help":
             print_help()
+
+        case "serve":
+            os.system(f"./server.sh")
 
         case "list":
             list_models()

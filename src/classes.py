@@ -11,10 +11,10 @@ RKLLM_Handle_t = ctypes.c_void_p
 userdata = ctypes.c_void_p(None)
 
 LLMCallState = ctypes.c_int
-LLMCallState.RKLLM_RUN_NORMAL  = 0
+LLMCallState.RKLLM_RUN_NORMAL   = 0
 LLMCallState.RKLLM_RUN_WAITING  = 1
-LLMCallState.RKLLM_RUN_FINISH  = 2
-LLMCallState.RKLLM_RUN_ERROR   = 3
+LLMCallState.RKLLM_RUN_FINISH   = 2
+LLMCallState.RKLLM_RUN_ERROR    = 3
 LLMCallState.RKLLM_RUN_GET_LAST_HIDDEN_LAYER = 4
 
 RKLLMInputMode = ctypes.c_int
