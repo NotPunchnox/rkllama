@@ -2,87 +2,144 @@ import sys
 import os
 import subprocess
 import resource
-import time
 import argparse
-import json
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 
 from src.classes import *
 from src.rkllm import *
 from src.variables import * 
 from src.process import Request
 
-if __name__ == "__main__":
+def print_colored(message, color):
+    # Fonction pour afficher des messages en couleur
+    colors = {
+        "red": "\033[91m",
+        "green": "\033[92m",
+        "yellow": "\033[93m",
+        "blue": "\033[94m",
+        "magenta": "\033[95m",
+        "cyan": "\033[96m",
+        "reset": "\033[0m"
+    }
+    print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-    # Créer une application Flask
-    app = Flask(__name__)
+current_model = None  # Variable globale pour stocker le modèle chargé
+modele_rkllm = None  # Instance du modèle
 
+def load_model(model_name):
+    global modele_rkllm
+    model_path = f"./models/{model_name}"
+    if not os.path.exists(model_path):
+        return None, f"Modèle {model_name} introuvable dans le dossier ./models."
+    
+    # Initialisation du modèle
+    modele_rkllm = RKLLM(model_path)
+    return modele_rkllm, None
+
+def unload_model():
+    global modele_rkllm
+    if modele_rkllm:
+        modele_rkllm.release()
+        modele_rkllm = None
+
+app = Flask(__name__)
+
+# Routes:
+# GET  /models
+# POST /load_model
+# POST /unload_model
+# POST /generate
+
+# Route pour voir les modèles
+@app.route('/models', methods=['GET'])
+def list_models():
+    # Retourner la liste des modèles disponibles dans ./models
+    models_dir = "./models/"
+    if not os.path.exists(models_dir):
+        return jsonify({"error": "Le dossier ./models est introuvable."}), 500
+
+    print(os.listdir(models_dir))
+    models = [f for f in os.listdir(models_dir) if str(f).endswith(".rkllm")]
+    print(models)
+    return jsonify({"models": models}), 200
+
+# Route pour charger un modèle dans le NPU
+@app.route('/load_model', methods=['POST'])
+def load_model_route():
+    global current_model, modele_rkllm
+
+    # Vérifier si un modèle est actuellement chargé
+    if modele_rkllm:
+        return jsonify({"error": "Un modèle est déjà chargé. Veuillez d'abord le décharger."}), 400
+
+    data = request.json
+    if "model_name" not in data:
+        return jsonify({"error": "Veuillez fournir le nom du modèle à charger."}), 400
+
+    model_name = data["model_name"]
+    modele_rkllm, error = load_model(model_name)
+    if error:
+        return jsonify({"error": error}), 400
+
+    current_model = model_name
+    return jsonify({"message": f"Modèle {model_name} chargé avec succès."}), 200
+
+# Route pour décharger un modèle du NPU
+@app.route('/unload_model', methods=['POST'])
+def unload_model_route():
+    global current_model, modele_rkllm
+
+    if not modele_rkllm:
+        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 400
+
+    unload_model()
+    current_model = None
+    return jsonify({"message": "Modèle déchargé avec succès."}), 200
+
+# Route pour récupérer le modèle en cours
+@app.route('/current_model', methods=['GET'])
+def get_current_model():
+    global current_model
+
+    if current_model:
+        return jsonify({"model_name": current_model}), 200
+    else:
+        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 404
+
+# Route pour faire une requête au modèle
+@app.route('/generate', methods=['POST'])
+def recevoir_message():
+    global modele_rkllm
+
+    if not modele_rkllm:
+        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 400
+
+    verrou.acquire()
+    return Request(modele_rkllm)
+
+
+# Fonction de lancement
+def main():
     # Définir les arguments de ligne de commande
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--rkllm_model_path', type=str, required=True, help="Chemin absolu du modèle RKLLM converti sur la carte Linux ;")
-    parser.add_argument('--target_platform', type=str, required=True, help="Plateforme cible : par exemple, rk3588/rk3576 ;")
-    parser.add_argument('--lora_path', type=str, help="Chemin absolu du modèle LORA sur la carte Linux ;")
-    parser.add_argument('--path_prompt_cache', type=str, help="Chemin absolu du fichier cache des prompts sur la carte Linux ;")
+    parser = argparse.ArgumentParser(description="Initialisation du serveur RKLLM avec des options configurables.")
+    parser.add_argument('--target_platform', type=str, help="Plateforme cible : par exemple, rk3588/rk3576.")
     args = parser.parse_args()
 
-    # Vérifier si le chemin du modèle RKLLM existe
-    if not os.path.exists(args.rkllm_model_path):
-        print("Erreur : Veuillez fournir le chemin correct pour le modèle RKLLM, et vous assurer qu'il s'agit d'un chemin absolu sur la carte.")
-        sys.stdout.flush()
-        exit()
-
-    # Vérifier si la plateforme cible est correcte
-    if not (args.target_platform in ["rk3588", "rk3576"]):
-        print("Erreur : Veuillez spécifier la bonne plateforme cible : rk3588/rk3576.")
-        sys.stdout.flush()
-        exit()
-
-    # Vérifier si le chemin du modèle LORA est valide
-    if args.lora_path:
-        if not os.path.exists(args.lora_path):
-            print("Erreur : Veuillez fournir le chemin correct pour le modèle LORA, et vous assurer qu'il s'agit d'un chemin absolu sur la carte.")
-            sys.stdout.flush()
-            exit()
-
-    # Vérifier si le chemin du cache de prompts est valide
-    if args.path_prompt_cache:
-        if not os.path.exists(args.path_prompt_cache):
-            print("Erreur : Veuillez fournir le chemin correct pour le fichier cache des prompts, et vous assurer qu'il s'agit d'un chemin absolu sur la carte.")
-            sys.stdout.flush()
-            exit()
-
-    # Fixer la fréquence
-    commande = f"sudo bash fix_freq_{args.target_platform}.sh"
-    subprocess.run(commande, shell=True)
+    if args.target_platform:
+        if args.target_platform not in ["rk3588", "rk3576"]:
+            print_colored("Erreur : Plateforme cible invalide. Veuillez entrer rk3588 ou rk3576.", "red")
+            sys.exit(1)
+        print_colored(f"Fixation de la fréquence pour la plateforme {args.target_platform}...", "cyan")
+        commande = f"sudo bash fix_freq_{args.target_platform}.sh"
+        subprocess.run(commande, shell=True)
 
     # Définir une limite de ressources
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
-    # Initialiser le modèle RKLLM
-    print("========= Initialisation... =========")
-    sys.stdout.flush()
-    model_path = args.rkllm_model_path
-    modele_rkllm = RKLLM(model_path, args.lora_path, args.path_prompt_cache)
-    print("Modèle RKLLM initialisé avec succès !")
-    print("====================================")
-    sys.stdout.flush()
-
-    # Créer une fonction pour recevoir les données envoyées par l'utilisateur
-    @app.route('/rkllm_chat', methods=['POST'])
-    def recevoir_message():
-
-        # Si le serveur est bloqué, retourner une réponse spécifique
-        if isLocked or global_status == 0:
-            return jsonify({'status': 'error', 'message': 'Le serveur RKLLM est occupé ! Vous pouvez réessayer plus tard.'}), 503
-
-        verrou.acquire()
-
-        return Request(modele_rkllm)
-
-    # Démarrer l'application Flask
+    print_colored("Démarrage de l'application Flask sur http://0.0.0.0:8080", "blue")
     app.run(host='0.0.0.0', port=8080, threaded=True, debug=False)
 
-    print("====================")
-    print("Inférence du modèle RKLLM terminée, libération des ressources du modèle...")
-    modele_rkllm.release()
-    print("====================")
+
+# Lancer le programme
+if __name__ == "__main__":
+    main()

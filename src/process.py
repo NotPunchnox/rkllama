@@ -13,7 +13,6 @@ def Request(modele_rkllm):
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
             global_status = -1
-            global_text = []
 
             # Définir la structure de la réponse renvoyée.
             llmResponse = {
@@ -28,12 +27,14 @@ def Request(modele_rkllm):
                 }
             }
 
+            # Traiter les données reçues.
+            messages = data['messages']
+            userInput = messages
+            sortie_rkllm = ""
+
+            print("Messages reçus :", messages)
+
             if not "stream" in data.keys() or data["stream"] == False:
-                # Traiter les données reçues ici.
-                messages = data['messages']
-                print("Messages reçus :", messages)
-                userInput = messages
-                sortie_rkllm = ""
                 
                 # Créer un thread pour l'inférence du modèle.
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
@@ -48,7 +49,7 @@ def Request(modele_rkllm):
 
                         thread_modele.join(timeout=0.005)
                         threadFinish = not thread_modele.is_alive()
-                    
+                    print("sortie rkllm:", sortie_rkllm)
 
                     llmResponse["choices"] = [{
                         "role": "assistant",
@@ -57,13 +58,8 @@ def Request(modele_rkllm):
                         "finish_reason": "stop"
                     }]
                 return jsonify(llmResponse), 200
-            else:
-                messages = data['messages']
-                print("Messages reçus :", messages)
-                userInput = messages
-                sortie_rkllm = ""
 
-                
+            else:
                 def generate():
                     thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
                     thread_modele.start()
