@@ -187,7 +187,7 @@ def main():
             print_help()
 
         case "serve":
-            os.system(f"./server.sh")
+            os.system(f"bash ~/RKLLAMA/server.sh")
 
         case "list":
             list_models()
