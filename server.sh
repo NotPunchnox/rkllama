@@ -17,4 +17,4 @@ fi
 cpu_model=$(cat /proc/cpuinfo | grep "cpu model" | head -n 1 | sed 's/.*Rockchip \(RK[0-9]*\).*/\1/' | tr '[:upper:]' '[:lower:]')
 
 # Lancement du serveur avec le modèle de processeur en paramètre
-python3 server.py --target_platform "$cpu_model"
+python3 ~/RKLLAMA/server.py --target_platform "$cpu_model"

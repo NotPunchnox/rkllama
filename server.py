@@ -120,7 +120,7 @@ def recevoir_message():
 # Route par défaut
 @app.route('/', methods=['GET'])
 def default_route():
-    return jsonify({"message": "Welcome to RK-LLama !"}), 200
+    return jsonify({"message": "Welcome to RK-LLama !", "github": "https://github.com/notpunhnox/rk-llama"}), 200
 
 # Fonction de lancement
 def main():
