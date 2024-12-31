@@ -34,7 +34,6 @@ def print_help():
 def check_status():
     try:
         response = requests.get(API_URL)
-        print(response.status_code)
         return response.status_code
     except:
         return 500
@@ -176,8 +175,6 @@ def main():
         return
 
     command = sys.argv[1]
-
-    print(check_status)
 
     if check_status() != 200 and command != "serve":
         print(f"{RED}Erreur: Le serveur n'est pas lancé!\n{CYAN}Command pour lancer le serveur: {RESET}rkllama serve")
