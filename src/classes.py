@@ -1,5 +1,5 @@
 import ctypes
-import sys
+import os
 
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
