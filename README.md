@@ -123,6 +123,8 @@ Puis commencer à discuter
 
 ## Prochains ajouts
 - Possibilité de pull des modèles
+- Ajout modèles multimodal
+- Ajout modèles Embedding
 - Logiciel de conversion `gguf to rkllm`
 - Documentation API [folder](./documentation/api/README.md)
 
