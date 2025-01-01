@@ -118,6 +118,14 @@ Puis commencer à discuter
 **Output:**
 ![Image](./documentation/ressources/uninstall.png)
 
+
+---
+
+## Prochains ajouts
+- Possibilité de pull des modèles
+- Logiciel de conversion `gguf to rkllm`
+- Documentation API [folder](./documentation/api/README.md)
+
 ---
 System Monitor:
 
