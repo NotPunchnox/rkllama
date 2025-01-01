@@ -28,9 +28,9 @@ modele_rkllm = None  # Instance du modèle
 
 def load_model(model_name):
     global modele_rkllm
-    model_path = f"./models/{model_name}"
+    model_path = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     if not os.path.exists(model_path):
-        return None, f"Modèle {model_name} introuvable dans le dossier ./models."
+        return None, f"Modèle {model_name} introuvable dans le dossier /models."
     
     # Initialisation du modèle
     modele_rkllm = RKLLM(model_path)
@@ -53,10 +53,10 @@ app = Flask(__name__)
 # Route pour voir les modèles
 @app.route('/models', methods=['GET'])
 def list_models():
-    # Retourner la liste des modèles disponibles dans ./models
-    models_dir = "./models/"
+    # Retourner la liste des modèles disponibles dans ~/RKLLAMA/models
+    models_dir = os.path.expanduser("~/RKLLAMA/models")
     if not os.path.exists(models_dir):
-        return jsonify({"error": "Le dossier ./models est introuvable."}), 500
+        return jsonify({"error": "Le dossier ~/RKLLAMA/models est introuvable."}), 500
 
     print(os.listdir(models_dir))
     models = [f for f in os.listdir(models_dir) if str(f).endswith(".rkllm")]

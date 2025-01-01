@@ -141,7 +141,6 @@ def switch_model(new_model):
         print(f"{RED}Impossible de charger le modèle {new_model}.{RESET}")
         return False
 
-    print(f"{GREEN}Modèle {new_model} prêt à l'emploi.{RESET}")
     return True
 
 
