@@ -32,7 +32,7 @@ La différence avec les autres logiciels de ce type comme: [Ollama](https://olla
 ## Documentation
 
 - Client : [ci-dessous](#installation).
-- API    : [Click](./documentation/api/README.md)
+- API    : [Click](./api/french.md)
 
 ## Installation
 1. Télécharger rkllama :
@@ -47,7 +47,7 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 **Output:**
-![Image](./documentation/ressources/setup.png)
+![Image](./ressources/setup.png)
 
 ## Add model ( file.rkllm )
 
@@ -67,7 +67,7 @@ sudo ./setup.sh
 rkllama serve
 ```
 **Output:**
-![Image](./documentation/ressources/server.png)
+![Image](./ressources/server.png)
 
 
 ### Run Client
@@ -80,24 +80,24 @@ ou
 rkllama help
 ```
 **Output:**
-![Image](./documentation/ressources/commands.png)
+![Image](./ressources/commands.png)
 
 2. Voir les modèles disponibles
 ```bash
 rkllama list
 ```
 **Output:**
-![Image](./documentation/ressources/list.png)
+![Image](./ressources/list.png)
 
 3. Lancer un modèle
 ```bash
 rkllama run <model_name>
 ```
 **Output:**
-![Image](./documentation/ressources/launch_chat.png)
+![Image](./ressources/launch_chat.png)
 
 Puis commencer à discuter
-![Image](./documentation/ressources/chat.png)
+![Image](./ressources/chat.png)
 
 ## Uninstall
 
@@ -116,7 +116,7 @@ Puis commencer à discuter
     ```
 
 **Output:**
-![Image](./documentation/ressources/uninstall.png)
+![Image](./ressources/uninstall.png)
 
 
 ---
@@ -126,7 +126,7 @@ Puis commencer à discuter
 - Ajout modèles multimodal
 - Ajout modèles Embedding
 - Logiciel de conversion `gguf to rkllm`
-- Documentation API [folder](./documentation/api/README.md)
+- Documentation API [folder](./api/README.md)
 
 ---
 System Monitor:
