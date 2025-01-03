@@ -15,7 +15,7 @@ echo -e "${GREEN}Vérification des mises à jour terminée avec succès!${RESET}
 
 # Chemin d'installation de Miniconda
 MINICONDA_DIR=~/miniconda3
-MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
 
 # Vérifie si Miniconda est installé
 if [ -d "$MINICONDA_DIR" ]; then
