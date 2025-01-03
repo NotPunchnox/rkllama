@@ -1,8 +1,8 @@
-# RK-LLama: Serveur et Client LLM pour Rockchip 3588/3576
+# RKLLama: Serveur et Client LLM pour Rockchip 3588/3576
 
 ## Présentation
 Un serveur permettant d'exécuter et d'interagir avec des modèles LLM optimisé pour les platformes Rockchip RK3588(S) et RK3576.
-La différence avec les autres logiciels de ce type comme: [Ollama](https://ollama.com) ou [Llama.cpp](https://github.com/ggerganov/llama.cpp), c'est que RK-LLama permet de lancer les modèles sur NPU.
+La différence avec les autres logiciels de ce type comme: [Ollama](https://ollama.com) ou [Llama.cpp](https://github.com/ggerganov/llama.cpp), c'est que RKLLama permet de lancer les modèles sur NPU.
 
 * Version `Lib rkllm-runtime`: V1.1.4.
 * Testé sur un Orange pi 5 Pro ( 16Go RAM ).
@@ -37,8 +37,8 @@ La différence avec les autres logiciels de ce type comme: [Ollama](https://olla
 ## Installation
 1. Télécharger rkllama :
 ```bash
-git clone https://github.com/notpunchnox/rk-llama
-cd rk-llama
+git clone https://github.com/notpunchnox/rkllama
+cd rkllama
 ```
 
 2. Installer rkllama
@@ -110,7 +110,7 @@ Puis commencer à discuter
 
 2. Si vous n'avez pas le fichier `uninstall.sh`:
     ```bash
-    wget https://raw.githubusercontent.com/NotPunchnox/rk-llama/refs/heads/main/uninstall.sh
+    wget https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/uninstall.sh
     chmod +x ./uninstall.sh
     ./uninstall.sh
     ```
@@ -135,4 +135,4 @@ System Monitor:
 ---
 
 ## Author:
-[notpunchnox](https://github.com/notpunchnox/rk-llama)
+[notpunchnox](https://github.com/notpunchnox/rkllama)
