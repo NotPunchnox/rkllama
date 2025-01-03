@@ -25,7 +25,7 @@ def print_help():
     print(f"{YELLOW}list{RESET}             : Liste tous les modèles disponibles sur le serveur.")
     print(f"{YELLOW}load model.rkllm{RESET} : Charge un modèle spécifique.")
     print(f"{YELLOW}unload_model{RESET}     : Décharge le modèle actuellement chargé.")
-    print(f"{YELLOW}chat{RESET}             : Entrez en mode conversation avec le modèle.")
+    print(f"{YELLOW}run{RESET}              : Entrez en mode conversation avec le modèle.")
     print(f"{YELLOW}set_stream{RESET}       : Active le mode stream.")
     print(f"{YELLOW}unset_stream{RESET}     : Désactive le mode stream.")
     print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
