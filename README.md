@@ -18,7 +18,7 @@ La différence avec les autres logiciels de ce type comme: [Ollama](https://olla
 - Python 3.9
 
 ## Matériel et environnement testés
-- **Matériel** : Rockchip RK3588S, NPU 6 TOPS.
+- **Matériel** : Orange pi 5 pro: ( Rockchip RK3588S, NPU 6 TOPS ).
 - **OS** : Ubuntu 24.04 arm64.
 
 ## Fonctionnalités principales
