@@ -25,10 +25,8 @@ def print_help():
     print(f"{YELLOW}serve{RESET}            : Lance le serveur ( doit être lancé avec sudo ).")
     print(f"{YELLOW}list{RESET}             : Liste tous les modèles disponibles sur le serveur.")
     print(f"{YELLOW}load model.rkllm{RESET} : Charge un modèle spécifique.")
-    print(f"{YELLOW}unload_model{RESET}     : Décharge le modèle actuellement chargé.")
+    print(f"{YELLOW}unload{RESET}     : Décharge le modèle actuellement chargé.")
     print(f"{YELLOW}run{RESET}              : Entrez en mode conversation avec le modèle.")
-    print(f"{YELLOW}set_stream{RESET}       : Active le mode stream.")
-    print(f"{YELLOW}unset_stream{RESET}     : Désactive le mode stream.")
     print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
 
 def print_help_chat():
@@ -237,7 +235,7 @@ def main():
             else:
                 load_model(sys.argv[2])
 
-        case "unload_model":
+        case "unload":
             unload_model()
         
         case "run":
