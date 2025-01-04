@@ -12,7 +12,7 @@ class RKLLM(object):
         rkllm_param = RKLLMParam()
         rkllm_param.model_path = bytes(model_path, 'utf-8')
 
-        rkllm_param.max_context_len = 512
+        rkllm_param.max_context_len = 1024
         rkllm_param.max_new_tokens = -1
         rkllm_param.skip_special_token = True
 

@@ -94,8 +94,13 @@ def send_message(message):
     global HISTORY
 
     HISTORY.append({"role": "user", "content": message})
+    historyParsed = "\n".join(
+        [f"{'User' if entry['role'] == 'user' else 'Assistant'}: {entry['content']}" for entry in HISTORY]
+    )
+    print(historyParsed)
+
     payload = {
-        "messages": message,
+        "messages": historyParsed,
         "stream": STREAM_MODE
     }
 
