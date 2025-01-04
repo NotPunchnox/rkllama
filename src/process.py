@@ -23,6 +23,7 @@ def Request(modele_rkllm):
                 "usage": {
                     "prompt_tokens": None,
                     "completion_tokens": None,
+                    "tokens_per_second": None,
                     "total_tokens": None
                 }
             }
@@ -42,15 +43,22 @@ def Request(modele_rkllm):
 
                 # Attendre la fin du modèle et vérifier périodiquement le thread d'inférence.
                 threadFinish = False
+                count = 0
+                start = time.time()
+
                 while not threadFinish:
                     while len(global_text) > 0:
+                        count += 1
                         sortie_rkllm += global_text.pop(0)
                         time.sleep(0.005)
 
                         thread_modele.join(timeout=0.005)
                         threadFinish = not thread_modele.is_alive()
-                    print("sortie rkllm:", sortie_rkllm)
 
+                    total = time.time() - start
+
+                    llmResponse["usage"]["tokens_per_second"] = count / tokens 
+                    llmResponse["usage"]["completion_tokens"] = count
                     llmResponse["choices"] = [{
                         "role": "assistant",
                         "content": sortie_rkllm,
@@ -65,8 +73,12 @@ def Request(modele_rkllm):
                     thread_modele.start()
 
                     thread_modele_terminé = False
+                    count = 0
+                    start = time.time()
+
                     while not thread_modele_terminé:
                         while len(global_text) > 0:
+                            count += 1
                             sortie_rkllm = global_text.pop(0)
 
                             llmResponse["choices"] = [
@@ -78,6 +90,13 @@ def Request(modele_rkllm):
                                 }
                             ]
                             yield f"{json.dumps(llmResponse)}\n\n"
+
+                        # Calcul du temps de traitement
+                        total = time.time() - start
+
+                        # Calcul du nombre de tokens par seconde et du nombre ttal de tokens
+                        llmResponse["usage"]["tokens_per_second"] = count / total
+                        llmResponse["usage"]["completion_tokens"] = count
 
                         thread_modele.join(timeout=0.005)
                         thread_modele_terminé = not thread_modele.is_alive()

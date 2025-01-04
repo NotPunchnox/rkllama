@@ -4,9 +4,10 @@ import sys
 import os
 
 # Constantes pour l'URL de l'API et autres paramètres
-API_URL = "http://127.0.0.1:8080/"  # Remplacer par l'URL de votre API si vous l'avez changé
-STREAM_MODE = True  # Passer à False si vous voulez désactiver le streaming
-HISTORY = []  # Historique des messages pour maintenir la conversation
+API_URL     = "http://127.0.0.1:8080/"  # Remplacer par l'URL de votre API si vous l'avez changé
+STREAM_MODE = True
+VERBOSE     = False
+HISTORY     = []  # Historique des messages pour maintenir la conversation
 
 # Codes ANSI pour la couleur
 RESET = "\033[0m"
@@ -30,6 +31,16 @@ def print_help():
     print(f"{YELLOW}unset_stream{RESET}     : Désactive le mode stream.")
     print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
 
+def print_help_chat():
+    print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
+    print(f"{YELLOW}/help{RESET}           : Affiche ce menu d'aide.")
+    print(f"{YELLOW}/clear{RESET}          : Supprime l'historique de conversation actuel.")
+    print(f"{YELLOW}/cls ou /c{RESET}      : Supprime le contenu de la console.")
+    print(f"{YELLOW}/set stream{RESET}     : Active le mode stream.")
+    print(f"{YELLOW}/unset stream{RESET}   : Désactive le mode stream.")
+    print(f"{YELLOW}/set verbose{RESET}    : Active le mode verbose.")
+    print(f"{YELLOW}/unset verbose{RESET}  : Désactive le mode verbose.")
+    print(f"{YELLOW}exit{RESET}            : Quitte la conversation.\n")
 
 def check_status():
     try:
@@ -97,20 +108,30 @@ def send_message(message):
                 if response.status_code == 200:
                     print(f"{CYAN}{BOLD}Assistant:{RESET} ", end="")
                     assistant_message = ""
+                    final_json        = ""
 
                     for line in response.iter_lines(decode_unicode=True):
                         if line:
                             try:
                                 response_json = json.loads(line)
+                                final_json = response_json
+
                                 content_chunk = response_json["choices"][0]["content"]
                                 sys.stdout.write(content_chunk)
                                 sys.stdout.flush()
-                                assistant_message += content_chunk  # Sauvegarde complète.
+                                assistant_message += content_chunk
                             except json.JSONDecodeError:
                                 print(f"{RED}Erreur lors de la détection de la réponse JSON.{RESET}")
 
+                    if VERBOSE == True:
+                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {final_json["usage"]["tokens_per_second"]}")
+                        print(f"{GREEN}Nombre de tokens  {RESET}: {final_json["usage"]["completion_tokens"]}")
 
-                    print("\n")  # Ajout d'une ligne à la fin du flux.
+                    HISTORY.append({"role": "assistant", "content": assistant_message})
+
+                    # Faire revenir à la ligne après le dernier token
+                    print("\n")
+
                 else:
                     print(f"{RED}Erreur lors du streaming: {response.status_code} - {response.text}{RESET}")
 
@@ -121,6 +142,11 @@ def send_message(message):
                 assistant_message = response_json["choices"][0]["content"]
 
                 print(f"{CYAN}{BOLD}Assistant:{RESET} {assistant_message}")
+
+                if VERBOSE == True:
+                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {response_json["usage"]["tokens_per_second"]}")
+                        print(f"{GREEN}Nombre de tokens  {RESET}: {response_json["usage"]["completion_tokens"]}")
+
                 HISTORY.append({"role": "assistant", "content": assistant_message})
             else:
                 print(f"{RED}Erreur lors de la requête: {response.status_code} - {response.text}{RESET}")
@@ -146,24 +172,38 @@ def switch_model(new_model):
 
 # Fonction interactive pour discuter avec le modèle.
 def chat():
-    print(f"{GREEN}{BOLD}Mode chat activé. Tapez 'exit' pour quitter.{RESET}")
+    global VERBOSE, STREAM_MODE, HISTORY
+    os.system("clear")
+    print_help_chat()
+    
     while True:
-        user_input = input(f"{YELLOW}Vous:{RESET} ")
+        user_input = input(f"{CYAN}Vous:{RESET} ")
 
-        if user_input == "clear" or user_input == "c":
+        if user_input == "/help":
+            print_help_chat()
+        elif user_input == "/clear":
+            HISTORY = []
+            print(f"{GREEN}Historique de conversation réinitialisé avec succès{RESET}")
+        elif user_input == "/cls" or user_input == "/c":
             os.system("clear")
-            break
         elif user_input.lower() == "exit":
             print(f"{RED}Fin de la conversation.{RESET}")
             break
-        elif user_input == "set_stream":
+        elif user_input == "/set stream":
             STREAM_MODE = True
-        
-        elif user_input == "unset_stream":
+            print(f"{GREEN}Mode stream activé avec succès!{RESET}")
+        elif user_input == "/unset stream":
             STREAM_MODE = False
-
-        # Si le contenu n'est pas une commande, alors envoyer le contenu au modèle
-        send_message(user_input)
+            print(f"{RED}Mode stream désactivé avec succès!{RESET}")
+        elif user_input == "/set verbose":
+            VERBOSE = True
+            print(f"{GREEN}Mode verbose activé avec succès!{RESET}")
+        elif user_input == "/unset verbose":
+            VERBOSE = False
+            print(f"{RED}Mode verbose désactivé avec succès!{RESET}")
+        else:
+            # Si le contenu n'est pas une commande, alors envoyer le contenu au modèle
+            send_message(user_input)
 
 
 def main():
