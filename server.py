@@ -63,6 +63,14 @@ def list_models():
     print(models)
     return jsonify({"models": models}), 200
 
+
+# route pour pull à finir (manque de temps actuellement)
+@app.route('/pull', method=['POST'])
+def pull_model():
+    data = request.json
+    if "model" not in data:
+        return jsonify({"error": "Veuillez mentionner un modèle."})
+
 # Route pour charger un modèle dans le NPU
 @app.route('/load_model', methods=['POST'])
 def load_model_route():
