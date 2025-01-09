@@ -4,18 +4,20 @@ import sys
 import os
 
 # Constantes pour l'URL de l'API et autres paramètres
-API_URL     = "http://127.0.0.1:8080/"  # Remplacer par l'URL de votre API si vous l'avez changé
-STREAM_MODE = True
-VERBOSE     = False
-HISTORY     = []  # Historique des messages pour maintenir la conversation
+API_URL         = "http://127.0.0.1:8080/"  # Remplacer par l'URL de votre API si vous l'avez changé
+STREAM_MODE     = True
+VERBOSE         = False
+HISTORY         = []  # Historique des messages pour maintenir la conversation
+PREFIX_MESSAGE  = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
+SUFIX_MESSAGE   = "<|im_end|><|im_start|>assistant"
 
 # Codes ANSI pour la couleur
-RESET = "\033[0m"
-BOLD = "\033[1m"
-RED = "\033[31m"
-GREEN = "\033[32m"
+RESET  = "\033[0m"
+BOLD   = "\033[1m"
+RED    = "\033[31m"
+GREEN  = "\033[32m"
 YELLOW = "\033[33m"
-CYAN = "\033[36m"
+CYAN   = "\033[36m"
 
 
 # Affiche le menu d'aide avec toutes les commandes disponibles.
@@ -93,14 +95,15 @@ def unload_model():
 def send_message(message):
     global HISTORY
 
-    HISTORY.append({"role": "user", "content": message})
-    historyParsed = "\n".join(
-        [f"{'User' if entry['role'] == 'user' else 'Assistant'}: {entry['content']}" for entry in HISTORY]
-    )
-    print(historyParsed)
+    # Temporairement désactivé
+    # HISTORY.append({"role": "user", "content": message})
+    # historyParsed = "\n".join(
+    #     [f"{'User' if entry['role'] == 'user' else 'Assistant'}: {entry['content']}" for entry in HISTORY]
+    # )
+    # print(historyParsed)
 
     payload = {
-        "messages": historyParsed,
+        "messages": PREFIX_MESSAGE + historyParsed + SUFIX_MESSAGE,
         "stream": STREAM_MODE
     }
 
