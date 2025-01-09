@@ -40,6 +40,7 @@ def print_help_chat():
     print(f"{YELLOW}/unset stream{RESET}   : Désactive le mode stream.")
     print(f"{YELLOW}/set verbose{RESET}    : Active le mode verbose.")
     print(f"{YELLOW}/unset verbose{RESET}  : Désactive le mode verbose.")
+    print(f"{YELLOW}/set system{RESET}     : Modifie le message système.")
     print(f"{YELLOW}exit{RESET}            : Quitte la conversation.\n")
 
 def check_status():
@@ -207,6 +208,9 @@ def chat():
         elif user_input == "/unset verbose":
             VERBOSE = False
             print(f"{RED}Mode verbose désactivé avec succès!{RESET}")
+        elif user_input == "/set system":
+            system_prompt = input(f"{CYAN}System prompt: {RESET}")
+            SYSTEM = f"<|im_start|>{system_prompt}<|im_end|> <|im_start|>user"
         else:
             # Si le contenu n'est pas une commande, alors envoyer le contenu au modèle
             send_message(user_input)
