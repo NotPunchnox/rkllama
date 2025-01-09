@@ -27,7 +27,7 @@ def print_help():
     print(f"{YELLOW}serve{RESET}            : Lance le serveur ( doit être lancé avec sudo ).")
     print(f"{YELLOW}list{RESET}             : Liste tous les modèles disponibles sur le serveur.")
     print(f"{YELLOW}load model.rkllm{RESET} : Charge un modèle spécifique.")
-    print(f"{YELLOW}unload{RESET}     : Décharge le modèle actuellement chargé.")
+    print(f"{YELLOW}unload{RESET}           : Décharge le modèle actuellement chargé.")
     print(f"{YELLOW}run{RESET}              : Entrez en mode conversation avec le modèle.")
     print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
 
@@ -211,6 +211,7 @@ def chat():
         elif user_input == "/set system":
             system_prompt = input(f"{CYAN}System prompt: {RESET}")
             SYSTEM = f"<|im_start|>{system_prompt}<|im_end|> <|im_start|>user"
+            print(f"{GREEN}Message système modifié avec succès!")
         else:
             # Si le contenu n'est pas une commande, alors envoyer le contenu au modèle
             send_message(user_input)
