@@ -17,6 +17,19 @@ if [[ "$confirmation" != "y" && "$confirmation" != "Y" ]]; then
     exit 1
 fi
 
+
+# Demander à l'utilisateur si il veut sauvegarder les modèles avant la désinstallation
+echo -e "${YELLOW}Voulez vous sauvegarder les modèles ?"
+read -p "Tapez 'y' pour continuer, 'n' pour annuler: ${RESET}" confirmation_models
+
+if [[ "$confirmation_models" != "y" && "$confirmation_models" != "Y" ]]; then
+    echo -e "${GREEN}Les modèles.rkllm seront sauvegardés dans le dossier /home/${whoami}/Desktop/rkllm_models.${RESET}"
+    mkdir "/home/${whoami}/Desktop/rkllm_models"
+    cp ~/RKLLAMA/models/*.rkllm "/home/${whoami}/Desktop/rkllm_models"
+
+    echo -e "${GREEN}Les modèles ont été sauvegardés avec succès.${RESET}"
+
+
 # Message de début de désinstallation
 echo -e "${CYAN}Démarrage de la désinstallation...${RESET}"
 

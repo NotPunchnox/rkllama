@@ -3,6 +3,7 @@ import os
 import subprocess
 import resource
 import argparse
+from huggingface_hub import hf_hub_download
 from flask import Flask, request, jsonify
 
 from src.classes import *
@@ -70,6 +71,21 @@ def pull_model():
     data = request.json
     if "model" not in data:
         return jsonify({"error": "Veuillez mentionner un modèle."})
+
+    splitted = data["model"].split('/')
+    if len(splitted) < 3:
+        return jsonify({"error": f"Le path: {data["model"]} n'est pas valide!"})
+
+    file = splitted[2]
+    repo = data["model"].replace(file, "")
+
+    print(f"repo: {repo}\nfile: {file}")
+
+    #https://huggingface.co/punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4/blob/main/TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm
+    model_path = hf_hub_download(repo_id=repo, filename=file)
+    
+    print(model_path)
+    os.system(f"mv {model_path} ~/RKLLAMA/models/")
 
 # Route pour charger un modèle dans le NPU
 @app.route('/load_model', methods=['POST'])
