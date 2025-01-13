@@ -9,7 +9,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 * Tested on an `Orange Pi 5 Pro (16GB RAM)`.
 
 ## File Structure
-- **`./models`**: Place your .rkllm models here.
+- **`./models`**: contains your rkllm models.
 - **`./lib`**: C++ `rkllm` library used for inference and `fix_freqence_platform`.
 - **`./app.py`**: API Rest server.
 - **`./client.py`**: Client to interact with the server.
@@ -51,15 +51,6 @@ sudo ./setup.sh
 **Output:**
 ![Image](./documentation/ressources/setup.png)
 
-## Add Model (file.rkllm)
-
-1. Download .rkllm models from [HuggingFace](https://huggingface.co), or convert your GGUF models to RKLLM (Software soon available on [my GitHub](https://github.com/notpunchnox))
-
-2. Go to the `~/RKLLAMA` directory and place your files there
-    ```bash
-    cd ~/RKLLAMA/
-    ```
-
 ## Usage
 
 ### Run Server
@@ -91,6 +82,7 @@ rkllama list
 **Output:**
 ![Image](./documentation/ressources/list.png)
 
+
 3. Run a model
 ```bash
 rkllama run <model_name>
@@ -100,6 +92,42 @@ rkllama run <model_name>
 
 Then start chatting
 ![Image](./documentation/ressources/chat.png)
+
+## Adding a Model (`file.rkllm`)
+
+### **Using the `rkllama pull` Command**
+You can download and install a model from the Hugging Face platform with the following command:
+
+```bash
+rkllama pull username/repo_id/model_file.rkllm
+```
+
+Alternatively, you can run the command interactively:
+
+```bash
+rkllama pull
+Repo ID ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4): <your response>
+File ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm): <your response>
+```
+
+This will automatically download the specified model file and prepare it for use with RKLLAMA.
+
+---
+
+### **Manual Installation**
+1. **Download the Model**  
+   - Download `.rkllm` models directly from [Hugging Face](https://huggingface.co).  
+   - Alternatively, convert your GGUF models into `.rkllm` format (conversion tool coming soon on [my GitHub](https://github.com/notpunchnox)).
+
+2. **Place the Model**  
+   - Navigate to the `~/RKLLAMA/models` directory on your system.  
+   - Place the `.rkllm` files in this directory.  
+
+   Example directory structure:
+   ```
+   ~/RKLLAMA/models/
+       └── TinyLlama-1.1B-Chat-v1.0.rkllm
+   ```
 
 ## Uninstall
 
