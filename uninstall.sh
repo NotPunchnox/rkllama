@@ -24,11 +24,12 @@ read -p "Type 'y' to continue, 'n' to cancel: " confirmation_models
 if [[ "$confirmation_models" == "y" || "$confirmation_models" == "Y" ]]; then
     # Back up the models
     echo -e "${GREEN}The models will be saved to /home/$(whoami)/Desktop/rkllm_models.${RESET}"
+    # Create the directory if needed
     mkdir -p "/home/$(whoami)/Desktop/rkllm_models"
     cp ~/RKLLAMA/models/*.rkllm "/home/$(whoami)/Desktop/rkllm_models"
 
     echo -e "${GREEN}Models have been successfully backed up.${RESET}"
-fi
+fi  # <-- This was missing in your original script
 
 # Start uninstallation message
 echo -e "${CYAN}Starting uninstallation...${RESET}"
