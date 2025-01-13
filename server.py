@@ -66,7 +66,7 @@ def list_models():
 
 
 # route pour pull à finir (manque de temps actuellement)
-@app.route('/pull', method=['POST'])
+@app.route('/pull', methods=['POST'])
 def pull_model():
     data = request.json
     if "model" not in data:

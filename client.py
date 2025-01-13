@@ -23,13 +23,14 @@ CYAN   = "\033[36m"
 # Affiche le menu d'aide avec toutes les commandes disponibles.
 def print_help():
     print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
-    print(f"{YELLOW}help{RESET}             : Affiche ce menu d'aide.")
-    print(f"{YELLOW}serve{RESET}            : Lance le serveur ( doit être lancé avec sudo ).")
-    print(f"{YELLOW}list{RESET}             : Liste tous les modèles disponibles sur le serveur.")
-    print(f"{YELLOW}load model.rkllm{RESET} : Charge un modèle spécifique.")
-    print(f"{YELLOW}unload{RESET}           : Décharge le modèle actuellement chargé.")
-    print(f"{YELLOW}run{RESET}              : Entrez en mode conversation avec le modèle.")
-    print(f"{YELLOW}exit{RESET}             : Quitte le programme.")
+    print(f"{YELLOW}help{RESET}                     : Affiche ce menu d'aide.")
+    print(f"{YELLOW}serve{RESET}                    : Lance le serveur ( doit être lancé avec sudo ).")
+    print(f"{YELLOW}list{RESET}                     : Liste tous les modèles disponibles sur le serveur.")
+    print(f"{YELLOW}load model.rkllm{RESET}         : Charge un modèle spécifique.")
+    print(f"{YELLOW}unload{RESET}                   : Décharge le modèle actuellement chargé.")
+    print(f"{YELLOW}run{RESET}                      : Entrez en mode conversation avec le modèle.")
+    print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Télécharge un modèle via un fichier sur huggingface.")
+    print(f"{YELLOW}exit{RESET}                     : Quitte le programme.")
 
 def print_help_chat():
     print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
