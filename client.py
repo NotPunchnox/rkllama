@@ -105,7 +105,7 @@ def send_message(message):
     # print(historyParsed)
 
     payload = {
-        "messages": PREFIX_MESSAGE + historyParsed + SUFIX_MESSAGE,
+        "messages": PREFIX_MESSAGE + message + SUFIX_MESSAGE,
         "stream": STREAM_MODE
     }
 
@@ -178,6 +178,13 @@ def switch_model(new_model):
     return True
 
 def pull_model(model):
+
+    if model is None or model == "":
+        repo = input(f"{CYAN}Repo ID{RESET} ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4 ): ")
+        filename = input("{CYAN}File{RESET} ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm ): ")
+
+    model = repo + "/" + filename
+
     try:
         response = requests.post(API_URL + "pull", json={"model": model}, stream=True)
 
@@ -292,7 +299,7 @@ def main():
             chat()
 
         case "pull":
-            pull_model(sys.argv[2])
+            pull_model(sys.argv[2] if len(sys.argv) < 2 else "" )
         
         case _:
             print(f"{RED}Commande inconnue: {command}.{RESET}")
