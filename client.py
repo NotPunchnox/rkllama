@@ -177,6 +177,40 @@ def switch_model(new_model):
 
     return True
 
+def pull_model(model):
+    try:
+        response = requests.post(API_URL + "pull", json={"model": model}, stream=True)
+
+        if response.status_code != 200:
+            print(f"{RED}Error: Received status code {response.status_code}.{RESET}")
+            print(response.text)
+            return
+
+        def update_progress(progress):
+            bar_length = 50  # Length of the progress bar
+            block = int(round(bar_length * progress / 100))
+            text = f"\r{GREEN}Progress:{RESET} [{CYAN}{'#' * block}{RESET}{'-' * (bar_length - block)}] {progress:.2f}%"
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
+        # Barre de progression
+        for line in response.iter_lines(decode_unicode=True):
+            if line:
+                line = line.strip()
+                if line.endswith('%'):  # Vérifie si la ligne contient un pourcentage
+                    try:
+                        progress = int(line.strip('%'))
+                        update_progress(progress)
+                    except ValueError:
+                        print(f"\n{line}")  # Affiche les messages non numériques
+                else:
+                    print(f"\n{line}")  # Affiche les autres messages
+
+        print(f"\n{GREEN}Download complete.{RESET}")
+    except requests.RequestException as e:
+        print(f"Error connecting to server: {e}")
+
+
 
 # Fonction interactive pour discuter avec le modèle.
 def chat():
@@ -256,6 +290,9 @@ def main():
             if not switch_model(sys.argv[2]):
                 return
             chat()
+
+        case "pull":
+            pull_model(sys.argv[2])
         
         case _:
             print(f"{RED}Commande inconnue: {command}.{RESET}")

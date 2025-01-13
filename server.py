@@ -3,8 +3,9 @@ import os
 import subprocess
 import resource
 import argparse
-from huggingface_hub import hf_hub_download
-from flask import Flask, request, jsonify
+import requests
+from huggingface_hub import hf_hub_url, HfFileSystem
+from flask import Flask, request, jsonify, Response, stream_with_context
 
 from src.classes import *
 from src.rkllm import *
@@ -50,6 +51,7 @@ app = Flask(__name__)
 # POST /load_model
 # POST /unload_model
 # POST /generate
+# POST /pull
 
 # Route pour voir les modèles
 @app.route('/models', methods=['GET'])
@@ -68,24 +70,54 @@ def list_models():
 # route pour pull à finir (manque de temps actuellement)
 @app.route('/pull', methods=['POST'])
 def pull_model():
-    data = request.json
-    if "model" not in data:
-        return jsonify({"error": "Veuillez mentionner un modèle."})
+    @stream_with_context
+    def generate_progress():
+        data = request.json
+        if "model" not in data:
+            yield "Error: Model not specified.\n"
+            return
 
-    splitted = data["model"].split('/')
-    if len(splitted) < 3:
-        return jsonify({"error": f"Le path: {data["model"]} n'est pas valide!"})
+        splitted = data["model"].split('/')
+        if len(splitted) < 3:
+            yield f"Error: Invalid path '{data['model']}'\n"
+            return
 
-    file = splitted[2]
-    repo = data["model"].replace(file, "")
+        file = splitted[2]
+        repo = data["model"].replace(f"/{file}", "")
 
-    print(f"repo: {repo}\nfile: {file}")
+        try:
+            # Use Hugging Face HfFileSystem to get the file metadata
+            fs = HfFileSystem()
+            file_info = fs.info(repo + "/" + file)
 
-    #https://huggingface.co/punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4/blob/main/TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm
-    model_path = hf_hub_download(repo_id=repo, filename=file)
-    
-    print(model_path)
-    os.system(f"mv {model_path} ~/RKLLAMA/models/")
+            total_size = file_info["size"]  # File size in bytes
+            if total_size == 0:
+                yield "Error: Unable to retrieve file size.\n"
+                return
+
+            local_filename = os.path.join(os.path.expanduser("~/RKLLAMA/models"), file)
+            os.makedirs(os.path.dirname(local_filename), exist_ok=True)
+
+            yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
+
+            # Download the file with progress
+            url = hf_hub_url(repo_id=repo, filename=file)
+            with requests.get(url, stream=True) as r, open(local_filename, "wb") as f:
+                downloaded_size = 0
+                chunk_size = 8192  # 8KB
+
+                for chunk in r.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        progress = int((downloaded_size / total_size) * 100)
+                        yield f"{progress}%\n"
+
+            yield "Download complete.\n"
+        except Exception as e:
+            yield f"Error: {str(e)}\n"
+
+    return Response(generate_progress(), content_type='text/plain')
 
 # Route pour charger un modèle dans le NPU
 @app.route('/load_model', methods=['POST'])
