@@ -177,6 +177,19 @@ def switch_model(new_model):
 
     return True
 
+def remove_model(model):
+    response = requests.get(API_URL + "current_model")
+    if response.status_code == 200:
+        current_model = response.json().get("model_name")
+        if current_model == model:
+            print(f"{YELLOW}Déchargement du modèle actuel avant la suppression: {current_model}{RESET}")
+            unload_model()
+
+    response_rm = requests.delete(API_URL + "remove", json={"model": model})
+
+    if response_rm.status_code == 200:
+        print(f"{GREEN}Le modèle a été supprimé avec succès!{RESET}")
+
 def pull_model(model):
 
     if model is None or model == "":
@@ -297,6 +310,12 @@ def main():
             if not switch_model(sys.argv[2]):
                 return
             chat()
+
+        case "rm":
+            if sys.argv[2] is None:
+                print(f"{RED}Erreur: Vous deez spécifier le nom du modèle.{RESET}")
+            else:
+                remove_model(sys.argv[2])
 
         case "pull":
             pull_model(sys.argv[2] if len(sys.argv) < 2 else "" )

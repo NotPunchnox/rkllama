@@ -47,11 +47,12 @@ def unload_model():
 app = Flask(__name__)
 
 # Routes:
-# GET  /models
-# POST /load_model
-# POST /unload_model
-# POST /generate
-# POST /pull
+# GET    /models
+# POST   /load_model
+# POST   /unload_model
+# POST   /generate
+# POST   /pull
+# DELETE /rm
 
 # Route pour voir les modèles
 @app.route('/models', methods=['GET'])
@@ -66,6 +67,21 @@ def list_models():
     print(models)
     return jsonify({"models": models}), 200
 
+@app.route('/rm', methods=['DELETE'])
+# Supprimer un modèle
+def Rm_model():
+
+    data = response.json
+    if "model" not in data:
+        return jsonify({"error": "Veuillez spécifier un modèle."}), 400
+
+    model_path = os.path.expanduser(f"~/RKLLAMA/models/{model}")
+    if not os.path.exists(model_path):
+        return jsonify({"error": f"Le modèle: {model} est introuvable."}), 404
+
+    os.system(f"rm {model_path}")
+
+    return jsonify({"message": f"Le modèle a été supprimé avec succès!"}), 200
 
 # route pour pull à finir (manque de temps actuellement)
 @app.route('/pull', methods=['POST'])
