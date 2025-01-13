@@ -100,20 +100,29 @@ def pull_model():
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
-            # Download the file with progress
-            url = hf_hub_url(repo_id=repo, filename=file)
-            with requests.get(url, stream=True) as r, open(local_filename, "wb") as f:
-                downloaded_size = 0
-                chunk_size = 8192  # 8KB
+            try:
+                # Download the file with progress
+                url = hf_hub_url(repo_id=repo, filename=file)
+                with requests.get(url, stream=True) as r, open(local_filename, "wb") as f:
+                    downloaded_size = 0
+                    chunk_size = 8192  # 8KB
 
-                for chunk in r.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        progress = int((downloaded_size / total_size) * 100)
-                        yield f"{progress}%\n"
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            progress = int((downloaded_size / total_size) * 100)
+                            yield f"{progress}%\n"
 
-            yield "Download complete.\n"
+                yield "Download complete.\n"
+
+            except Exception as download_error:
+                # Remove the file if an error occurs during download
+                if os.path.exists(local_filename):
+                    os.remove(local_filename)
+                yield f"Error during download: {str(download_error)}\n"
+                return
+
         except Exception as e:
             yield f"Error: {str(e)}\n"
 
