@@ -3,15 +3,15 @@ import json
 import sys
 import os
 
-# Constantes pour l'URL de l'API et autres paramètres
-API_URL         = "http://127.0.0.1:8080/"  # Remplacer par l'URL de votre API si vous l'avez changé
+# Constants for API URL and other parameters
+API_URL         = "http://127.0.0.1:8080/" # Replace with your API URL if you've changed it
 STREAM_MODE     = True
 VERBOSE         = False
-HISTORY         = []  # Historique des messages pour maintenir la conversation
+HISTORY         = [] # Message history to keep the conversation going
 PREFIX_MESSAGE  = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 SUFIX_MESSAGE   = "<|im_end|><|im_start|>assistant"
 
-# Codes ANSI pour la couleur
+# ANSI color codes
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
 RED    = "\033[31m"
@@ -19,30 +19,29 @@ GREEN  = "\033[32m"
 YELLOW = "\033[33m"
 CYAN   = "\033[36m"
 
-
-# Affiche le menu d'aide avec toutes les commandes disponibles.
+# Displays the help menu with all available commands.
 def print_help():
-    print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
-    print(f"{YELLOW}help{RESET}                     : Affiche ce menu d'aide.")
-    print(f"{YELLOW}serve{RESET}                    : Lance le serveur ( doit être lancé avec sudo ).")
-    print(f"{YELLOW}list{RESET}                     : Liste tous les modèles disponibles sur le serveur.")
-    print(f"{YELLOW}load model.rkllm{RESET}         : Charge un modèle spécifique.")
-    print(f"{YELLOW}unload{RESET}                   : Décharge le modèle actuellement chargé.")
-    print(f"{YELLOW}run{RESET}                      : Entrez en mode conversation avec le modèle.")
-    print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Télécharge un modèle via un fichier sur huggingface.")
-    print(f"{YELLOW}exit{RESET}                     : Quitte le programme.")
+    print(f"{CYAN}{BOLD}Available commands:{RESET}")
+    print(f"{YELLOW}help{RESET}                     : Displays this help menu.")
+    print(f"{YELLOW}serve{RESET}                    : Starts the server.")
+    print(f"{YELLOW}list{RESET}                     : Lists all available models on the server.")
+    print(f"{YELLOW}load model.rkllm{RESET}         : Loads a specific model.")
+    print(f"{YELLOW}unload{RESET}                   : Unloads the currently loaded model.")
+    print(f"{YELLOW}run{RESET}                      : Enters conversation mode with the model.")
+    print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Downloads a model via a file from Hugging Face.")
+    print(f"{YELLOW}exit{RESET}                     : Exits the program.")
 
 def print_help_chat():
-    print(f"{CYAN}{BOLD}Commandes disponibles:{RESET}")
-    print(f"{YELLOW}/help{RESET}           : Affiche ce menu d'aide.")
-    print(f"{YELLOW}/clear{RESET}          : Supprime l'historique de conversation actuel.")
-    print(f"{YELLOW}/cls ou /c{RESET}      : Supprime le contenu de la console.")
-    print(f"{YELLOW}/set stream{RESET}     : Active le mode stream.")
-    print(f"{YELLOW}/unset stream{RESET}   : Désactive le mode stream.")
-    print(f"{YELLOW}/set verbose{RESET}    : Active le mode verbose.")
-    print(f"{YELLOW}/unset verbose{RESET}  : Désactive le mode verbose.")
-    print(f"{YELLOW}/set system{RESET}     : Modifie le message système.")
-    print(f"{YELLOW}exit{RESET}            : Quitte la conversation.\n")
+    print(f"{CYAN}{BOLD}Available commands:{RESET}")
+    print(f"{YELLOW}/help{RESET}           : Displays this help menu.")
+    print(f"{YELLOW}/clear{RESET}          : Clears the current conversation history.")
+    print(f"{YELLOW}/cls or /c{RESET}      : Clears the console content.")
+    print(f"{YELLOW}/set stream{RESET}     : Enables stream mode.")
+    print(f"{YELLOW}/unset stream{RESET}   : Disables stream mode.")
+    print(f"{YELLOW}/set verbose{RESET}    : Enables verbose mode.")
+    print(f"{YELLOW}/unset verbose{RESET}  : Disables verbose mode.")
+    print(f"{YELLOW}/set system{RESET}     : Modifies the system message.")
+    print(f"{YELLOW}exit{RESET}            : Exits the conversation.\n")
 
 def check_status():
     try:
@@ -57,13 +56,13 @@ def list_models():
         response = requests.get(API_URL + "models")
         if response.status_code == 200:
             models = response.json().get("models", [])
-            print(f"{GREEN}{BOLD}Modèles disponibles:{RESET}")
+            print(f"{GREEN}{BOLD}Available models:{RESET}")
             for model in models:
                 print(f"- {model}")
         else:
-            print(f"{RED}Erreur lors de la récupération des modèles: {response.status_code} - {response.text}{RESET}")
+            print(f"{RED}Error retrieving models: {response.status_code} - {response.text}{RESET}")
     except requests.RequestException as e:
-        print(f"{RED}Erreur de requête: {e}{RESET}")
+        print(f"{RED}Query error: {e}{RESET}")
 
 
 # Charge un modèle spécifique sur le serveur.
@@ -72,13 +71,13 @@ def load_model(model_name):
     try:
         response = requests.post(API_URL + "load_model", json=payload)
         if response.status_code == 200:
-            print(f"{GREEN}{BOLD}Modèle {model_name} chargé avec succès.{RESET}")
+            print(f"{GREEN}{BOLD}Model {model_name} loaded successfully.{RESET}")
             return True
         else:
-            print(f"{RED}Erreur lors du chargement du modèle: {response.status_code} - {response.json().get('error', response.text)}{RESET}")
+            print(f"{RED}Error loading model: {response.status_code} - {response.json().get('error', response.text)}{RESET}")
         return False
     except requests.RequestException as e:
-        print(f"{RED}Erreur de requête: {e}{RESET}")
+        print(f"{RED}Query error: {e}{RESET}")
         return False
 
 
@@ -87,11 +86,11 @@ def unload_model():
     try:
         response = requests.post(API_URL + "unload_model")
         if response.status_code == 200:
-            print(f"{GREEN}{BOLD}Modèle déchargé avec succès.{RESET}")
+            print(f"{GREEN}{BOLD}Model successfully unloaded.{RESET}")
         else:
-            print(f"{RED}Erreur lors du déchargement du modèle: {response.status_code} - {response.json().get('error', response.text)}{RESET}")
+            print(f"{RED}Error when unloading model: {response.status_code} - {response.json().get('error', response.text)}{RESET}")
     except requests.RequestException as e:
-        print(f"{RED}Erreur de requête: {e}{RESET}")
+        print(f"{RED}Query error: {e}{RESET}")
 
 # Envoie un message au modèle chargé et affiche la réponse.
 def send_message(message):
@@ -116,7 +115,12 @@ def send_message(message):
                 if response.status_code == 200:
                     print(f"{CYAN}{BOLD}Assistant:{RESET} ", end="")
                     assistant_message = ""
-                    final_json        = ""
+                    final_json        = {
+                        "usage": {
+                            "tokens_per_second": 0,
+                            "completion_tokens": 0
+                        }
+                    }
 
                     for line in response.iter_lines(decode_unicode=True):
                         if line:
@@ -132,8 +136,10 @@ def send_message(message):
                                 print(f"{RED}Erreur lors de la détection de la réponse JSON.{RESET}")
 
                     if VERBOSE == True:
-                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {final_json["usage"]["tokens_per_second"]}")
-                        print(f"{GREEN}Nombre de tokens  {RESET}: {final_json["usage"]["completion_tokens"]}")
+                        tokens_per_second = final_json["usage"]["tokens_per_second"]
+                        completion_tokens = final_json["usage"]["completion_tokens"]
+                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {tokens_per_second}")
+                        print(f"{GREEN}Nombre de tokens  {RESET}: {completion_tokens}")
 
                     HISTORY.append({"role": "assistant", "content": assistant_message})
 
@@ -152,9 +158,11 @@ def send_message(message):
                 print(f"{CYAN}{BOLD}Assistant:{RESET} {assistant_message}")
 
                 if VERBOSE == True:
-                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {response_json["usage"]["tokens_per_second"]}")
-                        print(f"{GREEN}Nombre de tokens  {RESET}: {response_json["usage"]["completion_tokens"]}")
-
+                        tokens_per_second = final_json["usage"]["tokens_per_second"]
+                        completion_tokens = final_json["usage"]["completion_tokens"]
+                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {tokens_per_second}")
+                        print(f"{GREEN}Nombre de tokens  {RESET}: {completion_tokens}")
+                        
                 HISTORY.append({"role": "assistant", "content": assistant_message})
             else:
                 print(f"{RED}Erreur lors de la requête: {response.status_code} - {response.text}{RESET}")
