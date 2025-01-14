@@ -299,43 +299,41 @@ def main():
         sys.exit(0)
 
     # Start of condition sequence
-    match command:
-        
-        case "help":
-            print_help()
+    if command == "help":
+        print_help()
 
-        case "serve":
-            os.system(f"bash ~/RKLLAMA/server.sh")
+    elif command == "serve":
+        os.system(f"bash ~/RKLLAMA/server.sh")
 
-        case "list":
-            list_models()
+    elif command =="list":
+        list_models()
 
-        case "load_model:":
-            if len(sys.argv) < 3:
-                print(f"{RED}Error: You must specify the model name.{RESET}")
-            else:
-                load_model(sys.argv[2])
+    elif command == "load_model":
+        if len(sys.argv) < 3:
+            print(f"{RED}Error: You must specify the model name.{RESET}")
+        else:
+            load_model(sys.argv[2])
+    
+    elif command == "unload":
+        unload_model()
 
-        case "unload":
-            unload_model()
-        
-        case "run":
-            if not switch_model(sys.argv[2]):
-                return
-            chat()
-
-        case "rm":
-            if sys.argv[2] is None:
-                print(f"{RED}Error: You must specify the model name.{RESET}")
-            else:
-                remove_model(sys.argv[2])
-
-        case "pull":
-            pull_model(sys.argv[2] if len(sys.argv) < 2 else "" )
-        
-        case _:
-            print(f"{RED}Unknown command: {command}.{RESET}")
-            print_help()
+    elif command == "run":
+        if not switch_model(sys.argv[2]):
+            return
+        chat()
+            
+    elif command == "rm":
+        if sys.argv[2] is None:
+            print(f"{RED}Error: You must specify the model name.{RESET}")
+        else:
+            remove_model(sys.argv[2])
+    
+    elif command == "pull":
+        pull_model(sys.argv[2] if len(sys.argv) < 2 else "" )
+    
+    else:
+        print(f"{RED}Unknown command: {command}.{RESET}")
+        print_help()
 
 
 # Launching the main function: program start
