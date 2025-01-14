@@ -13,7 +13,7 @@ from src.variables import *
 from src.process import Request
 
 def print_color(message, color):
-    # Fonction pour afficher des messages en couleur
+    # Function for displaying color messages
     colors = {
         "red": "\033[91m",
         "green": "\033[92m",
@@ -25,16 +25,16 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-current_model = None  # Variable globale pour stocker le modèle chargé
-modele_rkllm = None  # Instance du modèle
+current_model = None  # Global variable for storing the loaded model
+modele_rkllm = None  # Model instance
 
 def load_model(model_name):
     global modele_rkllm
     model_path = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     if not os.path.exists(model_path):
-        return None, f"Modèle {model_name} introuvable dans le dossier /models."
+        return None, f"Model {model_name} not found in /models folder."
     
-    # Initialisation du modèle
+    # Model initialization
     modele_rkllm = RKLLM(model_path)
     return modele_rkllm, None
 
@@ -54,36 +54,37 @@ app = Flask(__name__)
 # POST   /pull
 # DELETE /rm
 
-# Route pour voir les modèles
+# Route to view models
 @app.route('/models', methods=['GET'])
 def list_models():
-    # Retourner la liste des modèles disponibles dans ~/RKLLAMA/models
+    # Return the list of available models in ~/RKLLAMA/models
     models_dir = os.path.expanduser("~/RKLLAMA/models")
     if not os.path.exists(models_dir):
-        return jsonify({"error": "Le dossier ~/RKLLAMA/models est introuvable."}), 500
+        return jsonify({"error": "The ~/RKLLAMA/models folder cannot be found."}), 500
 
     print(os.listdir(models_dir))
     models = [f for f in os.listdir(models_dir) if str(f).endswith(".rkllm")]
     print(models)
     return jsonify({"models": models}), 200
 
+
+# Delete a model
 @app.route('/rm', methods=['DELETE'])
-# Supprimer un modèle
 def Rm_model():
 
     data = response.json
     if "model" not in data:
-        return jsonify({"error": "Veuillez spécifier un modèle."}), 400
+        return jsonify({"error": "Please specify a model."}), 400
 
     model_path = os.path.expanduser(f"~/RKLLAMA/models/{model}")
     if not os.path.exists(model_path):
-        return jsonify({"error": f"Le modèle: {model} est introuvable."}), 404
+        return jsonify({"error": f"The model: {model} cannot be found."}), 404
 
     os.system(f"rm {model_path}")
 
-    return jsonify({"message": f"Le modèle a été supprimé avec succès!"}), 200
+    return jsonify({"message": f"The model has been successfully deleted!"}), 200
 
-# route pour pull à finir (manque de temps actuellement)
+# route to pull a model
 @app.route('/pull', methods=['POST'])
 def pull_model():
     @stream_with_context
@@ -144,18 +145,18 @@ def pull_model():
 
     return Response(generate_progress(), content_type='text/plain')
 
-# Route pour charger un modèle dans le NPU
+# Route for loading a model into the NPU
 @app.route('/load_model', methods=['POST'])
 def load_model_route():
     global current_model, modele_rkllm
 
-    # Vérifier si un modèle est actuellement chargé
+    # Check if a model is currently loaded
     if modele_rkllm:
-        return jsonify({"error": "Un modèle est déjà chargé. Veuillez d'abord le décharger."}), 400
+        return jsonify({"error": "A model is already loaded. Please unload it first."}), 400
 
     data = request.json
     if "model_name" not in data:
-        return jsonify({"error": "Veuillez fournir le nom du modèle à charger."}), 400
+        return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
 
     model_name = data["model_name"]
     modele_rkllm, error = load_model(model_name)
@@ -163,21 +164,21 @@ def load_model_route():
         return jsonify({"error": error}), 400
 
     current_model = model_name
-    return jsonify({"message": f"Modèle {model_name} chargé avec succès."}), 200
+    return jsonify({"message": f"Model {model_name} loaded successfully."}), 200
 
-# Route pour décharger un modèle du NPU
+# Route to unload a model from the NPU
 @app.route('/unload_model', methods=['POST'])
 def unload_model_route():
     global current_model, modele_rkllm
 
     if not modele_rkllm:
-        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 400
+        return jsonify({"error": "No models are currently loaded."}), 400
 
     unload_model()
     current_model = None
-    return jsonify({"message": "Modèle déchargé avec succès."}), 200
+    return jsonify({"message": "Model successfully unloaded!"}), 200
 
-# Route pour récupérer le modèle en cours
+# Route to retrieve the current model
 @app.route('/current_model', methods=['GET'])
 def get_current_model():
     global current_model
@@ -185,49 +186,49 @@ def get_current_model():
     if current_model:
         return jsonify({"model_name": current_model}), 200
     else:
-        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 404
+        return jsonify({"error": "No models are currently loaded."}), 404
 
-# Route pour faire une requête au modèle
+# Route to make a request to the model
 @app.route('/generate', methods=['POST'])
 def recevoir_message():
     global modele_rkllm
 
     if not modele_rkllm:
-        return jsonify({"error": "Aucun modèle n'est actuellement chargé."}), 400
+        return jsonify({"error": "No models are currently loaded."}), 400
 
     verrou.acquire()
     return Request(modele_rkllm)
 
-# Route par défaut
+# Default route
 @app.route('/', methods=['GET'])
 def default_route():
-    return jsonify({"message": "Welcome to RK-LLama !", "github": "https://github.com/notpunhnox/rk-llama"}), 200
+    return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rk-llama"}), 200
 
-# Fonction de lancement
+# Launch function
 def main():
-    # Définir les arguments de ligne de commande
-    parser = argparse.ArgumentParser(description="Initialisation du serveur RKLLM avec des options configurables.")
-    parser.add_argument('--target_platform', type=str, help="Plateforme cible : par exemple, rk3588/rk3576.")
+    # define the arguments for launch function
+    parser = argparse.ArgumentParser(description="RKLLM server initialization with configurable options.")
+    parser.add_argument('--target_platform', type=str, help="Target platform: rk3588/rk3576.")
     args = parser.parse_args()
 
     if not args.target_platform:
-        print_color("Erreur argument manquant: --target_platform")
+        print_color("Error argument not found: --target_platform")
     else:
         if args.target_platform not in ["rk3588", "rk3576"]:
-            print_color("Erreur : Plateforme cible invalide. Veuillez entrer rk3588 ou rk3576.", "red")
+            print_color("Error : Invalid target platform. Please enter rk3588 or rk3576.", "red")
             sys.exit(1)
-        print_color(f"Fixation de la fréquence pour la plateforme {args.target_platform}...", "cyan")
+        print_color(f"Setting the frequency for the {args.target_platform} platform...", "cyan")
         library_path = os.path.expanduser(f"~/RKLLAMA/lib/fix_freq_{args.target_platform}.sh")
         commande = f"sudo bash {library_path}"
         subprocess.run(commande, shell=True)
 
-    # Définir une limite de ressources
+    # Define ressources limite
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
-    print_color("Démarrage de l'application Flask sur http://0.0.0.0:8080", "blue")
+    print_color("Start the API at http://localhost:8080", "blue")
     app.run(host='0.0.0.0', port=8080, threaded=True, debug=False)
 
 
-# Lancer le programme
+# Launch program
 if __name__ == "__main__":
     main()
