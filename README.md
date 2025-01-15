@@ -1,5 +1,7 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
+### Version: 0.0.1
+
 French version: [click](./documentation/french.md)
 
 ## Overview
