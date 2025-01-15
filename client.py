@@ -110,7 +110,8 @@ def send_message(message):
         ]
     )
 
-    print(history_formatted)
+    if VERBOSE:
+        print(history_formatted)
 
     payload = {
         "messages": PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE,
