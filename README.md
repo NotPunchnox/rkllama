@@ -116,6 +116,7 @@ This will automatically download the specified model file and prepare it for use
 
 *Example with Qwen2.5 3b from [c01zaut](https://huggingface.co/c01zaut): https://huggingface.co/c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4*
 ![Image](./documentation/ressources/pull.png)
+
 ---
 
 ### **Manual Installation**
