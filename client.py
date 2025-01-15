@@ -287,8 +287,25 @@ def chat():
             send_message(user_input)
 
 def update():
+    setup_path = os.path.expanduser('~/RKLLAMA/setup.sh')
+    
+    # Check if setup.sh exists
+    if not os.path.exists(setup_path):
+        print("setup.sh not found. Downloading the setup script...")
+        url = "https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/setup.sh"
+        
+        # Download setup.sh
+        try:
+            urllib.request.urlretrieve(url, setup_path)
+            print("setup.sh downloaded successfully.")
+        except Exception as e:
+            print(f"Failed to download setup.sh: {e}")
+            return
+
+    # Run git pull and setup.sh
+    print("Updating the repository and running setup.sh...")
     os.system('git pull')
-    os.system('bash ./setup.sh')
+    os.system(f'bash {setup_path}')
 
 
 def main():
