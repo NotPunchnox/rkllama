@@ -71,7 +71,6 @@ def list_models():
 # Delete a model
 @app.route('/rm', methods=['DELETE'])
 def Rm_model():
-
     data = response.json
     if "model" not in data:
         return jsonify({"error": "Please specify a model."}), 400
@@ -80,7 +79,7 @@ def Rm_model():
     if not os.path.exists(model_path):
         return jsonify({"error": f"The model: {model} cannot be found."}), 404
 
-    os.system(f"rm {model_path}")
+    os.remove(model_path)
 
     return jsonify({"message": f"The model has been successfully deleted!"}), 200
 

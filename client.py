@@ -23,12 +23,14 @@ CYAN   = "\033[36m"
 def print_help():
     print(f"{CYAN}{BOLD}Available commands:{RESET}")
     print(f"{YELLOW}help{RESET}                     : Displays this help menu.")
+    print(f"{YELLOW}update{RESET}                   : Checks for available updates and upgrades.")
     print(f"{YELLOW}serve{RESET}                    : Starts the server.")
     print(f"{YELLOW}list{RESET}                     : Lists all available models on the server.")
+    print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Downloads a model via a file from Hugging Face.")
+    print(f"{YELLOW}rm model.rkllm{RESET}           : Remove the model.")
     print(f"{YELLOW}load model.rkllm{RESET}         : Loads a specific model.")
     print(f"{YELLOW}unload{RESET}                   : Unloads the currently loaded model.")
     print(f"{YELLOW}run{RESET}                      : Enters conversation mode with the model.")
-    print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Downloads a model via a file from Hugging Face.")
     print(f"{YELLOW}exit{RESET}                     : Exits the program.")
 
 def print_help_chat():
@@ -284,6 +286,10 @@ def chat():
             # If content is not a command, then send content to template
             send_message(user_input)
 
+def update():
+    os.system('git pull')
+    os.system('bash ./setup.sh')
+
 
 def main():
     # Check minimum number of entries
@@ -294,7 +300,7 @@ def main():
 
     command = sys.argv[1]
 
-    if check_status() != 200 and command != "serve":
+    if check_status() != 200 and command not in ['serve', 'update']:
         print(f"{RED}Error: Server not started!\n{RESET}rkllama serve{CYAN} command to start the server.{RESET}")
         sys.exit(0)
 
@@ -304,6 +310,9 @@ def main():
 
     elif command == "serve":
         os.system(f"bash ~/RKLLAMA/server.sh")
+
+    elif command == "update":
+        update()
 
     elif command =="list":
         list_models()
