@@ -143,13 +143,13 @@ def send_message(message):
                                 sys.stdout.flush()
                                 assistant_message += content_chunk
                             except json.JSONDecodeError:
-                                print(f"{RED}Erreur lors de la détection de la réponse JSON.{RESET}")
+                                print(f"{RED}Error detecting JSON response.{RESET}")
 
                     if VERBOSE == True:
                         tokens_per_second = final_json["usage"]["tokens_per_second"]
                         completion_tokens = final_json["usage"]["completion_tokens"]
-                        print(f"\n\n{GREEN}Tokens par seconde{RESET}: {tokens_per_second}")
-                        print(f"{GREEN}Nombre de tokens  {RESET}: {completion_tokens}")
+                        print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
+                        print(f"{GREEN}Number of tokens  {RESET}: {completion_tokens}")
 
                     HISTORY.append({"role": "assistant", "content": assistant_message})
 
@@ -259,7 +259,7 @@ def chat():
     print_help_chat()
     
     while True:
-        user_input = input(f"{CYAN}Vous:{RESET} ")
+        user_input = input(f"{CYAN}You:{RESET} ")
 
         if user_input == "/help":
             print_help_chat()
