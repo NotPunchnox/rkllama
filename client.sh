@@ -1,3 +1,3 @@
-# Lancement du client avec l'argument mentionné
+# Launch the client with the mentionned arguments
 
 python3 ~/RKLLAMA/client.py $*
