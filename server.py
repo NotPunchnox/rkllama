@@ -130,8 +130,6 @@ def pull_model():
                             progress = int((downloaded_size / total_size) * 100)
                             yield f"{progress}%\n"
 
-                yield "Download complete.\n"
-
             except Exception as download_error:
                 # Remove the file if an error occurs during download
                 if os.path.exists(local_filename):

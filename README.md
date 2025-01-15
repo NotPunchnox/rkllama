@@ -24,6 +24,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 
 ## Main Features
 - **Running models on NPU.**
+- **Pull models directly from Huggingface**
+- **include a API REST with documentation**
 - **Listing available models.**
 - **Dynamic loading and unloading of models.**
 - **Inference requests.**
@@ -112,6 +114,8 @@ File ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkll
 
 This will automatically download the specified model file and prepare it for use with RKLLAMA.
 
+*Example with Qwen2.5 3b from [c01zaut](https://huggingface.co/c01zaut): https://huggingface.co/c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4*
+![Image](./documentation/ressources/pull.png)
 ---
 
 ### **Manual Installation**
