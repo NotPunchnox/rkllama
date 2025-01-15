@@ -285,7 +285,7 @@ def chat():
             print(f"{RED}Verbose mode successfully deactivated!{RESET}")
         elif user_input == "/set system":
             system_prompt = input(f"{CYAN}System prompt: {RESET}")
-            SYSTEM = f"<|im_start|>{system_prompt}<|im_end|> <|im_start|>user"
+            PREFIX_MESSAGE = f"<|im_start|>{system_prompt}<|im_end|> <|im_start|>user"
             print(f"{GREEN}System message successfully modified!")
         else:
             # If content is not a command, then send content to template
