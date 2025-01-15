@@ -2,6 +2,10 @@
 
 ### Version: 0.0.1
 
+---
+
+Video demo: [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
+
 French version: [click](./documentation/french.md)
 
 ## Overview
