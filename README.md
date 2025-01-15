@@ -92,8 +92,8 @@ rkllama run <model_name>
 **Output:**
 ![Image](./documentation/ressources/launch_chat.png)
 
-Then start chatting
-![Image](./documentation/ressources/chat.png)
+Then start chatting *( **verbose mode**: display formatted history and statistics )*
+![Image](./documentation/ressources/chat.gif)
 
 ## Adding a Model (`file.rkllm`)
 

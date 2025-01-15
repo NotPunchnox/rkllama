@@ -101,15 +101,19 @@ def unload_model():
 def send_message(message):
     global HISTORY
 
-    # Temporairement désactivé
-    # HISTORY.append({"role": "user", "content": message})
-    # historyParsed = "\n".join(
-    #     [f"{'User' if entry['role'] == 'user' else 'Assistant'}: {entry['content']}" for entry in HISTORY]
-    # )
-    # print(historyParsed)
+    HISTORY.append({"role": "user", "content": message})
+
+    history_formatted = "".join(
+        [
+            f"<|im_start|>{entry['role']} {entry['content']} <|im_end|>"
+            for entry in HISTORY
+        ]
+    )
+
+    print(history_formatted)
 
     payload = {
-        "messages": PREFIX_MESSAGE + message + SUFIX_MESSAGE,
+        "messages": PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE,
         "stream": STREAM_MODE
     }
 
