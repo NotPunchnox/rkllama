@@ -111,7 +111,7 @@ def send_message(message):
     )
 
     if VERBOSE:
-        print(history_formatted)
+        print(PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE)
 
     payload = {
         "messages": PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE,
@@ -254,7 +254,7 @@ def pull_model(model):
 
 # Interactive function for chatting with the model.
 def chat():
-    global VERBOSE, STREAM_MODE, HISTORY
+    global VERBOSE, STREAM_MODE, HISTORY, PREFIX_MESSAGE
     os.system("clear")
     print_help_chat()
     
