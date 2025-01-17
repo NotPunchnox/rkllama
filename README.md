@@ -21,12 +21,11 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **`./client.py`**: Client to interact with the server.
 
 ## Supported Python Versions:
-- Python 3.8
-- Python 3.9
+- Python 3.8 to 3.12
 
 ## Tested Hardware and Environment
 - **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS).
-- **OS**: Ubuntu 24.04 arm64.
+- **OS**: [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
 
 ## Main Features
 - **Running models on NPU.**
