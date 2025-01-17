@@ -1,6 +1,8 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### Version: 0.0.1
+Modified version without miniconda for [Issue #1](https://github.com/NotPunchnox/rkllama/issues/1)
+
+### Version: 0.0.2
 
 ---
 
