@@ -6,7 +6,7 @@
 
 Démo vidéo : [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
 
-Version englais : [cliquer ici](../README.md)
+English version : [cliquer ici](../README.md)
 
 ## Aperçu
 Un serveur permettant d'exécuter et d'interagir avec des modèles LLM optimisés pour les plateformes Rockchip RK3588(S) et RK3576. La différence avec d'autres logiciels similaires tels que [Ollama](https://ollama.com) ou [Llama.cpp](https://github.com/ggerganov/llama.cpp) est que RKLLama permet l'exécution des modèles sur le NPU.
