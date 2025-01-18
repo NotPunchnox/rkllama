@@ -209,7 +209,7 @@ def main():
     args = parser.parse_args()
 
     if not args.target_platform:
-        print_color("Error argument not found: --target_platform")
+        print_color("Error argument not found: --target_platform", "red")
     else:
         if args.target_platform not in ["rk3588", "rk3576"]:
             print_color("Error : Invalid target platform. Please enter rk3588 or rk3576.", "red")
