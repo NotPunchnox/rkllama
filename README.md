@@ -162,10 +162,10 @@ This will automatically download the specified model file and prepare it for use
 ---
 
 ## Upcoming Features
-- Ability to pull models
 - Add multimodal models
 - Add embedding models
-- `GGUF to RKLLM` conversion software
+- Add RKNN for onnx models ( TTS, image classification/segmentation... )
+- `GGUF/HF to RKLLM` conversion software
 
 ---
 
