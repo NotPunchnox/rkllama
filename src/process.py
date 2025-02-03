@@ -2,6 +2,9 @@ import threading, time, json
 from flask import Flask, request, jsonify, Response
 from .variables import global_text, global_status, verrou
 
+PREFIX_MESSAGE  = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
+SUFIX_MESSAGE   = "<|im_end|><|im_start|>assistant"
+
 def Request(modele_rkllm):
 
     try:
