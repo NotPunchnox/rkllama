@@ -47,7 +47,7 @@ def Request(modele_rkllm):
             }
 
             # Traiter les données reçues.
-            user = {"role": "user", "content": message}
+            user = {"role": "user", "content": data["messages"]}
 
             # Ajout du system prompt si il y en a un
             if len(system) < 1:
