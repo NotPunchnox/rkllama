@@ -356,10 +356,10 @@ def main():
         unload_model()
 
     elif command == "run":
-        if len(sys.argv) == 2:
+        if len(sys.argv) == 3:
             if not switch_model(sys.argv[2]):
                 return
-        elif len(sys.argv) >= 3:
+        elif len(sys.argv) >= 4:
             load_model(sys.argv[2], sys.argv[3], sys.argv[4])
 
         chat()

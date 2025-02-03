@@ -1,4 +1,4 @@
-HUGGINGFACE="c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
+HUGGINGFACE_PATH="c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
 
 SYSTEM="Tu es un assistant IA"
 

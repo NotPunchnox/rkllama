@@ -5,6 +5,7 @@ import resource
 import argparse
 import requests
 import shutil
+import time
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
@@ -35,54 +36,50 @@ def create_modelfile(huggingface_path, From, system, temperature):
     struct_modelfile = f"""
 FROM="{From}"
 
-HUGGINGFACE="{huggingface_path}"
+HUGGINGFACE_PATH="{huggingface_path}"
 
 SYSTEM="{system}"
 
 TEMPERATURE={temperature}
 """
 
-    path = f"~/RKLLAMA/models/{From.replace(".rkllm", "")}"
+    # Expand the path to the full directory path
+    path = os.path.expanduser(f"~/RKLLAMA/models/{From.replace('.rkllm', '')}")
 
+    # Create the directory if it doesn't exist
     if not os.path.exists(path):
         os.makedirs(path)
-        
-    with open(f"{path}/Modelfile") as f:
+
+    # Create the Modelfile and write the content
+    with open(os.path.join(path, "Modelfile"), "w") as f:
         f.write(struct_modelfile)
-        f.close()
 
 
 def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
-
     print(huggingface_path, From, model_name)
 
     model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
-    # Check if 'models' directory exist
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
-    
 
-    model_file_path = os.path.join(model_dir, "Modelfile")
+    print(os.path.join(model_dir, "Modelfile"), os.path.exists(os.path.join(model_dir, "Modelfile")))
     
-    # Check if modelfile exist
-    if not os.path.exists(model_file_path) and (huggingface_path == None or From == None):
+    if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
         return None, f"Modelfile not found in '{model_name}' directory."
-    elif huggingface_path != None and From != None:
+    elif huggingface_path is not None and From is not None:
         create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature)
+        time.sleep(0.1)  # Wait for the file system to update
     
-    # Load modelfile
-    load_dotenv(model_file_path)
+    load_dotenv(os.path.join(model_dir, "Modelfile"))
     
-    # Get values in modelfile
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
     
     if not from_value or not huggingface_path:
         return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
     
-    # Initialize the model with the retrieved values
-    modele_rkllm = RKLLM(model_dir+"/"+from_value)
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
     return modele_rkllm, None
 
 def unload_model():
