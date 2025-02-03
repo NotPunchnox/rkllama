@@ -76,7 +76,10 @@ class RKLLM(object):
             rkllm_load_prompt_cache.restype = ctypes.c_int
             rkllm_load_prompt_cache(self.handle, ctypes.c_char_p((prompt_cache_path).encode('utf-8')))
 
-    def run(self, prompt):
+    def tokens_to_ctypes_array(self, tokens, ctype):
+        return (ctype * len(tokens))(*tokens)
+
+    def run(self, prompt_tokens):
         rkllm_lora_params = None
         if self.lora_model_name:
             rkllm_lora_params = RKLLMLoraParam()
@@ -88,9 +91,19 @@ class RKLLM(object):
         rkllm_infer_params.lora_params = ctypes.byref(rkllm_lora_params) if rkllm_lora_params else None
 
         rkllm_input = RKLLMInput()
-        rkllm_input.input_mode = RKLLMInputMode.RKLLM_INPUT_PROMPT
-        rkllm_input.input_data.prompt_input = ctypes.c_char_p((PROMPT_TEXT_PREFIX + prompt + PROMPT_TEXT_POSTFIX).encode('utf-8'))
+        rkllm_input.input_mode = RKLLMInputMode.RKLLM_INPUT_TOKEN
+
+        if prompt_tokens[-1] != 2:  
+            prompt_tokens.append(2)
+
+        token_array = (ctypes.c_int * len(prompt_tokens))(*prompt_tokens)
+
+        rkllm_input.input_data.token_input.input_ids = token_array
+        rkllm_input.input_data.token_input.n_tokens = ctypes.c_ulong(len(prompt_tokens))
+
+
         self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(rkllm_infer_params), None)
+
         return
 
     def release(self):

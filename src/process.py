@@ -7,8 +7,7 @@ bos = "<|im_start|>"
 eos = "<|im_end|>"
 
 system   = "Tu es un assistant artificiel."
-history  = []
-model_id = "punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4"
+model_id = "c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
 
 # messages = [{
 #     "role": "user",
@@ -20,7 +19,6 @@ model_id = "punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4"
 # }]
 
 def Request(modele_rkllm):
-    global history
 
     try:
         # Mettre le serveur en état de blocage.
@@ -47,32 +45,39 @@ def Request(modele_rkllm):
             }
 
             # Traiter les données reçues.
-            user = {"role": "user", "content": data["messages"]}
+            message = {"role": "user", "content": data["messages"]}
 
             # Ajout du system prompt si il y en a un
             if len(system) < 1:
-                prompt = [user]
+                prompt = [message]
             else:
                 prompt = [
                     {"role": "system", "content": system},
-                    user
+                    message
                 ]
 
-            history.append({ role: "assistant", content: "" })
+            print("Prompt 1: ", prompt)
 
             # Mettre en place le tokenizer et le chatTemplate            
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
 
+            print("Prompt final: ", prompt)
+
             sortie_rkllm = ""
-            print("Messages reçus :", messages)
+            print("Messages reçus :", message)
 
 
             if not "stream" in data.keys() or data["stream"] == False:
                 
                 # Créer un thread pour l'inférence du modèle.
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
-                thread_modele.start()
+                try:
+                    thread_modele.start()
+                    print("Thread d’inférence démarré")
+                except Exception as e:
+                    print("Erreur lors du démarrage du thread:", e)
+
 
                 # Attendre la fin du modèle et vérifier périodiquement le thread d'inférence.
                 threadFinish = False
@@ -81,6 +86,7 @@ def Request(modele_rkllm):
 
                 while not threadFinish:
                     while len(global_text) > 0:
+                        print("Global texte actuel: ", global_text, global_status)
                         count += 1
                         sortie_rkllm += global_text.pop(0)
                         time.sleep(0.005)
