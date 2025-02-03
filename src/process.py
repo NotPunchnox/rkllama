@@ -1,11 +1,26 @@
 import threading, time, json
+from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
 from .variables import global_text, global_status, verrou
 
-PREFIX_MESSAGE  = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
-SUFIX_MESSAGE   = "<|im_end|><|im_start|>assistant"
+bos = "<|im_start|>"
+eos = "<|im_end|>"
+
+system   = "Tu es un assistant artificiel."
+history  = []
+model_id = "punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4"
+
+# messages = [{
+#     "role": "user",
+#     "content": "Quelle est la capitale de la France ?"
+# },
+# {
+#     "role": "assistant",
+#     "content": "La capitale de la France est Paris."
+# }]
 
 def Request(modele_rkllm):
+    global history
 
     try:
         # Mettre le serveur en état de blocage.
@@ -32,16 +47,31 @@ def Request(modele_rkllm):
             }
 
             # Traiter les données reçues.
-            messages = data['messages']
-            userInput = messages
-            sortie_rkllm = ""
+            user = {"role": "user", "content": message}
 
+            # Ajout du system prompt si il y en a un
+            if len(system) < 1:
+                prompt = [user]
+            else:
+                prompt = [
+                    {"role": "system", "content": system},
+                    user
+                ]
+
+            history.append({ role: "assistant", content: "" })
+
+            # Mettre en place le tokenizer et le chatTemplate            
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
+
+            sortie_rkllm = ""
             print("Messages reçus :", messages)
+
 
             if not "stream" in data.keys() or data["stream"] == False:
                 
                 # Créer un thread pour l'inférence du modèle.
-                thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
+                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                 thread_modele.start()
 
                 # Attendre la fin du modèle et vérifier périodiquement le thread d'inférence.
@@ -72,7 +102,7 @@ def Request(modele_rkllm):
 
             else:
                 def generate():
-                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
+                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                     thread_modele.start()
 
                     thread_modele_terminé = False
