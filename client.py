@@ -70,8 +70,13 @@ def list_models():
 
 
 # Loads a specific template on the server.
-def load_model(model_name):
-    payload = {"model_name": model_name}
+def load_model(model_name, From=None, huggingface_path=None):
+
+    if From != None and huggingface_path != None:
+        payload = {"model_name": model_name, "huggingface_path": huggingface_path, "from": From}
+    else:
+        payload = {"model_name": model_name}
+
     try:
         response = requests.post(API_URL + "load_model", json=payload)
         if response.status_code == 200:
@@ -351,8 +356,12 @@ def main():
         unload_model()
 
     elif command == "run":
-        if not switch_model(sys.argv[2]):
-            return
+        if len(sys.argv) == 2:
+            if not switch_model(sys.argv[2]):
+                return
+        elif len(sys.argv) >= 3:
+            load_model(sys.argv[2], sys.argv[3], sys.argv[4])
+
         chat()
             
     elif command == "rm":
