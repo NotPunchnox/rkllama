@@ -3,9 +3,6 @@ from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
 from .variables import global_text, global_status, verrou
 
-bos = "<|im_start|>"
-eos = "<|im_end|>"
-
 system   = "Tu es un assistant artificiel."
 model_id = "c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
 
@@ -24,7 +21,6 @@ def Request(modele_rkllm):
         # Mettre le serveur en état de blocage.
         isLocked = True
 
-        # Obtenir les données JSON de la requête POST.
         data = request.json
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
@@ -44,29 +40,22 @@ def Request(modele_rkllm):
                 }
             }
 
-            # Traiter les données reçues.
-            message = {"role": "user", "content": data["messages"]}
+            # Récupérer l'historique du chat depuis la requête JSON
+            messages = data["messages"]
 
-            # Ajout du system prompt si il y en a un
-            if len(system) < 1:
-                prompt = [message]
-            else:
-                prompt = [
-                    {"role": "system", "content": system},
-                    message
-                ]
+            # Ajout du système prompt s'il y en a un
+            prompt = messages if not system else [{"role": "system", "content": system}] + messages
 
             print("Prompt 1: ", prompt)
 
-            # Mettre en place le tokenizer et le chatTemplate            
+            # Mise en place du tokenizer et du chatTemplate
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
 
             print("Prompt final: ", prompt)
+            print("Messages reçus :", messages)
 
             sortie_rkllm = ""
-            print("Messages reçus :", message)
-
 
             if not "stream" in data.keys() or data["stream"] == False:
                 

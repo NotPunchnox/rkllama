@@ -101,25 +101,21 @@ def unload_model():
 def send_message(message):
     global HISTORY
 
-    #HISTORY.append({"role": "user", "content": message})
-#
-    #history_formatted = "".join(
-    #    [
-    #        f"<|im_start|>{entry['role']} {entry['content']} <|im_end|>"
-    #        for entry in HISTORY
-    #    ]
-    #)
-#
-    #if VERBOSE:
-    #    print(PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE)
-#
-    #payload = {
-    #    "messages": PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE,
-    #    "stream": STREAM_MODE
-    #}
+    HISTORY.append({"role": "user", "content": message})
+
+    # messages = [{
+    #     "role": "user",
+    #     "content": "Quelle est la capitale de la France ?"
+    # },
+    # {
+    #     "role": "assistant",
+    #     "content": "La capitale de la France est Paris."
+    # }]
+    if VERBOSE:
+        print(HISTORY)
 
     payload = {
-        "messages": message,
+        "messages": HISTORY,
         "stream": STREAM_MODE
     }
 
