@@ -1,10 +1,8 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### Version: 0.0.1
+## [Version: 0.0.3](#New-Version)
 
----
-
-Video demo: [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
+Video demo ( version 0.0.1 ): [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
 
 French version: [click](./documentation/french.md)
 
@@ -130,8 +128,20 @@ This will automatically download the specified model file and prepare it for use
    - Alternatively, convert your GGUF models into `.rkllm` format (conversion tool coming soon on [my GitHub](https://github.com/notpunchnox)).
 
 2. **Place the Model**  
-   - Navigate to the `~/RKLLAMA/models` directory on your system.  
-   - Place the `.rkllm` files in this directory.  
+   - Navigate to the `~/RKLLAMA/models` directory on your system.
+   - Make a directory with model name.
+   - Place the `.rkllm` files in this directory.
+   - Create `Modelfile` and add this :
+
+   ```env
+    FROM="file.rkllm"
+
+    HUGGINGFACE_PATH="huggingface_repository"
+
+    SYSTEM="Your system prompt"
+
+    TEMPERATURE=1.0
+    ```
 
    Example directory structure:
    ```
@@ -158,6 +168,24 @@ This will automatically download the specified model file and prepare it for use
 **Output:**
 ![Image](./documentation/ressources/uninstall.png)
 
+
+---
+
+# New-Version
+
+**Extended Compatibility**: All models, including DeepSeek, Qwen, Llama, and many others, are now fully supported by RKLLAMA.
+
+**Enhanced Performance**: Instead of using raw prompts, inputs are now tokenized before being sent to the model, which significantly improves response speed.
+
+**Modelfile System**: A new Modelfile system—modeled after Ollama—has been implemented. By simply providing the HuggingFace path, the system automatically initializes both the tokenizer and chattemplate. Additionally, it allows you to adjust parameters such as the model's temperature, its location, and the system prompt.
+
+**Simplified Organization**: Models are now neatly organized into dedicated folders that are automatically created when you run the `rkllama list` command. Only the model name is required to launch a model, as the `.rkllm` files are referenced directly in the Modelfile.
+
+**Automatic Modelfile Creation**: When using the pull command, the Modelfile is generated automatically. For models downloaded before this update, simply run a one-time command (for example: `rkllama run modelname file.rkllm huggingface_path`) to create the Modelfile.
+
+**Future Enhancements**: Upcoming updates will allow further customization of the chattemplate and enable adjustments to additional hyperparameters (such as top_k) to further optimize the user experience.
+
+If you have already downloaded models and do not wish to reinstall everything, please follow this guide: [Rebuild Architecture](./documentation/Guide/version-0.0.3.md)
 
 ---
 
