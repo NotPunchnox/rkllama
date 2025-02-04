@@ -12,13 +12,15 @@ The new directory structure is as follows:
 
 ```r
 ~/RKLLAMA
-    models/
-        DeepSeek-v3-7b/
-            Modelfile
-            deepseek.rkllm
-        Llama3-7b/
-            Modelfile
-            deepseek.rkllm
+    └── models/
+        |
+        |── DeepSeek-v3-7b
+        |   |── Modelfile
+        |   └── deepseek.rkllm
+        |
+        └── Llama3-7b
+            |── Modelfile
+            └── deepseek.rkllm
 ```
 
 ### Previous Architecture (Version 0.0.1)
@@ -27,9 +29,9 @@ Before the update, the structure was as follows:
 
 ```r
 ~/RKLLAMA
-    models/
-        llama3-7b.rkllm
-        qwen2.5-3b.rkllm
+    └── models
+        |── llama3-7b.rkllm
+        └── qwen2.5-3b.rkllm
 ```
 
 ---

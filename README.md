@@ -146,7 +146,9 @@ This will automatically download the specified model file and prepare it for use
    Example directory structure:
    ```
    ~/RKLLAMA/models/
-       └── TinyLlama-1.1B-Chat-v1.0.rkllm
+       └── TinyLlama-1.1B-Chat-v1.0
+           |── Modelfile
+           └── TinyLlama-1.1B-Chat-v1.0.rkllm
    ```
 
 ## Uninstall
@@ -185,7 +187,7 @@ This will automatically download the specified model file and prepare it for use
 
 **Future Enhancements**: Upcoming updates will allow further customization of the chattemplate and enable adjustments to additional hyperparameters (such as top_k) to further optimize the user experience.
 
-If you have already downloaded models and do not wish to reinstall everything, please follow this guide: [Rebuild Architecture](./documentation/Guide/version-0.0.3.md)
+If you have already downloaded models and do not wish to reinstall everything, please follow this guide: [Rebuild Architecture](./documentation/Guide/en/Rebuild-arch.md)
 
 ---
 
