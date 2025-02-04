@@ -108,16 +108,8 @@ def send_message(message):
 
     HISTORY.append({"role": "user", "content": message})
 
-    # messages = [{
-    #     "role": "user",
-    #     "content": "Quelle est la capitale de la France ?"
-    # },
-    # {
-    #     "role": "assistant",
-    #     "content": "La capitale de la France est Paris."
-    # }]
-    if VERBOSE:
-        print(HISTORY)
+    # if VERBOSE == True:
+    #     print(HISTORY)
 
     payload = {
         "messages": HISTORY,
