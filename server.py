@@ -1,19 +1,12 @@
-import sys
-import os
-import subprocess
-import resource
-import argparse
-import requests
-import shutil
-import time
+import sys, os, subprocess, resource, argparse, shutil, time, requests
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
 
 from src.classes import *
 from src.rkllm import *
-from src.variables import * 
 from src.process import Request
+import src.variables as variables
 
 def print_color(message, color):
     # Function for displaying color messages
@@ -56,7 +49,6 @@ TEMPERATURE={temperature}
 
 
 def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
-    global model_id
 
     model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
@@ -72,7 +64,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
         time.sleep(0.1)  # Wait for the file system to update
     
     # Load modelfile
-    load_dotenv(os.path.join(model_dir, "Modelfile"))
+    load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
     
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
@@ -82,8 +74,8 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     if not from_value or not huggingface_path:
         return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
 
-    # Change value of model_id width huggingface_path
-    model_id = huggingface_path
+    # Change value of model_id with huggingface_path
+    variables.model_id = huggingface_path
 
     
     modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
@@ -276,7 +268,7 @@ def recevoir_message():
     if not modele_rkllm:
         return jsonify({"error": "No models are currently loaded."}), 400
 
-    verrou.acquire()
+    variables.verrou.acquire()
     return Request(modele_rkllm)
 
 # Default route
