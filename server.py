@@ -172,7 +172,11 @@ def pull_model():
                 yield "Error: Unable to retrieve file size.\n"
                 return
 
-            local_filename = os.path.join(os.path.expanduser("~/RKLLAMA/models"), file)
+            # Créer un dossier pour le model
+            os.makedirs(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"))
+
+            # Définir le fichier à télécharger
+            local_filename = os.path.join(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"), file)
             os.makedirs(os.path.dirname(local_filename), exist_ok=True)
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
@@ -190,6 +194,9 @@ def pull_model():
                             downloaded_size += len(chunk)
                             progress = int((downloaded_size / total_size) * 100)
                             yield f"{progress}%\n"
+                
+                # Créer le fichier de configuration du model
+                create_modelfile(repo, From=file)
 
             except Exception as download_error:
                 # Remove the file if an error occurs during download
