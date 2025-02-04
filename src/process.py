@@ -1,19 +1,8 @@
 import threading, time, json
 from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
-from .variables import global_text, global_status, verrou
+import src.variables as variables
 
-system   = "Tu es un assistant artificiel."
-model_id = "c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
-
-# messages = [{
-#     "role": "user",
-#     "content": "Quelle est la capitale de la France ?"
-# },
-# {
-#     "role": "assistant",
-#     "content": "La capitale de la France est Paris."
-# }]
 
 def Request(modele_rkllm):
 
@@ -24,7 +13,7 @@ def Request(modele_rkllm):
         data = request.json
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
-            global_status = -1
+            variables.global_status = -1
 
             # Définir la structure de la réponse renvoyée.
             llmResponse = {
@@ -43,17 +32,25 @@ def Request(modele_rkllm):
             # Récupérer l'historique du chat depuis la requête JSON
             messages = data["messages"]
 
-            # Ajout du système prompt s'il y en a un
-            prompt = messages if not system else [{"role": "system", "content": system}] + messages
 
-            print("Prompt 1: ", prompt)
+            # Mise en place du tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
+            supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
+            
+            if variables.system and supports_system_role:
+                prompt = [{"role": "system", "content": variables.system}] + messages
+            else:
+                prompt = messages
 
-            # Mise en place du tokenizer et du chatTemplate
-            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            for i in range(1, len(prompt)):
+                if prompt[i]["role"] == prompt[i - 1]["role"]:
+                    raise ValueError("Les rôles doivent alterner entre 'user' et 'assistant'.")
+
+            # Mise en place du chat Template
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
 
-            print("Prompt final: ", prompt)
-            print("Messages reçus :", messages)
+            #print("Prompt final: ", prompt)
+            #print("Messages reçus :", messages)
 
             sortie_rkllm = ""
 
@@ -74,10 +71,9 @@ def Request(modele_rkllm):
                 start = time.time()
 
                 while not threadFinish:
-                    while len(global_text) > 0:
-                        print("Global texte actuel: ", global_text, global_status)
+                    while len(variables.global_text) > 0:
                         count += 1
-                        sortie_rkllm += global_text.pop(0)
+                        sortie_rkllm += variables.global_text.pop(0)
                         time.sleep(0.005)
 
                         thread_modele.join(timeout=0.005)
@@ -105,16 +101,16 @@ def Request(modele_rkllm):
                     start = time.time()
 
                     while not thread_modele_terminé:
-                        while len(global_text) > 0:
+                        while len(variables.global_text) > 0:
                             count += 1
-                            sortie_rkllm = global_text.pop(0)
+                            sortie_rkllm = variables.global_text.pop(0)
 
                             llmResponse["choices"] = [
                                 {
                                 "role": "assistant",
                                 "content": sortie_rkllm,
                                 "logprobs": None,
-                                "finish_reason": "stop" if global_status == 1 else None,
+                                "finish_reason": "stop" if variables.global_status == 1 else None,
                                 }
                             ]
                             yield f"{json.dumps(llmResponse)}\n\n"
@@ -133,5 +129,5 @@ def Request(modele_rkllm):
         else:
             return jsonify({'status': 'error', 'message': 'Données JSON invalides !'}), 400
     finally:
-        verrou.release()
+        variables.verrou.release()
         est_bloqué = False
