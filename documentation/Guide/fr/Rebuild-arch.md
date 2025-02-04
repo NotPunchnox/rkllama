@@ -10,26 +10,28 @@ Si vous avez des modèles installés avec une version antérieure à la 0.0.3, v
 
 La nouvelle structure de répertoires se présente comme suit :
 
-```r
+```
 ~/RKLLAMA
-    models/
-        DeepSeek-v3-7b/
-            Modelfile
-            deepseek.rkllm
-        Llama3-7b/
-            Modelfile
-            deepseek.rkllm
+    └── models
+        |
+        |── DeepSeek-v3-7b
+        |   |── Modelfile
+        |   └── deepseek.rkllm
+        |
+        └── Llama3-7b
+            |── Modelfile
+            └── deepseek.rkllm
 ```
 
 ### Ancienne Architecture (Version 0.0.1)
 
 Avant la mise à jour, l'organisation était la suivante :
 
-```r
+```
 ~/RKLLAMA
-    models/
-        llama3-7b.rkllm
-        qwen2.5-3b.rkllm
+    └── models
+        |── llama3-7b.rkllm
+        └── qwen2.5-3b.rkllm
 ```
 
 ---

@@ -12,7 +12,7 @@ The new directory structure is as follows:
 
 ```
 ~/RKLLAMA
-    └── models/
+    └── models
         |
         |── DeepSeek-v3-7b
         |   |── Modelfile
