@@ -192,8 +192,9 @@ def switch_model(new_model):
     response = requests.get(API_URL + "current_model")
     if response.status_code == 200:
         current_model = response.json().get("model_name")
+
         if current_model:
-            print(f"{YELLOW}Downloading the current model: {current_model}{RESET}")
+            print(f"{YELLOW}Unloading the current model: {current_model}{RESET}")
             unload_model()
 
     if not load_model(new_model):

@@ -54,9 +54,6 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
-
-    # View config Vars
-    print(os.path.join(model_dir, "Modelfile"), os.path.exists(os.path.join(model_dir, "Modelfile")))
     
     if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
         return None, f"Modelfile not found in '{model_name}' directory."
@@ -70,6 +67,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
 
+    # View config Vars
     print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
     
     if not from_value or not huggingface_path:
