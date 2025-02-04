@@ -10,7 +10,7 @@ If you have models installed with a version older than 0.0.3, follow these steps
 
 The new directory structure is as follows:
 
-```r
+```
 ~/RKLLAMA
     └── models/
         |
@@ -27,7 +27,7 @@ The new directory structure is as follows:
 
 Before the update, the structure was as follows:
 
-```r
+```
 ~/RKLLAMA
     └── models
         |── llama3-7b.rkllm
