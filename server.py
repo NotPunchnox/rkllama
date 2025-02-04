@@ -32,7 +32,7 @@ current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
 
-def create_modelfile(huggingface_path, From, system, temperature):
+def create_modelfile(huggingface_path, From, system="", temperature=1.0):
     struct_modelfile = f"""
 FROM="{From}"
 
@@ -56,7 +56,7 @@ TEMPERATURE={temperature}
 
 
 def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
-    print(huggingface_path, From, model_name)
+    global model_id
 
     model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
@@ -71,13 +71,20 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
         create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature)
         time.sleep(0.1)  # Wait for the file system to update
     
+    # Load modelfile
     load_dotenv(os.path.join(model_dir, "Modelfile"))
     
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
+
+    print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
     
     if not from_value or not huggingface_path:
         return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
+
+    # Change value of model_id width huggingface_path
+    model_id = huggingface_path
+
     
     modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
     return modele_rkllm, None
@@ -179,6 +186,9 @@ def pull_model():
             local_filename = os.path.join(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"), file)
             os.makedirs(os.path.dirname(local_filename), exist_ok=True)
 
+            # Créer le fichier de configuration du model
+            create_modelfile(huggingface_path=repo, From=file)
+
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
             try:
@@ -194,9 +204,6 @@ def pull_model():
                             downloaded_size += len(chunk)
                             progress = int((downloaded_size / total_size) * 100)
                             yield f"{progress}%\n"
-                
-                # Créer le fichier de configuration du model
-                create_modelfile(repo, From=file)
 
             except Exception as download_error:
                 # Remove the file if an error occurs during download

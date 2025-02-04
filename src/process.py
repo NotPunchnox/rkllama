@@ -1,10 +1,7 @@
 import threading, time, json
 from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
-from .variables import global_text, global_status, verrou
-
-system   = "Tu es un assistant artificiel."
-model_id = "c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
+from .variables import global_text, global_status, verrou, system, model_id
 
 # messages = [{
 #     "role": "user",
