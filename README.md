@@ -151,6 +151,8 @@ This will automatically download the specified model file and prepare it for use
            └── TinyLlama-1.1B-Chat-v1.0.rkllm
    ```
 
+   *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
+
 ## Uninstall
 
 1. Go to the `~/RKLLAMA/` folder
