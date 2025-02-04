@@ -55,6 +55,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
 
+    # View config Vars
     print(os.path.join(model_dir, "Modelfile"), os.path.exists(os.path.join(model_dir, "Modelfile")))
     
     if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
@@ -224,7 +225,7 @@ def load_model_route():
 
     model_name = data["model_name"]
 
-    print(data)
+    #print(data)
 
     # Check if other params like "from" or "huggingface_path" for create modelfile
     if "from" in data or "huggingface_path" in data:

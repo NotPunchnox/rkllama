@@ -35,7 +35,6 @@ def Request(modele_rkllm):
 
             # Mise en place du tokenizer
             tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
-            print(tokenizer.chat_template)
             supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
             
             if variables.system and supports_system_role:
@@ -50,8 +49,8 @@ def Request(modele_rkllm):
             # Mise en place du chat Template
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
 
-            print("Prompt final: ", prompt)
-            print("Messages reçus :", messages)
+            #print("Prompt final: ", prompt)
+            #print("Messages reçus :", messages)
 
             sortie_rkllm = ""
 
@@ -73,7 +72,6 @@ def Request(modele_rkllm):
 
                 while not threadFinish:
                     while len(variables.global_text) > 0:
-                        print("Global texte actuel: ", variables.global_text, variables.global_status)
                         count += 1
                         sortie_rkllm += variables.global_text.pop(0)
                         time.sleep(0.005)
