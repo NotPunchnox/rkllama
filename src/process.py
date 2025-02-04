@@ -1,6 +1,8 @@
 import threading, time, json
+from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
-from .variables import global_text, global_status, verrou
+import src.variables as variables
+
 
 def Request(modele_rkllm):
 
@@ -8,11 +10,10 @@ def Request(modele_rkllm):
         # Mettre le serveur en état de blocage.
         isLocked = True
 
-        # Obtenir les données JSON de la requête POST.
         data = request.json
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
-            global_status = -1
+            variables.global_status = -1
 
             # Définir la structure de la réponse renvoyée.
             llmResponse = {
@@ -28,18 +29,41 @@ def Request(modele_rkllm):
                 }
             }
 
-            # Traiter les données reçues.
-            messages = data['messages']
-            userInput = messages
-            sortie_rkllm = ""
+            # Récupérer l'historique du chat depuis la requête JSON
+            messages = data["messages"]
 
-            print("Messages reçus :", messages)
+
+            # Mise en place du tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
+            supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
+            
+            if variables.system and supports_system_role:
+                prompt = [{"role": "system", "content": variables.system}] + messages
+            else:
+                prompt = messages
+
+            for i in range(1, len(prompt)):
+                if prompt[i]["role"] == prompt[i - 1]["role"]:
+                    raise ValueError("Les rôles doivent alterner entre 'user' et 'assistant'.")
+
+            # Mise en place du chat Template
+            prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
+
+            #print("Prompt final: ", prompt)
+            #print("Messages reçus :", messages)
+
+            sortie_rkllm = ""
 
             if not "stream" in data.keys() or data["stream"] == False:
                 
                 # Créer un thread pour l'inférence du modèle.
-                thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
-                thread_modele.start()
+                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
+                try:
+                    thread_modele.start()
+                    print("Thread d’inférence démarré")
+                except Exception as e:
+                    print("Erreur lors du démarrage du thread:", e)
+
 
                 # Attendre la fin du modèle et vérifier périodiquement le thread d'inférence.
                 threadFinish = False
@@ -47,9 +71,9 @@ def Request(modele_rkllm):
                 start = time.time()
 
                 while not threadFinish:
-                    while len(global_text) > 0:
+                    while len(variables.global_text) > 0:
                         count += 1
-                        sortie_rkllm += global_text.pop(0)
+                        sortie_rkllm += variables.global_text.pop(0)
                         time.sleep(0.005)
 
                         thread_modele.join(timeout=0.005)
@@ -69,7 +93,7 @@ def Request(modele_rkllm):
 
             else:
                 def generate():
-                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(userInput,))
+                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                     thread_modele.start()
 
                     thread_modele_terminé = False
@@ -77,16 +101,16 @@ def Request(modele_rkllm):
                     start = time.time()
 
                     while not thread_modele_terminé:
-                        while len(global_text) > 0:
+                        while len(variables.global_text) > 0:
                             count += 1
-                            sortie_rkllm = global_text.pop(0)
+                            sortie_rkllm = variables.global_text.pop(0)
 
                             llmResponse["choices"] = [
                                 {
                                 "role": "assistant",
                                 "content": sortie_rkllm,
                                 "logprobs": None,
-                                "finish_reason": "stop" if global_status == 1 else None,
+                                "finish_reason": "stop" if variables.global_status == 1 else None,
                                 }
                             ]
                             yield f"{json.dumps(llmResponse)}\n\n"
@@ -105,5 +129,5 @@ def Request(modele_rkllm):
         else:
             return jsonify({'status': 'error', 'message': 'Données JSON invalides !'}), 400
     finally:
-        verrou.release()
+        variables.verrou.release()
         est_bloqué = False

@@ -70,8 +70,13 @@ def list_models():
 
 
 # Loads a specific template on the server.
-def load_model(model_name):
-    payload = {"model_name": model_name}
+def load_model(model_name, From=None, huggingface_path=None):
+
+    if From != None and huggingface_path != None:
+        payload = {"model_name": model_name, "huggingface_path": huggingface_path, "from": From}
+    else:
+        payload = {"model_name": model_name}
+
     try:
         response = requests.post(API_URL + "load_model", json=payload)
         if response.status_code == 200:
@@ -103,20 +108,22 @@ def send_message(message):
 
     HISTORY.append({"role": "user", "content": message})
 
-    history_formatted = "".join(
-        [
-            f"<|im_start|>{entry['role']} {entry['content']} <|im_end|>"
-            for entry in HISTORY
-        ]
-    )
-
+    # messages = [{
+    #     "role": "user",
+    #     "content": "Quelle est la capitale de la France ?"
+    # },
+    # {
+    #     "role": "assistant",
+    #     "content": "La capitale de la France est Paris."
+    # }]
     if VERBOSE:
-        print(PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE)
+        print(HISTORY)
 
     payload = {
-        "messages": PREFIX_MESSAGE + history_formatted + SUFIX_MESSAGE,
+        "messages": HISTORY,
         "stream": STREAM_MODE
     }
+
 
     try:
         if STREAM_MODE:
@@ -185,8 +192,9 @@ def switch_model(new_model):
     response = requests.get(API_URL + "current_model")
     if response.status_code == 200:
         current_model = response.json().get("model_name")
+
         if current_model:
-            print(f"{YELLOW}Downloading the current model: {current_model}{RESET}")
+            print(f"{YELLOW}Unloading the current model: {current_model}{RESET}")
             unload_model()
 
     if not load_model(new_model):
@@ -349,8 +357,12 @@ def main():
         unload_model()
 
     elif command == "run":
-        if not switch_model(sys.argv[2]):
-            return
+        if len(sys.argv) == 3:
+            if not switch_model(sys.argv[2]):
+                return
+        elif len(sys.argv) >= 4:
+            load_model(sys.argv[2], sys.argv[3], sys.argv[4])
+
         chat()
             
     elif command == "rm":
