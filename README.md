@@ -52,32 +52,8 @@ docker build -t rkllama-docker .
 docker run -p 5000:5000 rkllama-docker
 ```
 
-## Installation
-1. Download RKLLama:
-```bash
-git clone https://github.com/notpunchnox/rkllama
-cd rkllama
-```
-
-2. Install RKLLama
-```bash
-chmod +x setup.sh
-sudo ./setup.sh
-```
-**Output:**
-![Image](./documentation/ressources/setup.png)
 
 ## Usage
-
-### Run Server
-*Virtualization with `conda` is started automatically, as well as the NPU frequency setting.*
-1. Start the server
-```bash
-rkllama serve
-```
-**Output:**
-![Image](./documentation/ressources/server.png)
-
 
 ### Run Client
 1. Command to start the client
