@@ -1,4 +1,5 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
+## Branch: Docker
 
 ## [Version: 0.0.3](#New-Version)
 
@@ -40,6 +41,16 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - Client   : [Installation guide](#installation).
 - API REST : [English documentation](./documentation/api/english.md)
 - API REST : [French documentation](./documentation/api/french.md)
+
+## Installation
+1. Build container
+```bash
+docker build -t rkllama-docker .
+```
+2. Start container
+```bash
+docker run -p 5000:5000 rkllama-docker
+```
 
 ## Installation
 1. Download RKLLama:
