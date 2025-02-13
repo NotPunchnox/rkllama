@@ -203,6 +203,11 @@ If you have already downloaded models and do not wish to reinstall everything, p
 
 System Monitor:
 
+---
+
+## Star History
+
+![Star History Chart](https://api.star-history.com/svg?repos=notpunchnox/rkllama&type=Date)]
 
 ---
 
