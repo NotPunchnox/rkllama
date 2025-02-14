@@ -1,12 +1,11 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
+## Branch: Docker
 
 Modified version without miniconda for [Issue #1](https://github.com/NotPunchnox/rkllama/issues/1)
 
-### Version: 0.0.2
+## [Version: 0.0.3](#New-Version)
 
----
-
-Video demo: [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
+Video demo ( version 0.0.1 ): [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
 
 French version: [click](./documentation/french.md)
 
@@ -46,31 +45,17 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - API REST : [French documentation](./documentation/api/french.md)
 
 ## Installation
-1. Download RKLLama:
+1. Build container
 ```bash
-git clone https://github.com/notpunchnox/rkllama
-cd rkllama
+docker build -t rkllama-docker .
+```
+2. Start container
+```bash
+docker run -p 5000:5000 rkllama-docker
 ```
 
-2. Install RKLLama
-```bash
-chmod +x setup.sh
-sudo ./setup.sh
-```
-**Output:**
-![Image](./documentation/ressources/setup.png)
 
 ## Usage
-
-### Run Server
-*Virtualization with `conda` is started automatically, as well as the NPU frequency setting.*
-1. Start the server
-```bash
-rkllama serve
-```
-**Output:**
-![Image](./documentation/ressources/server.png)
-
 
 ### Run Client
 1. Command to start the client
@@ -132,14 +117,30 @@ This will automatically download the specified model file and prepare it for use
    - Alternatively, convert your GGUF models into `.rkllm` format (conversion tool coming soon on [my GitHub](https://github.com/notpunchnox)).
 
 2. **Place the Model**  
-   - Navigate to the `~/RKLLAMA/models` directory on your system.  
-   - Place the `.rkllm` files in this directory.  
+   - Navigate to the `~/RKLLAMA/models` directory on your system.
+   - Make a directory with model name.
+   - Place the `.rkllm` files in this directory.
+   - Create `Modelfile` and add this :
+
+   ```env
+    FROM="file.rkllm"
+
+    HUGGINGFACE_PATH="huggingface_repository"
+
+    SYSTEM="Your system prompt"
+
+    TEMPERATURE=1.0
+    ```
 
    Example directory structure:
    ```
    ~/RKLLAMA/models/
-       └── TinyLlama-1.1B-Chat-v1.0.rkllm
+       └── TinyLlama-1.1B-Chat-v1.0
+           |── Modelfile
+           └── TinyLlama-1.1B-Chat-v1.0.rkllm
    ```
+
+   *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
 
 ## Uninstall
 
@@ -163,11 +164,29 @@ This will automatically download the specified model file and prepare it for use
 
 ---
 
+# New-Version
+
+**Extended Compatibility**: All models, including DeepSeek, Qwen, Llama, and many others, are now fully supported by RKLLAMA.
+
+**Enhanced Performance**: Instead of using raw prompts, inputs are now tokenized before being sent to the model, which significantly improves response speed.
+
+**Modelfile System**: A new Modelfile system—modeled after Ollama—has been implemented. By simply providing the HuggingFace path, the system automatically initializes both the tokenizer and chattemplate. Additionally, it allows you to adjust parameters such as the model's temperature, its location, and the system prompt.
+
+**Simplified Organization**: Models are now neatly organized into dedicated folders that are automatically created when you run the `rkllama list` command. Only the model name is required to launch a model, as the `.rkllm` files are referenced directly in the Modelfile.
+
+**Automatic Modelfile Creation**: When using the pull command, the Modelfile is generated automatically. For models downloaded before this update, simply run a one-time command (for example: `rkllama run modelname file.rkllm huggingface_path`) to create the Modelfile.
+
+**Future Enhancements**: Upcoming updates will allow further customization of the chattemplate and enable adjustments to additional hyperparameters (such as top_k) to further optimize the user experience.
+
+If you have already downloaded models and do not wish to reinstall everything, please follow this guide: [Rebuild Architecture](./documentation/Guide/en/Rebuild-arch.md)
+
+---
+
 ## Upcoming Features
-- Ability to pull models
 - Add multimodal models
 - Add embedding models
-- `GGUF to RKLLM` conversion software
+- Add RKNN for onnx models ( TTS, image classification/segmentation... )
+- `GGUF/HF to RKLLM` conversion software
 
 ---
 

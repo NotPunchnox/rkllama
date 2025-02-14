@@ -9,9 +9,9 @@ CYAN='\033[0;36m'
 RESET='\033[0m'
 
 # Checking for Git repository updates
-echo -e "${CYAN}Checking for updates...${RESET}"
-git pull
-echo -e "${GREEN}Update check completed successfully!${RESET}"
+#echo -e "${CYAN}Checking for updates...${RESET}"
+#git pull
+#echo -e "${GREEN}Update check completed successfully!${RESET}"
 
 # Creating the RKLLAMA directory
 echo -e "${CYAN}Creating the ~/RKLLAMA directory...${RESET}"

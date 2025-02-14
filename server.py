@@ -1,16 +1,12 @@
-import sys
-import os
-import subprocess
-import resource
-import argparse
-import requests
+import sys, os, subprocess, resource, argparse, shutil, time, requests
+from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
 
 from src.classes import *
 from src.rkllm import *
-from src.variables import * 
 from src.process import Request
+import src.variables as variables
 
 def print_color(message, color):
     # Function for displaying color messages
@@ -28,14 +24,60 @@ def print_color(message, color):
 current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
-def load_model(model_name):
-    global modele_rkllm
-    model_path = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
-    if not os.path.exists(model_path):
-        return None, f"Model {model_name} not found in /models folder."
+
+def create_modelfile(huggingface_path, From, system="", temperature=1.0):
+    struct_modelfile = f"""
+FROM="{From}"
+
+HUGGINGFACE_PATH="{huggingface_path}"
+
+SYSTEM="{system}"
+
+TEMPERATURE={temperature}
+"""
+
+    # Expand the path to the full directory path
+    path = os.path.expanduser(f"~/RKLLAMA/models/{From.replace('.rkllm', '')}")
+
+    # Create the directory if it doesn't exist
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # Create the Modelfile and write the content
+    with open(os.path.join(path, "Modelfile"), "w") as f:
+        f.write(struct_modelfile)
+
+
+def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
+
+    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
-    # Model initialization
-    modele_rkllm = RKLLM(model_path)
+    if not os.path.exists(model_dir):
+        return None, f"Model directory '{model_name}' not found."
+    
+    if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
+        return None, f"Modelfile not found in '{model_name}' directory."
+    elif huggingface_path is not None and From is not None:
+        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature)
+        time.sleep(0.1)  # Wait for the file system to update
+    
+    # Load modelfile
+    load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
+    
+    from_value = os.getenv("FROM")
+    huggingface_path = os.getenv("HUGGINGFACE_PATH")
+
+    # View config Vars
+    print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
+    
+    if not from_value or not huggingface_path:
+        return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
+
+    # Change value of model_id with huggingface_path
+    variables.model_id = huggingface_path
+
+    
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
     return modele_rkllm, None
 
 def unload_model():
@@ -59,13 +101,30 @@ app = Flask(__name__)
 def list_models():
     # Return the list of available models in ~/RKLLAMA/models
     models_dir = os.path.expanduser("~/RKLLAMA/models")
+    
     if not os.path.exists(models_dir):
-        return jsonify({"error": "The ~/RKLLAMA/models folder cannot be found."}), 500
+        return jsonify({"error": "Le dossier ~/RKLLAMA/models est introuvable."}), 500
 
-    print(os.listdir(models_dir))
-    models = [f for f in os.listdir(models_dir) if str(f).endswith(".rkllm")]
-    print(models)
-    return jsonify({"models": models}), 200
+    direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm")]
+
+    for model in direct_models:
+        model_name = os.path.splitext(model)[0]
+        model_dir = os.path.join(models_dir, model_name)
+        
+        os.makedirs(model_dir, exist_ok=True)
+        
+        shutil.move(os.path.join(models_dir, model), os.path.join(model_dir, model))
+    
+    model_dirs = []
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm"):
+                    model_dirs.append(subdir)
+                    break
+
+    return jsonify({"models": model_dirs}), 200
 
 
 # Delete a model
@@ -111,8 +170,15 @@ def pull_model():
                 yield "Error: Unable to retrieve file size.\n"
                 return
 
-            local_filename = os.path.join(os.path.expanduser("~/RKLLAMA/models"), file)
+            # Créer un dossier pour le model
+            os.makedirs(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"))
+
+            # Définir le fichier à télécharger
+            local_filename = os.path.join(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"), file)
             os.makedirs(os.path.dirname(local_filename), exist_ok=True)
+
+            # Créer le fichier de configuration du model
+            create_modelfile(huggingface_path=repo, From=file)
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
@@ -156,7 +222,15 @@ def load_model_route():
         return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
 
     model_name = data["model_name"]
-    modele_rkllm, error = load_model(model_name)
+
+    #print(data)
+
+    # Check if other params like "from" or "huggingface_path" for create modelfile
+    if "from" in data or "huggingface_path" in data:
+        modele_rkllm, error = load_model(model_name, From=data["from"], huggingface_path=data["huggingface_path"])
+    else:
+        modele_rkllm, error = load_model(model_name)
+
     if error:
         return jsonify({"error": error}), 400
 
@@ -193,7 +267,7 @@ def recevoir_message():
     if not modele_rkllm:
         return jsonify({"error": "No models are currently loaded."}), 400
 
-    verrou.acquire()
+    variables.verrou.acquire()
     return Request(modele_rkllm)
 
 # Default route
