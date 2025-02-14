@@ -13,30 +13,12 @@ RESET='\033[0m'
 #git pull
 #echo -e "${GREEN}Update check completed successfully!${RESET}"
 
-# Miniconda installation path
-MINICONDA_DIR=~/miniconda3
-MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
-
-# Check if Miniconda is installed
-if [ -d "$MINICONDA_DIR" ]; then
-    echo -e "${GREEN}Miniconda is already installed.${RESET}"
-else
-    echo -e "${YELLOW}Miniconda is not installed. Proceeding with installation...${RESET}"
-    # Download and install Miniconda
-    wget "$MINICONDA_URL" -O /tmp/miniconda.sh
-    bash /tmp/miniconda.sh -b -p "$MINICONDA_DIR"
-    rm /tmp/miniconda.sh
-    echo -e "${GREEN}Miniconda was successfully installed.${RESET}"
-fi
-
 # Creating the RKLLAMA directory
 echo -e "${CYAN}Creating the ~/RKLLAMA directory...${RESET}"
 mkdir -p ~/RKLLAMA/
 echo -e "${CYAN}Installing resources in ~/RKLLAMA...${RESET}"
 cp -rf . ~/RKLLAMA/
 
-# Activating Miniconda
-source "$MINICONDA_DIR/bin/activate"
 
 # Installing dependencies
 echo -e "${CYAN}Installing dependencies from requirements.txt...${RESET}"
@@ -59,5 +41,5 @@ echo -e "${GREEN}+ Configuration: OK.${RESET}"
 echo -e "${GREEN}+ Installation : OK.${RESET}"
 
 echo -e "${BLUE}Server${GREEN}  : ./server.sh${RESET}"
-echo -e "${BLUE}Client${GREEN}   : ./client.sh${RESET}\n"
-echo -e "${BLUE}Global command : ${RESET}rkllama"
+echo -e "${BLUE}Client${GREEN}  : ./client.sh${RESET}\n"
+echo -e "${BLUE}Global command  : ${RESET}rkllama"
