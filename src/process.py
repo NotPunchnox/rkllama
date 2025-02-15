@@ -22,10 +22,10 @@ def Request(modele_rkllm):
                 "created": None,
                 "choices": [],
                 "usage": {
-                    "prompt_tokens": None,
-                    "completion_tokens": None,
-                    "tokens_per_second": None,
-                    "total_tokens": None
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "tokens_per_second": 0,
+                    "total_tokens": 0
                 }
             }
 
@@ -36,7 +36,7 @@ def Request(modele_rkllm):
             # Mise en place du tokenizer
             tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
             supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
-            
+
             if variables.system and supports_system_role:
                 prompt = [{"role": "system", "content": variables.system}] + messages
             else:
@@ -48,14 +48,13 @@ def Request(modele_rkllm):
 
             # Mise en place du chat Template
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
-
+            llmResponse["usage"]["prompt_tokens"] = llmResponse["usage"]["total_tokens"] = len(prompt)
             #print("Prompt final: ", prompt)
             #print("Messages reçus :", messages)
 
             sortie_rkllm = ""
 
             if not "stream" in data.keys() or data["stream"] == False:
-                
                 # Créer un thread pour l'inférence du modèle.
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                 try:
@@ -78,11 +77,12 @@ def Request(modele_rkllm):
 
                         thread_modele.join(timeout=0.005)
                         threadFinish = not thread_modele.is_alive()
+                        llmResponse["usage"]["completion_tokens"] = count
+                        llmResponse["usage"]["total_tokens"] += 1
 
                     total = time.time() - start
 
                     llmResponse["usage"]["tokens_per_second"] = count / total
-                    llmResponse["usage"]["completion_tokens"] = count
                     llmResponse["choices"] = [{
                         "role": "assistant",
                         "content": sortie_rkllm,
@@ -113,6 +113,8 @@ def Request(modele_rkllm):
                                 "finish_reason": "stop" if variables.global_status == 1 else None,
                                 }
                             ]
+                            llmResponse["usage"]["completion_tokens"] = count
+                            llmResponse["usage"]["total_tokens"] += 1
                             yield f"{json.dumps(llmResponse)}\n\n"
 
                         # Calcul du temps de traitement
@@ -120,7 +122,6 @@ def Request(modele_rkllm):
 
                         # Calcul du nombre de tokens par seconde et du nombre ttal de tokens
                         llmResponse["usage"]["tokens_per_second"] = count / total
-                        llmResponse["usage"]["completion_tokens"] = count
 
                         thread_modele.join(timeout=0.005)
                         thread_modele_terminé = not thread_modele.is_alive()
