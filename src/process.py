@@ -81,7 +81,7 @@ def Request(modele_rkllm):
 
                     total = time.time() - start
 
-                    llmResponse["usage"]["tokens_per_second"] = count / tokens 
+                    llmResponse["usage"]["tokens_per_second"] = count / total
                     llmResponse["usage"]["completion_tokens"] = count
                     llmResponse["choices"] = [{
                         "role": "assistant",
