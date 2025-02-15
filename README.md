@@ -1,10 +1,17 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-## [Version: 0.0.3](#New-Version)
+### [Version: 0.0.3](#New-Version)
 
 Video demo ( version 0.0.1 ): [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
 
-French version: [click](./documentation/french.md)
+
+##  Branches
+
+-  [Without Miniconda](https://github.com/NotPunchnox/rkllama/tree/Without-miniconda): This version runs without Miniconda.
+-  [Rkllama Docker](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker): A fully isolated version running in a Docker container.
+-  [Support All Models](https://github.com/NotPunchnox/rkllama/tree/Support-All-models): This branch ensures all models are tested before being merged into the main branch.
+-  [Docker Package](https://github.com/NotPunchnox/rkllama/pkgs/container/rkllama)
+
 
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
@@ -37,24 +44,43 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 
 ## Documentation
 
+* French version: [click](./documentation/french.md)
+
 - Client   : [Installation guide](#installation).
 - API REST : [English documentation](./documentation/api/english.md)
 - API REST : [French documentation](./documentation/api/french.md)
 
 ## Installation
-1. Download RKLLama:
+
+###  Standard Installation
+
+1. **Clone the repository:**
+
 ```bash
 git clone https://github.com/notpunchnox/rkllama
 cd rkllama
 ```
 
-2. Install RKLLama
+2.  **Install RKLLama:**
+
 ```bash
 chmod +x setup.sh
 sudo ./setup.sh
 ```
+
 **Output:**
 ![Image](./documentation/ressources/setup.png)
+
+
+###  Docker Installation
+
+Pull the RKLLama Docker image:
+
+```bash
+docker  pull  ghcr.io/notpunchnox/rkllama:sha256-9cb0ad4be24fda16abf854a0efe0d678ecd71889c3e9c2c0b517c9ce1235bfa1.sig
+```
+
+*Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
 
 ## Usage
 
@@ -211,5 +237,10 @@ System Monitor:
 
 ---
 
-## Author:
-[notpunchnox](https://github.com/notpunchnox/rkllama)
+##  Author
+
+*  [**NotPunchnox**](https://github.com/notpunchnox/rkllama)
+
+##  Contributors
+
+*  [**ichlaffterlalu**](https://github.com/ichlaffterlalu): Contributed with a pull request for [Docker-Rkllama](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker) and fixed multiple errors.
