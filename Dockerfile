@@ -1,22 +1,16 @@
-FROM ubuntu:24.04
+FROM python:slim
 
-RUN apt-get update && apt-get install -y \
-    git \
-    python3 \
-    python3-pip \
-    wget \
-    curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --upgrade pip
-RUN pip3 install flask
-
-RUN git clone -b "Without-minconda" https://github.com/notpunchnox/rkllama /opt/rkllama
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 wget curl sudo \
+    && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 WORKDIR /opt/rkllama
+
+COPY ./lib /opt/rkllama/lib
+COPY ./src /opt/rkllama/src
+COPY requirements.txt README.md LICENSE *.sh *.py /opt/rkllama/
 RUN chmod +x setup.sh && ./setup.sh
 
-EXPOSE 5000
+EXPOSE 8080
 
-CMD ["rkllama", "serve"]
+CMD ["/usr/local/bin/rkllama", "serve"]
