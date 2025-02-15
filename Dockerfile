@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip wget curl \
+    && apt-get install -y --no-install-recommends python3 python3-pip wget curl sudo \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 WORKDIR /opt/rkllama
