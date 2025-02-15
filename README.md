@@ -51,7 +51,7 @@ docker build -t rkllama-docker .
 ```
 2. Start container
 ```bash
-docker run -p 5000:5000 rkllama-docker
+docker run -p 8080:8080 rkllama-docker
 ```
 
 
