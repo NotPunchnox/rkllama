@@ -5,9 +5,9 @@ RUN apt-get update \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 WORKDIR /opt/rkllama
-RUN chmod +x setup.sh && ./setup.sh
 
 COPY . /opt/rkllama/
+RUN chmod +x setup.sh && ./setup.sh
 
 EXPOSE 5000
 
