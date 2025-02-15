@@ -3,8 +3,8 @@
 ### [Version: 0.0.3](#New-Version)
 
 Video demo ( version 0.0.1 ):
-<iframe width="560" height="315" src="https://www.youtube.com/embed/Kj8U1OGqGPc" frameborder="0" allowfullscreen></iframe>
 
+[![Watch on YouTube](https://img.youtube.com/vi/Kj8U1OGqGPc/0.jpg)](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
 
 ##  Branches
 
