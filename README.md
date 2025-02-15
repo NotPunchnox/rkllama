@@ -2,7 +2,8 @@
 
 ### [Version: 0.0.3](#New-Version)
 
-Video demo ( version 0.0.1 ): [youtube](https://www.youtube.com/watch?v=Kj8U1OGqGPc)
+Video demo ( version 0.0.1 ):
+<iframe width="560" height="315" src="https://www.youtube.com/embed/Kj8U1OGqGPc" frameborder="0" allowfullscreen></iframe>
 
 
 ##  Branches
@@ -220,6 +221,7 @@ If you have already downloaded models and do not wish to reinstall everything, p
 ---
 
 ## Upcoming Features
+- OpenAI/Ollama API compatible.
 - Add multimodal models
 - Add embedding models
 - Add RKNN for onnx models ( TTS, image classification/segmentation... )
