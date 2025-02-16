@@ -314,8 +314,11 @@ def update():
 
 
 def main():
-    # Check minimum number of entries
 
+    use_no_conda = "--no-conda" in sys.argv
+    sys.argv = [arg for arg in sys.argv if arg != "--no-conda"]
+
+    # Check minimum number of entries
     if len(sys.argv) < 2:
         print_help()
         return
@@ -331,7 +334,7 @@ def main():
         print_help()
 
     elif command == "serve":
-        os.system(f"bash ~/RKLLAMA/server.sh")
+        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""}")
 
     elif command == "update":
         update()

@@ -73,12 +73,12 @@ sudo ./setup.sh
 ![Image](./documentation/ressources/setup.png)
 
 
-###  Docker Installation
+###  Rkllama-Server Docker Installation
 
 Pull the RKLLama Docker image:
 
 ```bash
-docker  pull  ghcr.io/notpunchnox/rkllama:sha256-9cb0ad4be24fda16abf854a0efe0d678ecd71889c3e9c2c0b517c9ce1235bfa1.sig
+docker pull ghcr.io/notpunchnox/rkllama:Rkllama-Docker
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
@@ -104,6 +104,7 @@ or
 ```bash
 rkllama help
 ```
+
 **Output:**
 ![Image](./documentation/ressources/commands.png)
 
