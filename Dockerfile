@@ -9,7 +9,7 @@ WORKDIR /opt/rkllama
 COPY ./lib /opt/rkllama/lib
 COPY ./src /opt/rkllama/src
 COPY requirements.txt README.md LICENSE *.sh *.py /opt/rkllama/
-RUN chmod +x setup.sh && ./setup.sh
+RUN chmod +x setup.sh && ./setup.sh --no-conda
 
 EXPOSE 8080
 
