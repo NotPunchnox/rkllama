@@ -19,7 +19,7 @@ done
 # If Miniconda is enabled, check if it exists and activate it
 if $USE_CONDA; then
     if [ -d "$MINICONDA_DIR" ]; then
-        source "$MINICONDA_DIR/bin/activate"
+        (source "$MINICONDA_DIR/bin/activate" "")
     else
         echo -e "${YELLOW}Miniconda not found. Running without it.${RESET}"
     fi
