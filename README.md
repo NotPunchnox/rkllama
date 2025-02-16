@@ -78,7 +78,7 @@ sudo ./setup.sh
 Pull the RKLLama Docker image:
 
 ```bash
-docker pull ghcr.io/notpunchnox/rkllama:Rkllama-Docker
+docker pull ghcr.io/notpunchnox/rkllama
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*

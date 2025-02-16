@@ -5,6 +5,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RESET='\033[0m'
 
+
+CPU_MODEL=""
+
 # Miniconda installation path
 MINICONDA_DIR=~/miniconda3
 
@@ -36,7 +39,14 @@ fi
 
 # Extract the CPU model if not defined in the environment
 if [ -z "$CPU_MODEL" ]; then
-    CPU_MODEL=$(grep "cpu model" /proc/cpuinfo | head -n 1 | sed 's/.*Rockchip \(RK[0-9]*\).*/\1/' | tr '[:upper:]' '[:lower:]')
+  # Extraire le modèle du CPU à partir de /proc/cpuinfo
+  CPU_MODEL=$(cat /proc/cpuinfo | grep "cpu model" | head -n 1 | sed 's/.*Rockchip \(RK[0-9]*\).*/\1/' | tr '[:upper:]' '[:lower:]')
+  echo "CPU_MODEL: $CPU_MODEL"
+fi
+
+if [ -z "$CPU_MODEL" ]; then
+  echo "Erreur : CPU model not found !" 
+  exit 1
 fi
 
 # Start the server with the CPU model as a parameter
