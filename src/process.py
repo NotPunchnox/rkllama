@@ -76,19 +76,18 @@ def Request(modele_rkllm):
                         time.sleep(0.005)
 
                         thread_modele.join(timeout=0.005)
-                        threadFinish = not thread_modele.is_alive()
-                        llmResponse["usage"]["completion_tokens"] = count
-                        llmResponse["usage"]["total_tokens"] += 1
+                    threadFinish = not thread_modele.is_alive()
 
-                    total = time.time() - start
-
-                    llmResponse["usage"]["tokens_per_second"] = count / total
-                    llmResponse["choices"] = [{
-                        "role": "assistant",
-                        "content": sortie_rkllm,
-                        "logprobs": None,
-                        "finish_reason": "stop"
-                    }]
+                total = time.time() - start
+                llmResponse["choices"] = [{
+                    "role": "assistant",
+                    "content": sortie_rkllm,
+                    "logprobs": None,
+                    "finish_reason": "stop"
+                }]
+                llmResponse["usage"]["total_tokens"] = count + llmResponse["usage"]["prompt_tokens"]
+                llmResponse["usage"]["completion_tokens"] = count
+                llmResponse["usage"]["tokens_per_second"] = count / total
                 return jsonify(llmResponse), 200
 
             else:
