@@ -14,8 +14,6 @@ MINICONDA_DIR=~/miniconda3
 # Check if --no-conda argument is passed
 USE_CONDA=true
 for arg in "$@"; do
-
-    echo arg
     
     if [[ "$arg" == "--no-conda" ]]; then
         USE_CONDA=false

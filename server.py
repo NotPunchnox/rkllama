@@ -21,8 +21,10 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
+
 current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
+port=8080
 
 
 def create_modelfile(huggingface_path, From, system="", temperature=1.0):
@@ -59,7 +61,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
         return None, f"Modelfile not found in '{model_name}' directory."
     elif huggingface_path is not None and From is not None:
         create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature)
-        time.sleep(0.1)  # Wait for the file system to update
+        time.sleep(0.1)
     
     # Load modelfile
     load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
@@ -280,7 +282,12 @@ def main():
     # define the arguments for launch function
     parser = argparse.ArgumentParser(description="RKLLM server initialization with configurable options.")
     parser.add_argument('--target_platform', type=str, help="Target platform: rk3588/rk3576.")
+    parser.add_argument('--port', type=str, help="Target port, default: 8080")
     args = parser.parse_args()
+
+
+    if args.port:
+        port = args.port
 
     if not args.target_platform:
         print_color("Error argument not found: --target_platform", "red")
@@ -296,8 +303,8 @@ def main():
     # Define ressources limite
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
-    print_color("Start the API at http://localhost:8080", "blue")
-    app.run(host='0.0.0.0', port=8080, threaded=True, debug=False)
+    print_color(f"Start the API at http://localhost:{port}", "blue")
+    app.run(host='0.0.0.0', port=port, threaded=True, debug=False)
 
 
 # Launch program
