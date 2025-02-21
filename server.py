@@ -275,7 +275,7 @@ def recevoir_message():
 # Default route
 @app.route('/', methods=['GET'])
 def default_route():
-    return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rk-llama"}), 200
+    return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rkllama"}), 200
 
 # Launch function
 def main():
@@ -285,6 +285,7 @@ def main():
     parser.add_argument('--port', type=str, help="Target port, default: 8080")
     args = parser.parse_args()
 
+    print(args)
 
     if args.port:
         port = args.port

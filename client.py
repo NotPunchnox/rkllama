@@ -4,7 +4,8 @@ import sys
 import os
 
 # Constants for API URL and other parameters
-API_URL         = "http://127.0.0.1:8080/" # Replace with your API URL if you've changed it
+PORT            = 8080
+API_URL         = f"http://127.0.0.1:{PORT}/" # Replace with your API URL if you've changed it
 STREAM_MODE     = True
 VERBOSE         = False
 HISTORY         = [] # Message history to keep the conversation going
@@ -334,7 +335,10 @@ def main():
         print_help()
 
     elif command == "serve":
-        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""}")
+        if sys.argv[2]:
+            PORT = sys.argv[2]
+        
+        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""} {PORT}")
 
     elif command == "update":
         update()
