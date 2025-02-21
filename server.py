@@ -285,8 +285,6 @@ def main():
     parser.add_argument('--port', type=str, help="Target port, default: 8080")
     args = parser.parse_args()
 
-    print(args)
-
     if args.port:
         port = args.port
 
