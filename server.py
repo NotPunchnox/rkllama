@@ -277,6 +277,7 @@ def recevoir_message():
 def default_route():
     return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rkllama"}), 200
 
+
 # Launch function
 def main():
     # define the arguments for launch function
@@ -285,8 +286,8 @@ def main():
     parser.add_argument('--port', type=str, help="Target port, default: 8080")
     args = parser.parse_args()
 
-    if args.port:
-        port = args.port
+    port = os.getenv("RKLLAMA_PORT", '8080')
+    print(port)
 
     if not args.target_platform:
         print_color("Error argument not found: --target_platform", "red")

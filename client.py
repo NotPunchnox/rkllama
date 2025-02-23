@@ -3,8 +3,9 @@ import json
 import sys
 import os
 
+
 # Constants for API URL and other parameters
-PORT            = 8080
+PORT            = os.getenv("RKLLAMA_PORT", "8080") if len(os.getenv("RKLLAMA_PORT", "8080")) > 1 else "8080"
 API_URL         = f"http://127.0.0.1:{PORT}/" # Replace with your API URL if you've changed it
 STREAM_MODE     = True
 VERBOSE         = False
@@ -19,6 +20,9 @@ RED    = "\033[31m"
 GREEN  = "\033[32m"
 YELLOW = "\033[33m"
 CYAN   = "\033[36m"
+
+print(PORT)
+
 
 # Displays the help menu with all available commands.
 def print_help():
@@ -315,6 +319,7 @@ def update():
 
 
 def main():
+    global PORT
 
     use_no_conda = "--no-conda" in sys.argv
     sys.argv = [arg for arg in sys.argv if arg != "--no-conda"]
@@ -335,10 +340,11 @@ def main():
         print_help()
 
     elif command == "serve":
-        if sys.argv[2]:
+
+        if len(sys.argv) > 2:
             PORT = sys.argv[2]
-        
-        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""} {PORT}")
+
+        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""} --port={PORT}")
 
     elif command == "update":
         update()
