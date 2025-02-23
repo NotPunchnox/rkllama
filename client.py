@@ -4,7 +4,7 @@ import sys
 import os
 import configparser
 
-CONFIG_FILE = "~/RKLLAMA/rkllama.ini"
+CONFIG_FILE = os.path.expanduser("~/RKLLAMA/rkllama.ini")
 STREAM_MODE = True
 VERBOSE = False
 HISTORY = []

@@ -35,7 +35,6 @@ This guide provides step-by-step instructions to install **RKLLama**, a solution
   rkllama serve
 ```
 
-
 - **Access the Client:**
 
 ```bash

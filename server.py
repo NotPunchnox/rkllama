@@ -23,7 +23,7 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-CONFIG_FILE = "~/RKLLAMA/rkllama.ini"
+CONFIG_FILE = os.path.expanduser("~/RKLLAMA/rkllama.ini")
 current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
