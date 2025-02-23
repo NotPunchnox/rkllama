@@ -2,26 +2,36 @@ import requests
 import json
 import sys
 import os
+import configparser
 
+CONFIG_FILE = "~/RKLLAMA/rkllama.ini"
+STREAM_MODE = True
+VERBOSE = False
+HISTORY = []
+PREFIX_MESSAGE = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
+SUFFIX_MESSAGE = "<|im_end|><|im_start|>assistant"
 
-# Constants for API URL and other parameters
-PORT            = os.getenv("RKLLAMA_PORT", "8080") if len(os.getenv("RKLLAMA_PORT", "8080")) > 1 else "8080"
-API_URL         = f"http://127.0.0.1:{PORT}/" # Replace with your API URL if you've changed it
-STREAM_MODE     = True
-VERBOSE         = False
-HISTORY         = [] # Message history to keep the conversation going
-PREFIX_MESSAGE  = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
-SUFIX_MESSAGE   = "<|im_end|><|im_start|>assistant"
-
-# ANSI color codes
-RESET  = "\033[0m"
-BOLD   = "\033[1m"
-RED    = "\033[31m"
-GREEN  = "\033[32m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+RED = "\033[31m"
+GREEN = "\033[32m"
 YELLOW = "\033[33m"
-CYAN   = "\033[36m"
+CYAN = "\033[36m"
 
-print(PORT)
+
+if not os.path.exists(CONFIG_FILE):
+    print("Configuration file not found. Creating with default values...")
+    config = configparser.ConfigParser()
+    config["server"] = {"port": "8080"}
+    with open(CONFIG_FILE, "w") as configfile:
+        config.write(configfile)
+
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
+
+
+PORT = config["server"].get("port", "8080")
+API_URL = f"http://127.0.0.1:{PORT}/"
 
 
 # Displays the help menu with all available commands.

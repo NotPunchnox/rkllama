@@ -1,8 +1,10 @@
-import sys, os, subprocess, resource, argparse, shutil, time, requests
+# Import libs
+import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
 
+# Local file
 from src.classes import *
 from src.rkllm import *
 from src.process import Request
@@ -21,10 +23,9 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-
+CONFIG_FILE = "~/RKLLAMA/rkllama.ini"
 current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
-port=8080
 
 
 def create_modelfile(huggingface_path, From, system="", temperature=1.0):
@@ -277,36 +278,55 @@ def recevoir_message():
 def default_route():
     return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rkllama"}), 200
 
-
 # Launch function
 def main():
-    # define the arguments for launch function
+    # Define the arguments for the launch function
     parser = argparse.ArgumentParser(description="RKLLM server initialization with configurable options.")
     parser.add_argument('--target_platform', type=str, help="Target platform: rk3588/rk3576.")
-    parser.add_argument('--port', type=str, help="Target port, default: 8080")
+    parser.add_argument('--port', type=str, help="Default port: 8080")
     args = parser.parse_args()
 
-    port = os.getenv("RKLLAMA_PORT", '8080')
-    print(port)
+    # Check if the configuration file exists
+    if not os.path.exists(CONFIG_FILE):
+        print("Configuration file not found. Creating with default values...")
+        config = configparser.ConfigParser()
+        config["server"] = {"port": "8080"}
+        with open(CONFIG_FILE, "w") as configfile:
+            config.write(configfile)
 
+    # Load the configuration
+    config = configparser.ConfigParser()
+    config.read(CONFIG_FILE)
+
+    # If a port is specified by the user, update it in the config
+    if args.port:
+        port = args.port
+        config["server"]["port"] = port
+        with open(CONFIG_FILE, "w") as configfile:
+            config.write(configfile)
+    else:
+        # Otherwise, use the default port from the config
+        port = config["server"].get("port", "8080")
+
+    # Check the target platform
     if not args.target_platform:
         print_color("Error argument not found: --target_platform", "red")
     else:
         if args.target_platform not in ["rk3588", "rk3576"]:
-            print_color("Error : Invalid target platform. Please enter rk3588 or rk3576.", "red")
+            print_color("Error: Invalid target platform. Please enter rk3588 or rk3576.", "red")
             sys.exit(1)
         print_color(f"Setting the frequency for the {args.target_platform} platform...", "cyan")
         library_path = os.path.expanduser(f"~/RKLLAMA/lib/fix_freq_{args.target_platform}.sh")
-        commande = f"sudo bash {library_path}"
-        subprocess.run(commande, shell=True)
+        command = f"sudo bash {library_path}"
+        subprocess.run(command, shell=True)
 
-    # Define ressources limite
+    # Set the resource limits
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
+    # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")
-    app.run(host='0.0.0.0', port=port, threaded=True, debug=False)
+    app.run(host='0.0.0.0', port=int(port), threaded=True, debug=False)
 
 
-# Launch program
 if __name__ == "__main__":
     main()

@@ -46,8 +46,4 @@ if [ -z "$CPU_MODEL" ]; then
   exit 1
 fi
 
-export RKLLAMA_PORT="$PORT"
-echo "PORT: $PORT"
-env | grep RKLLAMA_PORT
-
-python3 ~/RKLLAMA/server.py --target_platform "$CPU_MODEL"
+python3 ~/RKLLAMA/server.py --target_platform "$CPU_MODEL" --port "$PORT"
