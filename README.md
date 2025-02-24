@@ -82,7 +82,7 @@ docker pull ghcr.io/notpunchnox/rkllama:main
 ```
 run server
 ```bash
-docker run --rm -it -p 8080:8080 ghcr.io/notpunchnox/rkllama:main
+docker run -it --privileged -p 8080:8080 ghcr.io/notpunchnox/rkllama:main
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
