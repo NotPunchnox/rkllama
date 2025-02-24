@@ -240,7 +240,7 @@ System Monitor:
 
 ## Star History
 
-![Star History Chart](https://api.star-history.com/svg?repos=notpunchnox/rkllama&type=Date)
+![Star History Chart](https://api.star-history.com/svg?repos=notpunchnox/rkllama)
 
 ---
 
