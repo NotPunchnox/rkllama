@@ -3,6 +3,7 @@ import sys, os, subprocess, resource, argparse, shutil, time, requests, configpa
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
 
 # Local file
 from src.classes import *
@@ -277,6 +278,9 @@ def recevoir_message():
 @app.route('/', methods=['GET'])
 def default_route():
     return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rkllama"}), 200
+
+
+CORS(app)
 
 # Launch function
 def main():
