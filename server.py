@@ -1,14 +1,32 @@
 # Import libs
-import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser
+import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser, json, threading, datetime, logging
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
+from transformers import AutoTokenizer
 
 # Local file
 from src.classes import *
 from src.rkllm import *
 from src.process import Request
 import src.variables as variables
+from src.server_utils import process_ollama_chat_request
+from src.debug_utils import StreamDebugger, check_response_format
+
+# Check for debug mode
+DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+
+# Set up logging with appropriate level based on debug mode
+logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
+logging.basicConfig(
+    level=logging_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.expanduser("~/RKLLAMA/rkllama_server.log"))
+    ]
+)
+logger = logging.getLogger("rkllama.server")
 
 def print_color(message, color):
     # Function for displaying color messages
@@ -91,7 +109,7 @@ def unload_model():
 
 app = Flask(__name__)
 
-# Routes:
+# Original RKLLAMA Routes:
 # GET    /models
 # POST   /load_model
 # POST   /unload_model
@@ -273,18 +291,317 @@ def recevoir_message():
     variables.verrou.acquire()
     return Request(modele_rkllm)
 
+# Ollama API compatibility routes
+
+@app.route('/api/tags', methods=['GET'])
+def list_ollama_models():
+    # Return models in Ollama API format
+    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    
+    if not os.path.exists(models_dir):
+        return jsonify({"models": []}), 200
+
+    models = []
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm"):
+                    size = os.path.getsize(os.path.join(subdir_path, file))
+                    models.append({
+                        "name": subdir,
+                        "model": subdir,
+                        "modified_at": datetime.datetime.fromtimestamp(
+                            os.path.getmtime(os.path.join(subdir_path, file))
+                        ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "size": size,
+                    })
+                    break
+
+    return jsonify({"models": models}), 200
+
+@app.route('/api/show', methods=['POST'])
+def show_model_info():
+    data = request.json
+    model_name = data.get('name')
+    
+    if not model_name:
+        return jsonify({"error": "Missing model name"}), 400
+        
+    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    
+    if not os.path.exists(model_dir):
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+
+    # Read modelfile content if available
+    modelfile_path = os.path.join(model_dir, "Modelfile")
+    modelfile_content = ""
+    if os.path.exists(modelfile_path):
+        with open(modelfile_path, "r") as f:
+            modelfile_content = f.read()
+    
+    # Find the .rkllm file
+    model_file = None
+    for file in os.listdir(model_dir):
+        if file.endswith(".rkllm"):
+            model_file = file
+            break
+    
+    if not model_file:
+        return jsonify({"error": f"Model file not found in '{model_name}' directory"}), 404
+    
+    file_path = os.path.join(model_dir, model_file)
+    size = os.path.getsize(file_path)
+    
+    return jsonify({
+        "license": "Unknown",
+        "modelfile": modelfile_content,
+        "parameters": "Unknown",
+        "template": "{{ .Prompt }}",
+        "name": model_name,
+        "details": {
+            "parent_model": "",
+            "format": "rkllm",
+            "family": "llama",
+            "parameter_size": "Unknown",
+            "quantization_level": "Unknown"
+        },
+        "size": size
+    }), 200
+
+@app.route('/api/create', methods=['POST'])
+def create_model():
+    data = request.json
+    model_name = data.get('name')
+    modelfile = data.get('modelfile', '')
+    
+    if not model_name:
+        return jsonify({"error": "Missing model name"}), 400
+    
+    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    os.makedirs(model_dir, exist_ok=True)
+    
+    with open(os.path.join(model_dir, "Modelfile"), "w") as f:
+        f.write(modelfile)
+    
+    # Parse the modelfile to extract parameters
+    modelfile_lines = modelfile.strip().split('\n')
+    from_line = next((line for line in modelfile_lines if line.startswith('FROM=')), None)
+    huggingface_path = next((line for line in modelfile_lines if line.startswith('HUGGINGFACE_PATH=')), None)
+    
+    if not from_line or not huggingface_path:
+        return jsonify({"error": "Invalid Modelfile: missing FROM or HUGGINGFACE_PATH"}), 400
+    
+    # Extract values
+    from_value = from_line.split('=')[1].strip('"\'')
+    huggingface_path = huggingface_path.split('=')[1].strip('"\'')
+    
+    # For compatibility with existing implementation
+    return jsonify({"status": "success", "model": model_name}), 200
+
+@app.route('/api/pull', methods=['POST'])
+def pull_model_ollama():
+    data = request.json
+    model = data.get('name')
+    
+    if not model:
+        return jsonify({"error": "Missing model name"}), 400
+
+    response_stream = app.view_functions['pull_model']()
+    return response_stream
+
+@app.route('/api/delete', methods=['DELETE'])
+def delete_model_ollama():
+    data = request.json
+    model_name = data.get('name')
+    
+    if not model_name:
+        return jsonify({"error": "Missing model name"}), 400
+
+    model_path = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    if not os.path.exists(model_path):
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+
+    # Check if model is currently loaded
+    if current_model == model_name:
+        unload_model()
+    
+    try:
+        shutil.rmtree(model_path)
+        return jsonify({}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
+
+@app.route('/api/generate', methods=['POST'])
+def generate_ollama():
+    global modele_rkllm, current_model
+
+    data = request.json
+    model_name = data.get('model')
+    prompt = data.get('prompt')
+    system = data.get('system', '')
+    stream = data.get('stream', True)
+    
+    if not model_name:
+        return jsonify({"error": "Missing model name"}), 400
+
+    if not prompt:
+        return jsonify({"error": "Missing prompt"}), 400
+
+    # Load model if needed
+    if current_model != model_name:
+        if current_model:
+            unload_model()
+        modele_instance, error = load_model(model_name)
+        if error:
+            return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+        global modele_rkllm
+        modele_rkllm = modele_instance
+        current_model = model_name
+
+    # Set system prompt if provided
+    variables.system = system
+    
+    # Construct messages for the existing API
+    messages = [{"role": "user", "content": prompt}]
+    
+    # Use the process_ollama_chat_request function instead
+    variables.verrou.acquire()
+    
+    try:
+        return process_ollama_chat_request(
+            modele_rkllm,
+            model_name,
+            messages,
+            system,
+            stream
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        variables.verrou.release()
+
+@app.route('/api/chat', methods=['POST'])
+def chat_ollama():
+    global modele_rkllm, current_model
+
+    data = request.json
+    model_name = data.get('model')
+    messages = data.get('messages', [])
+    system = data.get('system', '')
+    stream = data.get('stream', True)
+    
+    if DEBUG_MODE:
+        logger.debug(f"API chat request: model={model_name}, stream={stream}, messages_count={len(messages)}")
+    
+    if not model_name:
+        if DEBUG_MODE:
+            logger.warning("Missing model name in request")
+        return jsonify({"error": "Missing model name"}), 400
+
+    if not messages:
+        if DEBUG_MODE:
+            logger.warning("Missing messages in request")
+        return jsonify({"error": "Missing messages"}), 400
+
+    # Load model if needed
+    if current_model != model_name:
+        if current_model:
+            if DEBUG_MODE:
+                logger.debug(f"Unloading current model: {current_model}")
+            unload_model()
+        
+        if DEBUG_MODE:
+            logger.debug(f"Loading model: {model_name}")
+        modele_instance, error = load_model(model_name)
+        if error:
+            if DEBUG_MODE:
+                logger.error(f"Failed to load model {model_name}: {error}")
+            return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+        global modele_rkllm
+        modele_rkllm = modele_instance
+        current_model = model_name
+        if DEBUG_MODE:
+            logger.debug(f"Model {model_name} loaded successfully")
+
+    # Acquire lock before processing
+    if DEBUG_MODE:
+        logger.debug("Acquiring lock")
+    variables.verrou.acquire()
+    
+    try:
+        # Process Ollama chat request using the utility function
+        if DEBUG_MODE:
+            logger.debug("Processing request with process_ollama_chat_request")
+        return process_ollama_chat_request(
+            modele_rkllm,
+            model_name,
+            messages,
+            system,
+            stream
+        )
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error in chat_ollama: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if DEBUG_MODE:
+            logger.debug("Releasing lock")
+        variables.verrou.release()
+
+# Only include debug endpoint if in debug mode
+if DEBUG_MODE:
+    @app.route('/api/debug', methods=['POST'])
+    def debug_streaming():
+        """Endpoint to diagnose streaming issues"""
+        data = request.json
+        stream_data = data.get('stream_data', '')
+        
+        issues = check_response_format(stream_data)
+        
+        if issues:
+            return jsonify({
+                "status": "error",
+                "issues": issues,
+                "recommendation": "Check server_utils.py implementation of streaming"
+            }), 200
+        else:
+            return jsonify({
+                "status": "ok",
+                "message": "No issues found in the response format"
+            }), 200
+
+@app.route('/api/embeddings', methods=['POST'])
+def embeddings_ollama():
+    # This is a placeholder as embeddings aren't implemented in RKLLAMA
+    return jsonify({
+        "error": "Embeddings not supported in RKLLAMA"
+    }), 501
+
 # Default route
 @app.route('/', methods=['GET'])
 def default_route():
-    return jsonify({"message": "Welcome to RKLLama !", "github": "https://github.com/notpunhnox/rkllama"}), 200
+    return jsonify({
+        "message": "Welcome to RKLLama with Ollama API compatibility!",
+        "github": "https://github.com/notpunhnox/rkllama"
+    }), 200
 
 # Launch function
 def main():
     # Define the arguments for the launch function
     parser = argparse.ArgumentParser(description="RKLLM server initialization with configurable options.")
     parser.add_argument('--target_platform', type=str, help="Target platform: rk3588/rk3576.")
-    parser.add_argument('--port', type=str, help="Default port: 8080")
+    parser.add_argument('--port', type=str, default="8080", help="Default port: 8080") # Added default value
+    parser.add_argument('--debug', action='store_true', help="Enable debug mode")
     args = parser.parse_args()
+
+    # Set debug mode if specified
+    if args.debug:
+        os.environ["RKLLAMA_DEBUG"] = "1"
+        global DEBUG_MODE
+        DEBUG_MODE = True
+        logger.setLevel(logging.DEBUG)
+        print_color("Debug mode enabled", "yellow")
 
     # Check if the configuration file exists
     if not os.path.exists(CONFIG_FILE):
@@ -325,8 +642,10 @@ def main():
 
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")
-    app.run(host='0.0.0.0', port=int(port), threaded=True, debug=False)
-
+    
+    # Set Flask debug mode to match our debug flag
+    flask_debug = DEBUG_MODE
+    app.run(host='0.0.0.0', port=int(port), threaded=True, debug=flask_debug)
 
 if __name__ == "__main__":
     main()

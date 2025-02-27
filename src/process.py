@@ -2,15 +2,28 @@ import threading, time, json
 from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
 import src.variables as variables
+import datetime
 
 
-def Request(modele_rkllm):
-
+def Request(modele_rkllm, custom_request=None):
+    """
+    Process a request to the language model
+    
+    Args:
+        modele_rkllm: The language model instance
+        custom_request: Optional custom request object that mimics Flask request
+    
+    Returns:
+        Flask response with generated text
+    """
     try:
         # Mettre le serveur en état de blocage.
         isLocked = True
 
-        data = request.json
+        # Use custom_request if provided, otherwise use Flask's request
+        req = custom_request if custom_request is not None else request
+        data = req.json
+        
         if data and 'messages' in data:
             # Réinitialiser les variables globales.
             variables.global_status = -1
@@ -19,7 +32,7 @@ def Request(modele_rkllm):
             llmResponse = {
                 "id": "rkllm_chat",
                 "object": "rkllm_chat",
-                "created": None,
+                "created": int(time.time()),
                 "choices": [],
                 "usage": {
                     "prompt_tokens": 0,
@@ -29,9 +42,11 @@ def Request(modele_rkllm):
                 }
             }
 
+            # Check if this is an Ollama-style request
+            is_ollama_request = req.path.startswith('/api/')
+            
             # Récupérer l'historique du chat depuis la requête JSON
             messages = data["messages"]
-
 
             # Mise en place du tokenizer
             tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
@@ -49,8 +64,6 @@ def Request(modele_rkllm):
             # Mise en place du chat Template
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
             llmResponse["usage"]["prompt_tokens"] = llmResponse["usage"]["total_tokens"] = len(prompt)
-            #print("Prompt final: ", prompt)
-            #print("Messages reçus :", messages)
 
             sortie_rkllm = ""
 
@@ -59,7 +72,7 @@ def Request(modele_rkllm):
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                 try:
                     thread_modele.start()
-                    print("Thread d’inférence démarré")
+                    print("Thread d'inférence démarré")
                 except Exception as e:
                     print("Erreur lors du démarrage du thread:", e)
 
@@ -88,7 +101,26 @@ def Request(modele_rkllm):
                 llmResponse["usage"]["total_tokens"] = count + llmResponse["usage"]["prompt_tokens"]
                 llmResponse["usage"]["completion_tokens"] = count
                 llmResponse["usage"]["tokens_per_second"] = count / total
-                return jsonify(llmResponse), 200
+
+                if is_ollama_request:
+                    # Transform to Ollama format
+                    ollama_response = {
+                        "model": variables.model_id,
+                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "message": {
+                            "role": "assistant",
+                            "content": sortie_rkllm
+                        },
+                        "done": True,
+                        "total_duration": total * 1000000000,  # Convert to nanoseconds
+                        "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
+                        "prompt_eval_duration": 0,  # Not available
+                        "eval_count": count,
+                        "eval_duration": total * 1000000000  # Convert to nanoseconds
+                    }
+                    return jsonify(ollama_response), 200
+                else:
+                    return jsonify(llmResponse), 200
 
             else:
                 def generate():
@@ -114,7 +146,25 @@ def Request(modele_rkllm):
                             ]
                             llmResponse["usage"]["completion_tokens"] = count
                             llmResponse["usage"]["total_tokens"] += 1
-                            yield f"{json.dumps(llmResponse)}\n\n"
+                            
+                            if is_ollama_request:
+                                # Transform to Ollama format for streaming
+                                current_time = time.time() - start
+                                ollama_chunk = {
+                                    "model": variables.model_id,
+                                    "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": sortie_rkllm
+                                    },
+                                    "done": variables.global_status == 1,
+                                    "total_duration": current_time * 1000000000 if variables.global_status == 1 else 0,
+                                    "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
+                                    "eval_count": count
+                                }
+                                yield f"{json.dumps(ollama_chunk)}\n"
+                            else:
+                                yield f"{json.dumps(llmResponse)}\n\n"
 
                         # Calcul du temps de traitement
                         total = time.time() - start
@@ -129,5 +179,7 @@ def Request(modele_rkllm):
         else:
             return jsonify({'status': 'error', 'message': 'Données JSON invalides !'}), 400
     finally:
-        variables.verrou.release()
+        # No need to release the lock here as it should be handled by the calling function
+        if custom_request is None:
+            variables.verrou.release()
         est_bloqué = False

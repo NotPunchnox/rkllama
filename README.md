@@ -36,7 +36,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 ## Main Features
 - **Running models on NPU.**
 - **Pull models directly from Huggingface**
-- **include a API REST with documentation**
+- **Include a API REST with documentation**
+- **Ollama API compatibility**
 - **Listing available models.**
 - **Dynamic loading and unloading of models.**
 - **Inference requests.**
@@ -50,6 +51,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - Client   : [Installation guide](#installation).
 - API REST : [English documentation](./documentation/api/english.md)
 - API REST : [French documentation](./documentation/api/french.md)
+- Ollama API: [Compatibility guide](./documentation/api/ollama-compatibility.md)
 
 ## Installation
 
@@ -208,6 +210,8 @@ This will automatically download the specified model file and prepare it for use
 ---
 
 # New-Version
+
+**Ollama API Compatibility**: RKLLAMA now implements the Ollama API, allowing you to use existing Ollama clients and tools with RKLLAMA. All major endpoints like `/api/chat`, `/api/generate`, and `/api/tags` are supported.
 
 **Extended Compatibility**: All models, including DeepSeek, Qwen, Llama, and many others, are now fully supported by RKLLAMA.
 

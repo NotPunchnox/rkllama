@@ -75,9 +75,72 @@ if ! $USE_CONDA; then
     fi
 fi
 
-# Create a global executable for rkllama
+# Create a global executable for rkllama that properly handles arguments
 echo -e "${CYAN}Creating a global executable for rkllama...${RESET}"
-echo -e "#!/bin/bash\nexec ~/RKLLAMA/client.sh $CONDA_ARG \"\$@\"" | sudo tee /usr/local/bin/rkllama > /dev/null
+
+cat << 'EOF' | sudo tee /usr/local/bin/rkllama > /dev/null
+#!/bin/bash
+
+# Parse arguments to pass along
+ARGS=""
+PORT_ARG=""
+USE_NO_CONDA=false
+
+for arg in "$@"; do
+    if [[ "$arg" == "serve" ]]; then
+        # Special handling for 'serve' command
+        COMMAND="serve"
+    elif [[ "$arg" == "--no-conda" ]]; then
+        # Handle no-conda flag
+        USE_NO_CONDA=true
+    elif [[ "$arg" == --port=* ]]; then
+        # Extract port argument
+        PORT_ARG="$arg"
+    else
+        # Add all other arguments
+        ARGS="$ARGS $arg"
+    fi
+done
+
+# Build command with all detected options
+if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
+    # For 'serve' command, use server.sh
+    FINAL_CMD="~/RKLLAMA/server.sh"
+    
+    # Add port if specified
+    if [[ -n "$PORT_ARG" ]]; then
+        FINAL_CMD="$FINAL_CMD $PORT_ARG"
+    fi
+    
+    # Add no-conda flag if specified
+    if $USE_NO_CONDA; then
+        FINAL_CMD="$FINAL_CMD --no-conda"
+    fi
+    
+    # Add any remaining args
+    FINAL_CMD="$FINAL_CMD $ARGS"
+else
+    # For all other commands, use client.sh
+    FINAL_CMD="~/RKLLAMA/client.sh"
+    
+    # Add port if specified
+    if [[ -n "$PORT_ARG" ]]; then
+        FINAL_CMD="$FINAL_CMD $PORT_ARG"
+    fi
+    
+    # Add no-conda flag if specified
+    if $USE_NO_CONDA; then
+        FINAL_CMD="$FINAL_CMD --no-conda"
+    fi
+    
+    # Add all other arguments
+    FINAL_CMD="$FINAL_CMD $ARGS"
+fi
+
+# Execute the final command
+eval $FINAL_CMD
+EOF
+
 sudo chmod +x /usr/local/bin/rkllama
 echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
 
