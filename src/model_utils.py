@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import requests
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
@@ -19,6 +20,148 @@ QUANT_MAPPING = {
     'w8a8_g256': 'Q8_K_M',
     'w8a8_g512': 'Q8_K_M',
 }
+
+def get_huggingface_model_info(model_path):
+    """
+    Fetch model metadata from Hugging Face API if available.
+    
+    Args:
+        model_path: HuggingFace repository path (e.g., 'c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4')
+        
+    Returns:
+        Dictionary with enhanced model metadata or None if not available
+    """
+    try:
+        if not model_path or '/' not in model_path:
+            return None
+        
+        # Get DEBUG_MODE from environment for logging
+        debug_mode = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+        
+        # Extract repo_id from HUGGINGFACE_PATH
+        url = f"https://huggingface.co/api/models/{model_path}"
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Process and enhance the metadata
+            if 'tags' not in data:
+                data['tags'] = []
+            
+            # Extract additional info from readme if available
+            if 'cardData' not in data:
+                data['cardData'] = {}
+            
+            # Try to extract parameter size from model name if not in cardData
+            if 'params' not in data['cardData']:
+                # Look for patterns like "7b", "3B", "1.5B" in model name or description
+                param_pattern = re.search(r'(\d+\.?\d*)([bB])', model_path + ' ' + (data.get('description') or ''))
+                if param_pattern:
+                    size_value = float(param_pattern.group(1))
+                    size_unit = param_pattern.group(2).lower()
+                    # Convert to billions if needed
+                    if size_unit == 'b':
+                        data['cardData']['params'] = int(size_value * 1_000_000_000)
+            
+            # Extract important information from the description
+            description = data.get('description', '')
+            if description:
+                # Look for model details in the description
+                quant_pattern = re.search(r'([qQ]\d+_\d+|int4|int8|fp16|4bit|8bit)', description)
+                if quant_pattern:
+                    data['quantization'] = quant_pattern.group(1)
+                
+                # Check for mentions of specific architectures
+                architectures = {
+                    'llama': 'llama',
+                    'mistral': 'mistral',
+                    'qwen': 'qwen',
+                    'deepseek': 'deepseek',
+                    'phi': 'phi',
+                    'gemma': 'gemma',
+                    'baichuan': 'baichuan',
+                    'yi': 'yi'
+                }
+                
+                for arch_name, arch_value in architectures.items():
+                    if arch_name.lower() in description.lower():
+                        data['architecture'] = arch_value
+                        if arch_name.lower() not in data['tags']:
+                            data['tags'].append(arch_name.lower())
+            
+            # Try to extract language information
+            languages = []
+            language_patterns = {
+                'english': 'en',
+                'chinese': 'zh',
+                'multilingual': None,  # Special case
+                'french': 'fr',
+                'german': 'de',
+                'spanish': 'es',
+                'japanese': 'ja'
+            }
+            
+            for lang_name, lang_code in language_patterns.items():
+                if lang_name.lower() in description.lower() or lang_name.lower() in ' '.join(data['tags']).lower():
+                    if lang_name == 'multilingual':
+                        # For multilingual models, add common languages
+                        languages.extend(['en', 'zh', 'fr', 'de', 'es', 'ja'])
+                    elif lang_code and lang_code not in languages:
+                        languages.append(lang_code)
+            
+            # If we found languages, add them
+            if languages:
+                data['languages'] = list(set(languages))  # Remove duplicates
+            elif 'en' not in data.get('languages', []):
+                # Default to English if no languages detected
+                data['languages'] = ['en']
+            
+            # Add RK tags if they exist
+            rk_patterns = ['rk3588', 'rk3576', 'rkllm', 'rockchip']
+            for pattern in rk_patterns:
+                if pattern in model_path.lower() or pattern in ' '.join(data['tags']).lower() or pattern in description.lower():
+                    if 'rockchip' not in data['tags']:
+                        data['tags'].append('rockchip')
+                    if pattern not in data['tags'] and pattern != 'rockchip':
+                        data['tags'].append(pattern)
+            
+            # Add metadata about model capabilities
+            if 'sibling_models' in data:
+                for sibling in data.get('sibling_models', []):
+                    if sibling.get('rfilename', '').endswith('.rkllm'):
+                        data['has_rkllm'] = True
+                        break
+            
+            # Extract license information
+            if 'license' in data and data['license']:
+                # Map HF license IDs to human-readable names
+                license_mapping = {
+                    'apache-2.0': 'Apache 2.0',
+                    'mit': 'MIT',
+                    'cc-by-4.0': 'Creative Commons Attribution 4.0',
+                    'cc-by-sa-4.0': 'Creative Commons Attribution-ShareAlike 4.0',
+                    'cc-by-nc-4.0': 'Creative Commons Attribution-NonCommercial 4.0',
+                    'cc-by-nc-sa-4.0': 'Creative Commons Attribution-NonCommercial-ShareAlike 4.0'
+                }
+                
+                license_id = data['license'].lower()
+                data['license_name'] = license_mapping.get(license_id, data['license'])
+                data['license_url'] = f"https://huggingface.co/{model_path}/blob/main/LICENSE"
+            
+            if debug_mode:
+                logger.debug(f"Enhanced model info from HF API: {model_path}")
+            
+            return data
+        else:
+            if debug_mode:
+                logger.debug(f"Failed to get HF data: {response.status_code}")
+            return None
+    except Exception as e:
+        debug_mode = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+        if debug_mode:
+            logger.exception(f"Error fetching HF model info: {str(e)}")
+        return None
 
 def extract_model_details(model_name):
     """

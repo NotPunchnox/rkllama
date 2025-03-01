@@ -63,6 +63,9 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
         variables.global_status = -1
         variables.generation_complete = False
         
+        # Measure time for prompt preparation and tokenization
+        prompt_eval_start = time.time()
+        
         # Set up tokenizer
         if DEBUG_MODE:
             logger.debug(f"Setting up tokenizer for model_id: {variables.model_id}")
@@ -108,14 +111,21 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
             logger.debug("Applying chat template")
         prompt_tokens = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
         prompt_token_count = len(prompt_tokens)
+        
+        # Calculate prompt evaluation duration
+        prompt_eval_duration = time.time() - prompt_eval_start
+        prompt_eval_duration_ns = int(prompt_eval_duration * 1000000000)  # Convert to nanoseconds
+        
         if DEBUG_MODE:
             logger.debug(f"Prompt token count: {prompt_token_count}")
+            logger.debug(f"Prompt evaluation took: {prompt_eval_duration:.4f}s ({prompt_eval_duration_ns}ns)")
         
         if stream:
             def generate():
                 # Set up model thread
                 if DEBUG_MODE:
                     logger.debug("Starting model inference thread")
+                generation_start = time.time()
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
                 thread_modele.start()
                 
@@ -166,8 +176,9 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 # Always send the final message with done=true
                 if not final_sent:
                     total_time = time.time() - start
+                    generation_time = time.time() - generation_start
                     total_duration_ns = int(total_time * 1000000000)
-                    eval_duration_ns = int(total_time * 1000000000)
+                    eval_duration_ns = int(generation_time * 1000000000)
                     
                     # Send final message with done=true and EMPTY response
                     # This matches real Ollama API behavior
@@ -183,7 +194,7 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                         "total_duration": total_duration_ns,  # Use integer nanoseconds
                         "load_duration": 0,  # We don't track this separately yet
                         "prompt_eval_count": prompt_token_count,
-                        "prompt_eval_duration": 0,  # We don't track this separately yet
+                        "prompt_eval_duration": prompt_eval_duration_ns,
                         "eval_count": count,
                         "eval_duration": eval_duration_ns  # Use integer nanoseconds
                     }
@@ -201,6 +212,7 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
             # Non-streaming response
             if DEBUG_MODE:
                 logger.debug("Processing non-streaming request")
+            generation_start = time.time()
             thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
             thread_modele.start()
             
@@ -217,6 +229,7 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 thread_modele.join(timeout=0.005)
                 
             total_time = time.time() - start
+            generation_time = time.time() - generation_start
             variables.generation_complete = True
             if DEBUG_MODE:
                 logger.debug(f"Non-streaming generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
@@ -234,9 +247,9 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 "total_duration": int(total_time * 1000000000),  # Use integer nanoseconds
                 "load_duration": 0,
                 "prompt_eval_count": prompt_token_count,
-                "prompt_eval_duration": 0,
+                "prompt_eval_duration": prompt_eval_duration_ns,
                 "eval_count": count,
-                "eval_duration": int(total_time * 1000000000)  # Use integer nanoseconds
+                "eval_duration": int(generation_time * 1000000000)  # Use integer nanoseconds
             }
             
             return jsonify(ollama_response), 200
@@ -281,6 +294,9 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
         variables.global_status = -1
         variables.generation_complete = False
         
+        # Measure time for prompt preparation and tokenization
+        prompt_eval_start = time.time()
+        
         # Set up tokenizer
         if DEBUG_MODE:
             logger.debug(f"Setting up tokenizer for model_id: {variables.model_id}")
@@ -300,14 +316,21 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
             prompt_tokens = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
         
         prompt_token_count = len(prompt_tokens)
+        
+        # Calculate prompt evaluation duration
+        prompt_eval_duration = time.time() - prompt_eval_start
+        prompt_eval_duration_ns = int(prompt_eval_duration * 1000000000)  # Convert to nanoseconds
+        
         if DEBUG_MODE:
             logger.debug(f"Prompt token count: {prompt_token_count}")
+            logger.debug(f"Prompt evaluation took: {prompt_eval_duration:.4f}s ({prompt_eval_duration_ns}ns)")
             
         if stream:
             def generate():
                 # Set up model thread
                 if DEBUG_MODE:
                     logger.debug("Starting model inference thread for generate")
+                generation_start = time.time()
                 thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
                 thread_modele.start()
                 
@@ -355,8 +378,9 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                 # Always send the final message with done=true
                 if not final_sent:
                     total_time = time.time() - start
+                    generation_time = time.time() - generation_start
                     total_duration_ns = int(total_time * 1000000000)
-                    eval_duration_ns = int(total_time * 1000000000)
+                    eval_duration_ns = int(generation_time * 1000000000)
                     
                     # Send final message with done=true and empty response
                     final_chunk = {
@@ -369,7 +393,7 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                         "total_duration": total_duration_ns,  # Use integer nanoseconds
                         "load_duration": 0,
                         "prompt_eval_count": prompt_token_count,
-                        "prompt_eval_duration": 0,
+                        "prompt_eval_duration": prompt_eval_duration_ns,
                         "eval_count": count,
                         "eval_duration": eval_duration_ns  # Use integer nanoseconds
                     }
@@ -387,6 +411,7 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
             # Non-streaming response
             if DEBUG_MODE:
                 logger.debug("Processing non-streaming generate request")
+            generation_start = time.time()
             thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
             thread_modele.start()
             
@@ -403,6 +428,7 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                 thread_modele.join(timeout=0.005)
                 
             total_time = time.time() - start
+            generation_time = time.time() - generation_start
             variables.generation_complete = True
             if DEBUG_MODE:
                 logger.debug(f"Non-streaming generate complete. Total tokens: {count}, Total time: {total_time:.2f}s")
@@ -418,9 +444,9 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                 "total_duration": int(total_time * 1000000000),
                 "load_duration": 0,
                 "prompt_eval_count": prompt_token_count,
-                "prompt_eval_duration": 0,
+                "prompt_eval_duration": prompt_eval_duration_ns,
                 "eval_count": count,
-                "eval_duration": int(total_time * 1000000000)
+                "eval_duration": int(generation_time * 1000000000)
             }
             
             return jsonify(ollama_response), 200
