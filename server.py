@@ -1,5 +1,6 @@
 # Import libs
 import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser, json, threading, datetime, logging
+import re
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
@@ -13,7 +14,7 @@ from src.process import Request
 import src.variables as variables
 from src.server_utils import process_ollama_chat_request, process_ollama_generate_request
 from src.debug_utils import StreamDebugger, check_response_format
-from src.model_utils import get_simplified_model_name, get_original_model_path, extract_model_details
+from src.model_utils import get_simplified_model_name, get_original_model_path, extract_model_details, initialize_model_mappings, find_model_by_name
 
 # Check for debug mode
 DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
@@ -319,11 +320,11 @@ def list_ollama_models():
                     # Generate a simplified model name in Ollama style
                     simple_name = get_simplified_model_name(subdir)
                     
-                    # Extract parameter size and quantization type
+                    # Extract parameter size and quantization details if available
                     model_details = extract_model_details(subdir)
                     
                     models.append({
-                        "name": simple_name,        # Use simplified name like qwen2.5:3b
+                        "name": simple_name,        # Use simplified name like qwen:3b
                         "model": simple_name,       # Match Ollama's format
                         "modified_at": datetime.datetime.fromtimestamp(
                             os.path.getmtime(os.path.join(subdir_path, file))
@@ -331,10 +332,10 @@ def list_ollama_models():
                         "size": size,
                         "digest": "",               # Ollama field (not used but included for compatibility)
                         "details": {
-                            "format": "rkllm",      # Indicate our format
-                            "family": "llama",      # Default family 
-                            "parameter_size": model_details["parameter_size"],
-                            "quantization_level": model_details["quantization_level"]
+                            "format": "rkllm",
+                            "family": "llama",      # Default family
+                            "parameter_size": model_details.get("parameter_size", "Unknown"),
+                            "quantization_level": model_details.get("quantization_level", "Unknown")
                         }
                     })
                     break
@@ -350,9 +351,9 @@ def show_model_info():
         return jsonify({"error": "Missing model name"}), 400
     
     # Handle simplified model names
-    original_model = get_original_model_path(model_name)
-    if original_model:
-        model_name = original_model
+    original_model_path = get_original_model_path(model_name)
+    if original_model_path:
+        model_name = original_model_path
         
     model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
@@ -362,9 +363,28 @@ def show_model_info():
     # Read modelfile content if available
     modelfile_path = os.path.join(model_dir, "Modelfile")
     modelfile_content = ""
+    system_prompt = ""
+    template = "{{ .Prompt }}"
+    license_text = ""
+    
     if os.path.exists(modelfile_path):
         with open(modelfile_path, "r") as f:
             modelfile_content = f.read()
+            
+            # Extract system prompt if available
+            system_match = re.search(r'SYSTEM="(.*?)"', modelfile_content, re.DOTALL)
+            if system_match:
+                system_prompt = system_match.group(1).strip()
+            
+            # Check for template pattern
+            template_match = re.search(r'TEMPLATE="(.*?)"', modelfile_content, re.DOTALL)
+            if template_match:
+                template = template_match.group(1).strip()
+            
+            # Check for LICENSE pattern (some modelfiles have this)
+            license_match = re.search(r'LICENSE="(.*?)"', modelfile_content, re.DOTALL)
+            if license_match:
+                license_text = license_match.group(1).strip()
     
     # Find the .rkllm file
     model_file = None
@@ -379,24 +399,102 @@ def show_model_info():
     file_path = os.path.join(model_dir, model_file)
     size = os.path.getsize(file_path)
     
-    # Extract parameter size and quantization details
+    # Extract model details
     model_details = extract_model_details(model_name)
+    parameter_size = model_details.get("parameter_size", "Unknown")
+    quantization_level = model_details.get("quantization_level", "Unknown")
+    
+    # Determine model family based on name patterns
+    family = "llama"  # default family
+    families = ["llama"]
+    
+    if re.search(r'(?i)Qwen', model_name):
+        family = "qwen2"
+        families = ["qwen2"]
+    elif re.search(r'(?i)Mistral', model_name):
+        family = "mistral"
+        families = ["mistral"]
+    elif re.search(r'(?i)DeepSeek', model_name):
+        family = "deepseek"
+        families = ["deepseek"]
+    elif re.search(r'(?i)TinyLlama', model_name):
+        family = "tinyllama"
+        families = ["tinyllama", "llama"]
+    elif re.search(r'(?i)Llama[-_]?3', model_name):
+        family = "llama3"
+        families = ["llama3", "llama"]
+    elif re.search(r'(?i)Llama[-_]?2', model_name):
+        family = "llama2"
+        families = ["llama2", "llama"]
+    
+    # Convert modelfile to Ollama-compatible format
+    ollama_modelfile = f"# Modelfile generated by \"ollama show\"\n"
+    ollama_modelfile += f"# To build a new Modelfile based on this, replace FROM with:\n"
+    ollama_modelfile += f"# FROM {get_simplified_model_name(model_name)}\n\n"
+    ollama_modelfile += f"FROM {model_dir}/{model_file}\n"
+    
+    if template != "{{ .Prompt }}":
+        ollama_modelfile += f'TEMPLATE """{template}"""\n'
+    
+    if system_prompt:
+        ollama_modelfile += f'SYSTEM {system_prompt}\n'
+    
+    if license_text:
+        ollama_modelfile += f'LICENSE """{license_text}"""\n'
+    
+    # Create model_info dict with architecture details
+    model_info = {
+        "general.architecture": family,
+        "general.base_model.0.name": model_name.split('-')[0],
+        "general.base_model.0.organization": family.capitalize(),
+        "general.basename": model_name.split('-')[0],
+        "general.file_type": 15,  # RKLLM file type
+        "general.parameter_count": get_parameter_count(parameter_size),
+        "general.quantization_version": 2,
+        "general.size_label": parameter_size,
+        "general.tags": ["chat", "text-generation"],
+        "general.type": "model",
+        "tokenizer.ggml.pre": family
+    }
+    
+    # Calculate modified timestamp
+    modified_at = datetime.datetime.fromtimestamp(
+        os.path.getmtime(file_path)
+    ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     
     return jsonify({
-        "license": "Unknown",
-        "modelfile": modelfile_content,
-        "parameters": model_details["parameter_size"],
-        "template": "{{ .Prompt }}",
+        "license": license_text or "Unknown",
+        "modelfile": ollama_modelfile,
+        "parameters": parameter_size,
+        "template": template,
+        "system": system_prompt,
         "name": model_name,
         "details": {
             "parent_model": "",
             "format": "rkllm",
-            "family": "llama",
-            "parameter_size": model_details["parameter_size"],
-            "quantization_level": model_details["quantization_level"]
+            "family": family,
+            "families": families,
+            "parameter_size": parameter_size,
+            "quantization_level": quantization_level
         },
-        "size": size
+        "model_info": model_info,
+        "size": size,
+        "modified_at": modified_at
     }), 200
+
+# Helper function to convert parameter size to count
+def get_parameter_count(param_size):
+    if not param_size or param_size == "Unknown":
+        return 0
+    
+    # Extract the number part from strings like "3B" or "7B"
+    match = re.match(r"(\d+\.?\d*)B", param_size)
+    if match:
+        size_in_billions = float(match.group(1))
+        # Convert billions to actual parameter count
+        return int(size_in_billions * 1_000_000_000)
+    
+    return 0
 
 @app.route('/api/create', methods=['POST'])
 def create_model():
@@ -482,10 +580,13 @@ def generate_ollama():
     if DEBUG_MODE:
         logger.debug(f"API generate request: model={model_name}, stream={stream}, prompt_length={len(prompt)}")
 
-    # If the model name is in simplified format, look up the original path
-    original_model_path = get_original_model_path(model_name)
-    if original_model_path:
-        model_name = original_model_path
+    # Improved model lookup that handles both simplified and full names
+    full_model_name = find_model_by_name(model_name)
+    if not full_model_name:
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+    
+    # Use the full model name for loading
+    model_name = full_model_name
 
     # Load model if needed
     if current_model != model_name:
@@ -494,7 +595,6 @@ def generate_ollama():
         modele_instance, error = load_model(model_name)
         if error:
             return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        global modele_rkllm
         modele_rkllm = modele_instance
         current_model = model_name
 
@@ -505,10 +605,10 @@ def generate_ollama():
     variables.verrou.acquire()
     
     try:
-        from src.server_utils import process_ollama_generate_request
+        # Process using the updated function that uses simplified model names
         return process_ollama_generate_request(
             modele_rkllm,
-            model_name,
+            model_name,  # Pass the full name, the function will simplify it
             prompt,
             system,
             stream
@@ -543,10 +643,15 @@ def chat_ollama():
             logger.warning("Missing messages in request")
         return jsonify({"error": "Missing messages"}), 400
 
-    # If the model name is in simplified format, look up the original path
-    original_model_path = get_original_model_path(model_name)
-    if original_model_path:
-        model_name = original_model_path
+    # Improved model lookup that handles both simplified and full names
+    full_model_name = find_model_by_name(model_name)
+    if not full_model_name:
+        if DEBUG_MODE:
+            logger.error(f"Model '{model_name}' not found")
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+    
+    # Use the full model name for loading
+    model_name = full_model_name
 
     # Load model if needed
     if current_model != model_name:
@@ -691,6 +796,10 @@ def main():
 
     # Set the resource limits
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
+
+    # Initialize model mappings at server startup
+    print_color("Initializing model mappings...", "cyan")
+    initialize_model_mappings()
 
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")

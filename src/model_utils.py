@@ -67,19 +67,24 @@ def extract_model_details(model_name):
         ('w8a8_g512', r'w8a8_g512')
     ]
     
+    # Mapping to Ollama-style quantization names
+    quant_mapping = {
+        'w4a16': 'Q4_0',
+        'w4a16_g32': 'Q4_K_M',
+        'w4a16_g64': 'Q4_K_M',
+        'w4a16_g128': 'Q4_K_M',
+        'w8a8': 'Q8_0',
+        'w8a8_g128': 'Q8_K_M',
+        'w8a8_g256': 'Q8_K_M',
+        'w8a8_g512': 'Q8_K_M'
+    }
+    
     for quant_type, pattern in quant_patterns:
         if re.search(pattern, basename, re.IGNORECASE):
-            # Map to Ollama-style quantization format if available
-            details["quantization_level"] = QUANT_MAPPING.get(quant_type, quant_type)
+            # Use Ollama-style quantization name if available
+            details["quantization_level"] = quant_mapping.get(quant_type, quant_type)
             break
-    
-    # Check for hybrid ratio in quantization
-    hybrid_match = re.search(r'hybrid-ratio-(\d+\.\d+)', basename, re.IGNORECASE)
-    if hybrid_match and details["quantization_level"] != "Unknown":
-        hybrid_ratio = hybrid_match.group(1)
-        # Add hybrid info but keep the main Q format for compatibility
-        details["quantization_level"] = f"{details['quantization_level']}-hybrid"
-    
+            
     return details
 
 def get_simplified_model_name(model_path):
@@ -171,3 +176,70 @@ def get_original_model_path(simplified_name):
         The original model path, or None if not found
     """
     return model_name_mappings.get(simplified_name)
+
+def initialize_model_mappings():
+    """
+    Scan the models directory and initialize mappings between simplified 
+    and full model names to ensure they're available even without calling /api/tags
+    """
+    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    if not os.path.exists(models_dir):
+        return
+    
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm"):
+                    # Create the mapping for this model
+                    simple_name = get_simplified_model_name(subdir)
+                    logger.debug(f"Initialized mapping: {simple_name} -> {subdir}")
+                    break
+
+def find_model_by_name(model_name):
+    """
+    Find a model by name, handling both simplified and full names.
+    
+    Args:
+        model_name: Either a simplified name like 'qwen:3b' or a full name
+        
+    Returns:
+        The full model name/path if found, or None if not found
+    """
+    # First check if this is a simplified name we already know
+    original_path = get_original_model_path(model_name)
+    if original_path:
+        return original_path
+    
+    # If not found in mappings, check if the model directory exists directly
+    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    if os.path.exists(model_dir):
+        return model_name
+    
+    # If still not found, try to match by pattern (reverse lookup)
+    # This is more expensive but helps with compatibility
+    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    if os.path.exists(models_dir):
+        for subdir in os.listdir(models_dir):
+            subdir_path = os.path.join(models_dir, subdir)
+            if os.path.isdir(subdir_path):
+                # Check if any files with .rkllm extension exist
+                has_rkllm = any(f.endswith(".rkllm") for f in os.listdir(subdir_path))
+                if has_rkllm:
+                    # Get the simplified name for this model
+                    simple_name = get_simplified_model_name(subdir)
+                    # Store in mappings for future use
+                    model_name_mappings[simple_name] = subdir
+                    
+                    # Check if this matches what we're looking for
+                    if model_name.lower() == simple_name.lower():
+                        return subdir
+                    
+                    # Also check without version numbers (e.g., 'qwen' matches 'qwen:3b')
+                    base_simple = simple_name.split(':')[0]
+                    base_input = model_name.split(':')[0]
+                    if base_input.lower() == base_simple.lower():
+                        return subdir
+    
+    # Not found
+    return None

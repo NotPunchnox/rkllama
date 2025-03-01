@@ -7,6 +7,7 @@ import os
 from transformers import AutoTokenizer
 from flask import jsonify, Response
 import src.variables as variables
+from src.model_utils import get_simplified_model_name
 
 # Check for debug mode
 DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
@@ -45,7 +46,10 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
         Flask response with generated text
     """
     if DEBUG_MODE:
-        logger.debug(f"Processing Ollama chat request for model: {model_name}, stream: {stream}")
+        logger.debug(f"Processing Ollama chat request for model: {model_name}, stream={stream}")
+    
+    # Get simplified model name for response
+    simplified_model_name = get_simplified_model_name(model_name)
     
     # Save original system prompt and set new one if provided
     original_system = variables.system
@@ -65,17 +69,35 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
-        # Prepare prompt
+        # Process messages - handle system message specially
+        chat_messages = []
+        system_prompt_found = False
+        
+        # Extract system message if present as the first message
+        if messages and messages[0]["role"] == "system":
+            if DEBUG_MODE:
+                logger.debug("System message found in first position")
+            # Use the system message from messages if provided
+            variables.system = messages[0]["content"]
+            system_prompt_found = True
+            # Skip the system message for further processing
+            messages = messages[1:]
+        
+        # Now add all other messages, excluding system message
+        for message in messages:
+            chat_messages.append(message)
+        
+        # Prepare prompt with system if supported
         if variables.system and supports_system_role:
             if DEBUG_MODE:
-                logger.debug("Adding system prompt to messages")
-            prompt = [{"role": "system", "content": variables.system}] + messages
+                logger.debug("Adding system prompt")
+            prompt = [{"role": "system", "content": variables.system}] + chat_messages
         else:
-            prompt = messages
+            prompt = chat_messages
             
-        # Validate message sequence
-        for i in range(1, len(prompt)):
-            if prompt[i]["role"] == prompt[i - 1]["role"]:
+        # Validate message sequence - only validate non-system messages
+        for i in range(1, len(chat_messages)):
+            if chat_messages[i]["role"] == chat_messages[i - 1]["role"]:
                 err_msg = "Roles must alternate between 'user' and 'assistant'"
                 if DEBUG_MODE:
                     logger.error(err_msg)
@@ -114,9 +136,9 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                         full_response += output_text
                         tokens_processed = True
                         
-                        # Format response in Ollama style
+                        # Format response in Ollama style with simplified model name
                         ollama_chunk = {
-                            "model": model_name,
+                            "model": simplified_model_name,
                             "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                             "message": {
                                 "role": "assistant",
@@ -144,23 +166,29 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 # Always send the final message with done=true
                 if not final_sent:
                     total_time = time.time() - start
-                    # Send final message with done=true and complete response
+                    total_duration_ns = int(total_time * 1000000000)
+                    eval_duration_ns = int(total_time * 1000000000)
+                    
+                    # Send final message with done=true and EMPTY response
+                    # This matches real Ollama API behavior
                     final_chunk = {
-                        "model": model_name,
+                        "model": simplified_model_name,
                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "message": {
                             "role": "assistant",
-                            "content": full_response
+                            "content": ""  # Empty content in final message
                         },
+                        "done_reason": "stop",  # Add the done_reason field
                         "done": True,
-                        "total_duration": total_time * 1000000000,
+                        "total_duration": total_duration_ns,  # Use integer nanoseconds
+                        "load_duration": 0,  # We don't track this separately yet
                         "prompt_eval_count": prompt_token_count,
-                        "prompt_eval_duration": 0,
+                        "prompt_eval_duration": 0,  # We don't track this separately yet
                         "eval_count": count,
-                        "eval_duration": total_time * 1000000000
+                        "eval_duration": eval_duration_ns  # Use integer nanoseconds
                     }
                     if DEBUG_MODE:
-                        logger.debug(f"Sending final message: {len(full_response)} chars, done=True")
+                        logger.debug(f"Sending final message with empty content, done=True")
                     yield f"{json.dumps(final_chunk)}\n"
                     final_sent = True
                     
@@ -195,19 +223,20 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 
             # Return complete response
             ollama_response = {
-                "model": model_name,
+                "model": simplified_model_name,
                 "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                 "message": {
                     "role": "assistant",
                     "content": output_text
                 },
+                "done_reason": "stop",  # Add the done_reason field
                 "done": True,
-                "total_duration": total_time * 1000000000,
+                "total_duration": int(total_time * 1000000000),  # Use integer nanoseconds
                 "load_duration": 0,
                 "prompt_eval_count": prompt_token_count,
                 "prompt_eval_duration": 0,
                 "eval_count": count,
-                "eval_duration": total_time * 1000000000
+                "eval_duration": int(total_time * 1000000000)  # Use integer nanoseconds
             }
             
             return jsonify(ollama_response), 200
@@ -235,7 +264,10 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
         Flask response with generated text
     """
     if DEBUG_MODE:
-        logger.debug(f"Processing Ollama generate request for model: {model_name}, stream: {stream}")
+        logger.debug(f"Processing Ollama generate request for model: {model_name}, stream={stream}")
+    
+    # Get simplified model name for response
+    simplified_model_name = get_simplified_model_name(model_name)
     
     # Save original system prompt and set new one if provided
     original_system = variables.system
@@ -296,9 +328,9 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                         full_response += output_text
                         tokens_processed = True
                         
-                        # Format response in Ollama generate style
+                        # Format response in Ollama generate style with simplified model name
                         ollama_chunk = {
-                            "model": model_name,
+                            "model": simplified_model_name,
                             "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                             "response": output_text,
                             "done": False  # Always false until final message
@@ -323,23 +355,26 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                 # Always send the final message with done=true
                 if not final_sent:
                     total_time = time.time() - start
+                    total_duration_ns = int(total_time * 1000000000)
+                    eval_duration_ns = int(total_time * 1000000000)
+                    
                     # Send final message with done=true and empty response
                     final_chunk = {
-                        "model": model_name,
+                        "model": simplified_model_name,
                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                        "response": "",
+                        "response": "",  # Empty response in final message
                         "done": True,
                         "done_reason": "stop",
-                        "context": [], # This would normally contain token IDs
-                        "total_duration": int(total_time * 1000000000),
+                        "context": [],  # This would normally contain token IDs
+                        "total_duration": total_duration_ns,  # Use integer nanoseconds
                         "load_duration": 0,
                         "prompt_eval_count": prompt_token_count,
                         "prompt_eval_duration": 0,
                         "eval_count": count,
-                        "eval_duration": int(total_time * 1000000000)
+                        "eval_duration": eval_duration_ns  # Use integer nanoseconds
                     }
                     if DEBUG_MODE:
-                        logger.debug(f"Sending final generate message: done=True")
+                        logger.debug(f"Sending final generate message with empty response, done=True")
                     yield f"{json.dumps(final_chunk)}\n"
                     final_sent = True
                     
@@ -374,12 +409,12 @@ def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="",
                 
             # Return complete response in the expected format
             ollama_response = {
-                "model": model_name,
+                "model": simplified_model_name,
                 "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                 "response": output_text,
                 "done": True,
                 "done_reason": "stop",
-                "context": [], # This would normally contain token IDs
+                "context": [],  # This would normally contain token IDs
                 "total_duration": int(total_time * 1000000000),
                 "load_duration": 0,
                 "prompt_eval_count": prompt_token_count,
