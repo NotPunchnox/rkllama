@@ -13,6 +13,7 @@ from src.process import Request
 import src.variables as variables
 from src.server_utils import process_ollama_chat_request, process_ollama_generate_request
 from src.debug_utils import StreamDebugger, check_response_format
+from src.model_utils import get_simplified_model_name, get_original_model_path, extract_model_details
 
 # Check for debug mode
 DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
@@ -314,13 +315,27 @@ def list_ollama_models():
             for file in os.listdir(subdir_path):
                 if file.endswith(".rkllm"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
+                    
+                    # Generate a simplified model name in Ollama style
+                    simple_name = get_simplified_model_name(subdir)
+                    
+                    # Extract parameter size and quantization type
+                    model_details = extract_model_details(subdir)
+                    
                     models.append({
-                        "name": subdir,
-                        "model": subdir,
+                        "name": simple_name,        # Use simplified name like qwen2.5:3b
+                        "model": simple_name,       # Match Ollama's format
                         "modified_at": datetime.datetime.fromtimestamp(
                             os.path.getmtime(os.path.join(subdir_path, file))
                         ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "size": size,
+                        "digest": "",               # Ollama field (not used but included for compatibility)
+                        "details": {
+                            "format": "rkllm",      # Indicate our format
+                            "family": "llama",      # Default family 
+                            "parameter_size": model_details["parameter_size"],
+                            "quantization_level": model_details["quantization_level"]
+                        }
                     })
                     break
 
@@ -333,6 +348,11 @@ def show_model_info():
     
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
+    
+    # Handle simplified model names
+    original_model = get_original_model_path(model_name)
+    if original_model:
+        model_name = original_model
         
     model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
     
@@ -359,18 +379,21 @@ def show_model_info():
     file_path = os.path.join(model_dir, model_file)
     size = os.path.getsize(file_path)
     
+    # Extract parameter size and quantization details
+    model_details = extract_model_details(model_name)
+    
     return jsonify({
         "license": "Unknown",
         "modelfile": modelfile_content,
-        "parameters": "Unknown",
+        "parameters": model_details["parameter_size"],
         "template": "{{ .Prompt }}",
         "name": model_name,
         "details": {
             "parent_model": "",
             "format": "rkllm",
             "family": "llama",
-            "parameter_size": "Unknown",
-            "quantization_level": "Unknown"
+            "parameter_size": model_details["parameter_size"],
+            "quantization_level": model_details["quantization_level"]
         },
         "size": size
     }), 200
@@ -459,6 +482,11 @@ def generate_ollama():
     if DEBUG_MODE:
         logger.debug(f"API generate request: model={model_name}, stream={stream}, prompt_length={len(prompt)}")
 
+    # If the model name is in simplified format, look up the original path
+    original_model_path = get_original_model_path(model_name)
+    if original_model_path:
+        model_name = original_model_path
+
     # Load model if needed
     if current_model != model_name:
         if current_model:
@@ -514,6 +542,11 @@ def chat_ollama():
         if DEBUG_MODE:
             logger.warning("Missing messages in request")
         return jsonify({"error": "Missing messages"}), 400
+
+    # If the model name is in simplified format, look up the original path
+    original_model_path = get_original_model_path(model_name)
+    if original_model_path:
+        model_name = original_model_path
 
     # Load model if needed
     if current_model != model_name:
@@ -588,6 +621,14 @@ def embeddings_ollama():
     return jsonify({
         "error": "Embeddings not supported in RKLLAMA"
     }), 501
+
+# Version endpoint for Ollama API compatibility
+@app.route('/api/version', methods=['GET'])
+def ollama_version():
+    """Return a dummy version to be compatible with Ollama clients"""
+    return jsonify({
+        "version": "0.5.1"
+    }), 200
 
 # Default route
 @app.route('/', methods=['GET'])

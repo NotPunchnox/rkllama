@@ -9,6 +9,7 @@ RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface t
 | Endpoint | Method | Description | Status |
 |----------|--------|-------------|--------|
 | `/api/tags` | GET | List available models | ✅ |
+| `/api/version` | GET | Get API version (Dummy version to fix some apps) | ✅ |
 | `/api/show` | POST | Show model information | ✅ |
 | `/api/create` | POST | Create model from Modelfile | ✅ |
 | `/api/pull` | POST | Pull a model | ✅ |
