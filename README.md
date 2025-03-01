@@ -251,3 +251,4 @@ System Monitor:
 ##  Contributors
 
 *  [**ichlaffterlalu**](https://github.com/ichlaffterlalu): Contributed with a pull request for [Docker-Rkllama](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker) and fixed multiple errors.
+*  [**TomJacobsUK**](https://github.com/TomJacobsUK): Contributed with a pull request to correct a "Cpu no detected" error in [server.sh](./server.sh).
