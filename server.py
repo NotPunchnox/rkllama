@@ -3,6 +3,7 @@ import sys, os, subprocess, resource, argparse, shutil, time, requests, configpa
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
 from transformers import AutoTokenizer
 
 # Local file
@@ -10,7 +11,7 @@ from src.classes import *
 from src.rkllm import *
 from src.process import Request
 import src.variables as variables
-from src.server_utils import process_ollama_chat_request
+from src.server_utils import process_ollama_chat_request, process_ollama_generate_request
 from src.debug_utils import StreamDebugger, check_response_format
 
 # Check for debug mode
@@ -108,6 +109,8 @@ def unload_model():
         modele_rkllm = None
 
 app = Flask(__name__)
+# Enable CORS for all routes
+CORS(app)
 
 # Original RKLLAMA Routes:
 # GET    /models

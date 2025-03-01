@@ -54,6 +54,11 @@ fi
 echo -e "${CYAN}Installing dependencies from requirements.txt...${RESET}"
 pip3 install -r ~/RKLLAMA/requirements.txt
 
+# Install python libraries
+echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
+# Add flask-cors to the pip install command
+pip install requests flask huggingface_hub flask-cors python-dotenv transformers
+
 # Make client.sh and server.sh executable
 echo -e "${CYAN}Making ./client.sh and ./server.sh executable${RESET}"
 chmod +x ~/RKLLAMA/client.sh
