@@ -2,7 +2,7 @@
 
 ## Overview
 
-RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface that matches Ollama's endpoint structure. This experimental feature enables integration with tools and scripts designed for Ollama's API.
+RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface that matches Ollama's endpoint structure. This enables integration with tools and scripts designed for Ollama's API.
 
 ## Supported Endpoints
 
@@ -19,7 +19,9 @@ RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface t
 
 ## Usage Examples
 
-### Chat Completion
+### Chat Completion (`/api/chat`)
+
+This endpoint uses a chat-style format with message roles and is best for multi-turn conversations:
 
 ```bash
 curl -X POST http://localhost:8080/api/chat -d '{
@@ -30,7 +32,9 @@ curl -X POST http://localhost:8080/api/chat -d '{
 }'
 ```
 
-### Generate Completion
+### Generate Completion (`/api/generate`)
+
+This endpoint is used for single-turn completions based on a prompt:
 
 ```bash
 curl -X POST http://localhost:8080/api/generate -d '{

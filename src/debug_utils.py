@@ -5,95 +5,94 @@ import logging
 import threading
 import time
 
-# Set up logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.expanduser("~/RKLLAMA/rkllama_debug.log"))
-    ]
-)
-logger = logging.getLogger("rkllama.debug")
+# Check for debug mode
+DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+
+# Configure logger
+logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
+logger = logging.getLogger("rkllama.debug_utils")
 
 class StreamDebugger:
-    """
-    Utility class to debug streaming responses
-    """
-    def __init__(self, model_name, enable_logging=True):
-        self.model_name = model_name
-        self.enable_logging = enable_logging
-        self.start_time = time.time()
-        self.chunks = []
-        self.done_received = False
-        self.total_tokens = 0
-        
-    def log_chunk(self, chunk, is_done=False):
-        """Log a streaming chunk"""
-        if not self.enable_logging:
-            return
-        
-        self.chunks.append(chunk)
-        self.total_tokens += 1
-        
-        if is_done:
-            self.done_received = True
-            logger.debug(f"DONE message received for model {self.model_name}")
-            
-        if len(self.chunks) % 10 == 0:  # Log every 10 chunks
-            elapsed = time.time() - self.start_time
-            logger.debug(f"Stream progress: {len(self.chunks)} chunks, {elapsed:.2f}s elapsed, done={self.done_received}")
+    """Utility class for debugging streaming responses"""
     
-    def finalize(self):
-        """Called at the end of streaming to log final stats"""
-        if not self.enable_logging:
-            return
-            
-        elapsed = time.time() - self.start_time
-        logger.debug(f"Stream completed: {len(self.chunks)} total chunks, {elapsed:.2f}s elapsed, done={self.done_received}")
+    def __init__(self, stream_name="unnamed"):
+        self.stream_name = stream_name
+        self.chunks = []
         
-        if not self.done_received:
-            logger.warning(f"Stream for {self.model_name} completed without receiving done=true message")
-            
+    def add_chunk(self, chunk):
+        """Add a chunk to the debug log"""
+        self.chunks.append(chunk)
+        if DEBUG_MODE:
+            logger.debug(f"Stream '{self.stream_name}' chunk {len(self.chunks)}: {chunk[:50]}...")
+    
+    def get_summary(self):
+        """Get a summary of the stream"""
         return {
-            "model": self.model_name,
+            "stream_name": self.stream_name,
             "chunks": len(self.chunks),
-            "elapsed_time": elapsed,
-            "done_received": self.done_received,
-            "tokens_per_second": self.total_tokens / elapsed if elapsed > 0 else 0
+            "total_length": sum(len(c) for c in self.chunks),
+            "last_chunk": self.chunks[-1] if self.chunks else None
         }
 
 def check_response_format(response_text):
     """
-    Utility function to analyze response format and find issues
+    Check if a response stream has the correct format
+    
+    Args:
+        response_text: String containing newline-separated JSON responses
+        
+    Returns:
+        List of issues found, or empty list if format is correct
     """
-    lines = response_text.split("\n")
     issues = []
     
-    for i, line in enumerate(lines):
-        if not line.strip():
-            continue
-        
-        try:
-            data = json.loads(line)
-            # Check for required fields
-            if "model" not in data:
-                issues.append(f"Line {i+1}: Missing 'model' field")
-            if "message" not in data:
-                issues.append(f"Line {i+1}: Missing 'message' field")
-            if "done" not in data:
-                issues.append(f"Line {i+1}: Missing 'done' field")
-                
-            # Check if this is the last line
-            if i == len(lines) - 2 or (i == len(lines) - 1 and lines[-1].strip()):
-                if not data.get("done", False):
-                    issues.append(f"Last line doesn't have done=true")
-        except json.JSONDecodeError:
-            issues.append(f"Line {i+1}: Invalid JSON: {line}")
+    if not response_text:
+        return ["Empty response stream"]
     
-    # Check if any line has done=true
-    has_done = any('"done":true' in line or '"done": true' in line for line in lines)
-    if not has_done:
-        issues.append("No line has done=true")
+    lines = response_text.strip().split('\n')
+    
+    # Check if we have at least one line
+    if not lines:
+        return ["No lines found in response"]
+    
+    # Parse each line as JSON
+    parsed_chunks = []
+    for i, line in enumerate(lines):
+        try:
+            chunk = json.loads(line)
+            parsed_chunks.append(chunk)
+        except json.JSONDecodeError:
+            issues.append(f"Line {i+1} is not valid JSON: {line[:50]}...")
+    
+    if not parsed_chunks:
+        return ["No valid JSON chunks found in response"]
+    
+    # Check if the last chunk has done=True
+    last_chunk = parsed_chunks[-1]
+    if not last_chunk.get('done', False):
+        issues.append("Last chunk does not have 'done' set to true")
+    
+    # Check for consistency in response format
+    first_chunk = parsed_chunks[0]
+    
+    # Check if using generate or chat format
+    is_generate_format = 'response' in first_chunk
+    is_chat_format = 'message' in first_chunk and isinstance(first_chunk.get('message', {}), dict)
+    
+    if not (is_generate_format or is_chat_format):
+        issues.append(f"First chunk has neither 'response' nor 'message.content' field: {first_chunk}")
         
+    # Check consistent format through all chunks
+    for i, chunk in enumerate(parsed_chunks):
+        if is_generate_format and 'response' not in chunk:
+            issues.append(f"Chunk {i+1} missing 'response' field in generate format")
+            
+        if is_chat_format:
+            if 'message' not in chunk:
+                issues.append(f"Chunk {i+1} missing 'message' field in chat format")
+            elif not isinstance(chunk['message'], dict):
+                issues.append(f"Chunk {i+1} has 'message' that is not a dictionary")
+            elif 'content' not in chunk['message']:
+                issues.append(f"Chunk {i+1} missing 'message.content' field")
+    
     return issues

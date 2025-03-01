@@ -168,7 +168,7 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
                 if DEBUG_MODE:
                     logger.debug(f"Generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
                     
-            return Response(generate(), content_type='application/json')
+            return Response(generate(), content_type='application/x-ndjson')
         else:
             # Non-streaming response
             if DEBUG_MODE:
@@ -214,6 +214,184 @@ def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", s
     except Exception as e:
         if DEBUG_MODE:
             logger.exception(f"Error processing Ollama chat request: {str(e)}")
+        raise e
+    finally:
+        # Restore original system prompt
+        variables.system = original_system
+
+
+def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="", stream=True):
+    """
+    Process an Ollama-style generate request (different from chat)
+    
+    Args:
+        modele_rkllm: The model instance
+        model_name: Name of the model
+        prompt: The text prompt
+        system: System prompt
+        stream: Whether to stream the response
+        
+    Returns:
+        Flask response with generated text
+    """
+    if DEBUG_MODE:
+        logger.debug(f"Processing Ollama generate request for model: {model_name}, stream: {stream}")
+    
+    # Save original system prompt and set new one if provided
+    original_system = variables.system
+    if system:
+        if DEBUG_MODE:
+            logger.debug(f"Setting system prompt: {system}")
+        variables.system = system
+        
+    try:
+        # Reset global status for new request
+        variables.global_status = -1
+        variables.generation_complete = False
+        
+        # Set up tokenizer
+        if DEBUG_MODE:
+            logger.debug(f"Setting up tokenizer for model_id: {variables.model_id}")
+        tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
+        
+        # Create a message format for processing
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Apply system prompt if provided
+        supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
+        if variables.system and supports_system_role:
+            if DEBUG_MODE:
+                logger.debug("Adding system prompt to messages")
+            messages_with_system = [{"role": "system", "content": variables.system}] + messages
+            prompt_tokens = tokenizer.apply_chat_template(messages_with_system, tokenize=True, add_generation_prompt=True)
+        else:
+            prompt_tokens = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
+        
+        prompt_token_count = len(prompt_tokens)
+        if DEBUG_MODE:
+            logger.debug(f"Prompt token count: {prompt_token_count}")
+            
+        if stream:
+            def generate():
+                # Set up model thread
+                if DEBUG_MODE:
+                    logger.debug("Starting model inference thread for generate")
+                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+                thread_modele.start()
+                
+                thread_finished = False
+                count = 0
+                start = time.time()
+                full_response = ""
+                last_check_time = time.time()
+                check_interval = 0.1  # Check thread status every 100ms
+                final_sent = False
+                
+                while not thread_finished or len(variables.global_text) > 0:
+                    # Process any new tokens from the model
+                    tokens_processed = False
+                    while len(variables.global_text) > 0:
+                        count += 1
+                        output_text = variables.global_text.pop(0)
+                        full_response += output_text
+                        tokens_processed = True
+                        
+                        # Format response in Ollama generate style
+                        ollama_chunk = {
+                            "model": model_name,
+                            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                            "response": output_text,
+                            "done": False  # Always false until final message
+                        }
+                        
+                        if DEBUG_MODE:
+                            logger.debug(f"Streaming generate chunk: {len(output_text)} chars, done=False")
+                        yield f"{json.dumps(ollama_chunk)}\n"
+                        last_check_time = time.time()  # Reset the check timer
+                    
+                    # Check if thread is still running periodically
+                    current_time = time.time()
+                    if current_time - last_check_time >= check_interval:
+                        thread_modele.join(timeout=0.005)
+                        thread_finished = not thread_modele.is_alive()
+                        last_check_time = current_time
+                        
+                        # If no tokens were processed this loop and model is done, break
+                        if thread_finished and not tokens_processed and len(variables.global_text) == 0:
+                            break
+                
+                # Always send the final message with done=true
+                if not final_sent:
+                    total_time = time.time() - start
+                    # Send final message with done=true and empty response
+                    final_chunk = {
+                        "model": model_name,
+                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "response": "",
+                        "done": True,
+                        "done_reason": "stop",
+                        "context": [], # This would normally contain token IDs
+                        "total_duration": int(total_time * 1000000000),
+                        "load_duration": 0,
+                        "prompt_eval_count": prompt_token_count,
+                        "prompt_eval_duration": 0,
+                        "eval_count": count,
+                        "eval_duration": int(total_time * 1000000000)
+                    }
+                    if DEBUG_MODE:
+                        logger.debug(f"Sending final generate message: done=True")
+                    yield f"{json.dumps(final_chunk)}\n"
+                    final_sent = True
+                    
+                variables.generation_complete = True
+                if DEBUG_MODE:
+                    logger.debug(f"Generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
+                    
+            return Response(generate(), content_type='application/x-ndjson')
+        else:
+            # Non-streaming response
+            if DEBUG_MODE:
+                logger.debug("Processing non-streaming generate request")
+            thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+            thread_modele.start()
+            
+            output_text = ""
+            count = 0
+            start = time.time()
+            
+            # Wait for completion
+            while thread_modele.is_alive() or len(variables.global_text) > 0:
+                while len(variables.global_text) > 0:
+                    count += 1
+                    output_text += variables.global_text.pop(0)
+                    
+                thread_modele.join(timeout=0.005)
+                
+            total_time = time.time() - start
+            variables.generation_complete = True
+            if DEBUG_MODE:
+                logger.debug(f"Non-streaming generate complete. Total tokens: {count}, Total time: {total_time:.2f}s")
+                
+            # Return complete response in the expected format
+            ollama_response = {
+                "model": model_name,
+                "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "response": output_text,
+                "done": True,
+                "done_reason": "stop",
+                "context": [], # This would normally contain token IDs
+                "total_duration": int(total_time * 1000000000),
+                "load_duration": 0,
+                "prompt_eval_count": prompt_token_count,
+                "prompt_eval_duration": 0,
+                "eval_count": count,
+                "eval_duration": int(total_time * 1000000000)
+            }
+            
+            return jsonify(ollama_response), 200
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error processing Ollama generate request: {str(e)}")
         raise e
     finally:
         # Restore original system prompt

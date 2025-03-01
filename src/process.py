@@ -175,7 +175,11 @@ def Request(modele_rkllm, custom_request=None):
                         thread_modele.join(timeout=0.005)
                         thread_modele_terminé = not thread_modele.is_alive()
 
-                return Response(generate(), content_type='text/plain')
+                # Use appropriate content type based on request type
+                if is_ollama_request:
+                    return Response(generate(), content_type='application/x-ndjson')
+                else:
+                    return Response(generate(), content_type='text/plain')
         else:
             return jsonify({'status': 'error', 'message': 'Données JSON invalides !'}), 400
     finally:

@@ -227,7 +227,10 @@ def pull_model():
         except Exception as e:
             yield f"Error: {str(e)}\n"
 
-    return Response(generate_progress(), content_type='text/plain')
+    # Use the appropriate content type for streaming responses
+    is_ollama_request = request.path.startswith('/api/')
+    content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
+    return Response(generate_progress(), content_type=content_type)
 
 # Route for loading a model into the NPU
 @app.route('/load_model', methods=['POST'])
@@ -407,7 +410,9 @@ def pull_model_ollama():
     if not model:
         return jsonify({"error": "Missing model name"}), 400
 
-    response_stream = app.view_functions['pull_model']()
+    # Ollama API uses application/x-ndjson for streaming
+    response_stream = pull_model()  # Call the existing function directly
+    response_stream.content_type = 'application/x-ndjson'
     return response_stream
 
 @app.route('/api/delete', methods=['DELETE'])
@@ -448,6 +453,9 @@ def generate_ollama():
     if not prompt:
         return jsonify({"error": "Missing prompt"}), 400
 
+    if DEBUG_MODE:
+        logger.debug(f"API generate request: model={model_name}, stream={stream}, prompt_length={len(prompt)}")
+
     # Load model if needed
     if current_model != model_name:
         if current_model:
@@ -462,21 +470,21 @@ def generate_ollama():
     # Set system prompt if provided
     variables.system = system
     
-    # Construct messages for the existing API
-    messages = [{"role": "user", "content": prompt}]
-    
-    # Use the process_ollama_chat_request function instead
+    # Use the process_ollama_generate_request function for proper generate format
     variables.verrou.acquire()
     
     try:
-        return process_ollama_chat_request(
+        from src.server_utils import process_ollama_generate_request
+        return process_ollama_generate_request(
             modele_rkllm,
             model_name,
-            messages,
+            prompt,
             system,
             stream
         )
     except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error in generate_ollama: {str(e)}")
         return jsonify({"error": str(e)}), 500
     finally:
         variables.verrou.release()
