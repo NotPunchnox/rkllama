@@ -284,9 +284,9 @@ def unload_model_route():
 # Route to retrieve the current model
 @app.route('/current_model', methods=['GET'])
 def get_current_model():
-    global current_model
+    global current_model, modele_rkllm
 
-    if current_model:
+    if current_model and modele_rkllm:
         return jsonify({"model_name": current_model}), 200
     else:
         return jsonify({"error": "No models are currently loaded."}), 404
