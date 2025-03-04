@@ -754,6 +754,7 @@ def create_model():
 
 @app.route('/api/pull', methods=['POST'])
 def pull_model_ollama():
+    # TODO: Implement the pull model
     data = request.json
     model = data.get('name')
     
@@ -790,139 +791,209 @@ def delete_model_ollama():
 @app.route('/api/generate', methods=['POST'])
 def generate_ollama():
     global modele_rkllm, current_model
-
-    data = request.json
-    model_name = data.get('model')
-    prompt = data.get('prompt')
-    system = data.get('system', '')
-    stream = data.get('stream', True)
     
-    if not model_name:
-        return jsonify({"error": "Missing model name"}), 400
+    lock_acquired = False  # Track lock status
 
-    if not prompt:
-        return jsonify({"error": "Missing prompt"}), 400
-
-    if DEBUG_MODE:
-        logger.debug(f"API generate request: model={model_name}, stream={stream}, prompt_length={len(prompt)}")
-
-    # Improved model lookup that handles both simplified and full names
-    full_model_name = find_model_by_name(model_name)
-    if not full_model_name:
-        return jsonify({"error": f"Model '{model_name}' not found"}), 404
-    
-    # Use the full model name for loading
-    model_name = full_model_name
-
-    # Load model if needed
-    if current_model != model_name:
-        if current_model:
-            unload_model()
-        modele_instance, error = load_model(model_name)
-        if error:
-            return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        modele_rkllm = modele_instance
-        current_model = model_name
-
-    # Set system prompt if provided
-    variables.system = system
-    
-    # Use the process_ollama_generate_request function for proper generate format
-    variables.verrou.acquire()
-    
     try:
-        # Process using the updated function that uses simplified model names
-        return process_ollama_generate_request(
-            modele_rkllm,
-            model_name,  # Pass the full name, the function will simplify it
-            prompt,
-            system,
-            stream
+        data = request.json
+        model_name = data.get('model')
+        prompt = data.get('prompt')
+        system = data.get('system', '')
+        stream = data.get('stream', True)
+        
+        # Support format options for structured JSON output
+        format_spec = data.get('format')
+        options = data.get('options', {})
+        
+        if DEBUG_MODE:
+            logger.debug(f"API generate request: model={model_name}, stream={stream}, format={format_spec}")
+
+        if not model_name:
+            return jsonify({"error": "Missing model name"}), 400
+
+        if not prompt:
+            return jsonify({"error": "Missing prompt"}), 400
+
+        # Improved model resolution
+        full_model_name = find_model_by_name(model_name)
+        if not full_model_name:
+            if DEBUG_MODE:
+                logger.error(f"Model '{model_name}' not found")
+            return jsonify({"error": f"Model '{model_name}' not found"}), 404
+        
+        # Use the full model name for loading
+        model_name = full_model_name
+
+        # Load model if needed
+        if current_model != model_name:
+            if current_model:
+                unload_model()
+            modele_instance, error = load_model(model_name)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            modele_rkllm = modele_instance
+            current_model = model_name
+
+        # Acquire lock before processing
+        variables.verrou.acquire()
+        lock_acquired = True
+        
+        # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
+        from src.server_utils import GenerateEndpointHandler
+        return GenerateEndpointHandler.handle_request(
+            modele_rkllm=modele_rkllm,
+            model_name=model_name,
+            prompt=prompt,
+            system=system,
+            stream=stream,
+            format_spec=format_spec,
+            options=options
         )
     except Exception as e:
         if DEBUG_MODE:
             logger.exception(f"Error in generate_ollama: {str(e)}")
         return jsonify({"error": str(e)}), 500
     finally:
-        variables.verrou.release()
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            variables.verrou.release()
 
+# Also update the chat endpoint for consistency
 @app.route('/api/chat', methods=['POST'])
 def chat_ollama():
     global modele_rkllm, current_model
-
-    data = request.json
-    model_name = data.get('model')
-    messages = data.get('messages', [])
-    system = data.get('system', '')
-    stream = data.get('stream', True)
     
-    if DEBUG_MODE:
-        logger.debug(f"API chat request: model={model_name}, stream={stream}, messages_count={len(messages)}")
-    
-    if not model_name:
-        if DEBUG_MODE:
-            logger.warning("Missing model name in request")
-        return jsonify({"error": "Missing model name"}), 400
+    lock_acquired = False  # Track lock status
 
-    if not messages:
-        if DEBUG_MODE:
-            logger.warning("Missing messages in request")
-        return jsonify({"error": "Missing messages"}), 400
-
-    # Improved model lookup that handles both simplified and full names
-    full_model_name = find_model_by_name(model_name)
-    if not full_model_name:
-        if DEBUG_MODE:
-            logger.error(f"Model '{model_name}' not found")
-        return jsonify({"error": f"Model '{model_name}' not found"}), 404
-    
-    # Use the full model name for loading
-    model_name = full_model_name
-
-    # Load model if needed
-    if current_model != model_name:
-        if current_model:
-            if DEBUG_MODE:
-                logger.debug(f"Unloading current model: {current_model}")
-            unload_model()
+    try:
+        data = request.json
+        model_name = data.get('model')
+        messages = data.get('messages', [])
+        system = data.get('system', '')
+        stream = data.get('stream', True)
+        
+        # Extract format parameters - can be object or string
+        format_spec = data.get('format')
+        options = data.get('options', {})
         
         if DEBUG_MODE:
-            logger.debug(f"Loading model: {model_name}")
-        modele_instance, error = load_model(model_name)
-        if error:
+            logger.debug(f"API chat request: model={model_name}, format={format_spec}")
+        
+        # Check if we're starting a new conversation
+        # A new conversation is one that doesn't include any assistant messages
+        is_new_conversation = not any(msg.get('role') == 'assistant' for msg in messages)
+        
+        # Always reset system prompt for new conversations
+        if is_new_conversation:
+            variables.system = ""
             if DEBUG_MODE:
-                logger.error(f"Failed to load model {model_name}: {error}")
-            return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        global modele_rkllm
-        modele_rkllm = modele_instance
-        current_model = model_name
-        if DEBUG_MODE:
-            logger.debug(f"Model {model_name} loaded successfully")
+                logger.debug("New conversation detected, resetting system prompt")
+        
+        # Extract system message from messages array if present
+        system_in_messages = False
+        filtered_messages = []
+        
+        for message in messages:
+            if message.get('role') == 'system':
+                system = message.get('content', '')
+                system_in_messages = True
+                # Don't add system message to filtered messages
+            else:
+                filtered_messages.append(message)
+        
+        # Only use the extracted system message or explicit system parameter if provided
+        if system_in_messages or system:
+            variables.system = system
+            messages = filtered_messages
+            if DEBUG_MODE:
+                logger.debug(f"Using system message: {system}")
+        
+        # Improved model resolution
+        full_model_name = find_model_by_name(model_name)
+        if not full_model_name:
+            if DEBUG_MODE:
+                logger.error(f"Model '{model_name}' not found")
+            return jsonify({"error": f"Model '{model_name}' not found"}), 404
+        
+        # Use the full model name for loading
+        model_name = full_model_name
 
-    # Acquire lock before processing
-    if DEBUG_MODE:
-        logger.debug("Acquiring lock")
-    variables.verrou.acquire()
-    
-    try:
-        # Process Ollama chat request using the utility function
-        if DEBUG_MODE:
-            logger.debug("Processing request with process_ollama_chat_request")
-        return process_ollama_chat_request(
-            modele_rkllm,
-            model_name,
-            messages,
-            system,
-            stream
+        # Load model if needed
+        if current_model != model_name:
+            if current_model:
+                if DEBUG_MODE:
+                    logger.debug(f"Unloading current model: {current_model}")
+                unload_model()
+            
+            if DEBUG_MODE:
+                logger.debug(f"Loading model: {model_name}")
+            modele_instance, error = load_model(model_name)
+            if error:
+                if DEBUG_MODE:
+                    logger.error(f"Failed to load model {model_name}: {error}")
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            modele_rkllm = modele_instance
+            current_model = model_name
+            if DEBUG_MODE:
+                logger.debug(f"Model {model_name} loaded successfully")
+
+        # Apply options to model parameters if provided
+        if options and isinstance(options, dict):
+            if "temperature" in options:
+                try:
+                    temperature = float(options["temperature"])
+                    # Set temperature for model if supported
+                except (ValueError, TypeError):
+                    pass
+        
+        # Store format settings in model instance
+        if modele_rkllm:
+            modele_rkllm.format_schema = format_spec
+            modele_rkllm.format_options = options
+        
+        # Acquire lock before processing the request
+        variables.verrou.acquire()
+        lock_acquired = True  # Mark lock as acquired
+        
+        # Create custom request for processing
+        custom_req = type('obj', (object,), {
+            'json': {
+                "model": model_name,
+                "messages": messages,
+                "stream": stream,
+                "system": system,
+                "format": format_spec,
+                "options": options
+            },
+            'path': '/api/chat'
+        })
+        
+        # Set a flag on the custom request to indicate it should not release the lock
+        # as we'll handle it here
+        custom_req.handle_lock = False
+        
+        # Process the request - this won't release the lock
+        from src.server_utils import ChatEndpointHandler
+        return ChatEndpointHandler.handle_request(
+            modele_rkllm=modele_rkllm,
+            model_name=model_name,
+            messages=messages,
+            system=system,
+            stream=stream,
+            format_spec=format_spec,
+            options=options
         )
+    
     except Exception as e:
-        if DEBUG_MODE:
-            logger.exception(f"Error in chat_ollama: {str(e)}")
+        logger.exception("Error in chat_ollama")
         return jsonify({"error": str(e)}), 500
+    
     finally:
-        if DEBUG_MODE:
-            logger.debug("Releasing lock")
-        variables.verrou.release()
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            if DEBUG_MODE:
+                logger.debug("Releasing lock in chat_ollama")
+            variables.verrou.release()
 
 # Only include debug endpoint if in debug mode
 if DEBUG_MODE:

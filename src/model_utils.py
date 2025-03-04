@@ -2,12 +2,14 @@ import os
 import re
 import logging
 import requests
+from pathlib import Path
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
 
-# Dictionary to store mappings between simplified names and actual model paths
-model_name_mappings = {}
+# Global dictionaries for model mappings
+SIMPLE_TO_FULL_MAP = {}  # Maps simplified names (e.g., "qwen2:3b") to full paths
+FULL_TO_SIMPLE_MAP = {}  # Maps full paths to simplified names
 
 # Mapping from RKLLM quantization types to Ollama-style formats
 QUANT_MAPPING = {
@@ -230,159 +232,187 @@ def extract_model_details(model_name):
             
     return details
 
-def get_simplified_model_name(model_path):
+def get_simplified_model_name(full_name):
     """
-    Convert RKLLM model names to Ollama-style simplified names
+    Convert a full model name to a simplified Ollama-style name
     
     Args:
-        model_path: Path to the model directory or filename
+        full_name: The full model name/path
         
     Returns:
-        A simplified name like 'qwen2.5:3b' instead of 'Qwen2.5-3B-Instruct-rk3588-w8a8-opt-0-hybrid-ratio-1.0'
+        A simplified name like "qwen2:3b"
     """
-    # Extract just the directory/file name without path
-    model_name = os.path.basename(model_path).replace('.rkllm', '')
+    # Handle paths - extract just the directory name
+    if os.path.sep in full_name:
+        full_name = os.path.basename(os.path.normpath(full_name))
     
-    # Store original name for logging
-    original_name = model_name
+    # Remove any file extension
+    full_name = os.path.splitext(full_name)[0]
     
-    # Match common model families and sizes
-    simplified_name = None
+    # Extract model family
+    model_family = ""
+    if re.search(r'(?i)qwen\d*', full_name):
+        match = re.search(r'(?i)(qwen\d*)', full_name)
+        if match:
+            model_family = match.group(1).lower()
+            if '2' in model_family:
+                model_family = 'qwen2.5'
+            else:
+                model_family = 'qwen'
+    elif re.search(r'(?i)mistral', full_name):
+        model_family = 'mistral'
+    elif re.search(r'(?i)tinyllama', full_name):
+        model_family = 'tinyllama'
+    elif re.search(r'(?i)llama[-_]?3', full_name):
+        model_family = 'llama3'
+    elif re.search(r'(?i)llama[-_]?2', full_name):
+        model_family = 'llama2'
+    elif re.search(r'(?i)llama', full_name):
+        model_family = 'llama'
+    else:
+        # Default to the first part of the name as family
+        # Example: "Phi-2" becomes "phi"
+        model_family = re.split(r'[-_\d]', full_name)[0].lower()
     
-    # Check for Qwen models
-    qwen_match = re.search(r'(?i)Qwen[-_]?(\d+\.?\d*)[-_]?(\d+)B', model_name)
-    if qwen_match:
-        version = qwen_match.group(1)
-        size = qwen_match.group(2).lower()
-        simplified_name = f"qwen{version}:{size}b"
-    
-    # Check for TinyLlama models
-    tiny_match = re.search(r'(?i)TinyLlama[-_]?(\d+\.?\d*)B', model_name)
-    if tiny_match:
-        size = tiny_match.group(1).lower()
-        simplified_name = f"tinyllama:{size}b"
-    
-    # Check for Llama models
-    llama_match = re.search(r'(?i)Llama[-_]?(\d+)[-_]?(\d+)B', model_name)
-    if llama_match:
-        version = llama_match.group(1)
-        size = llama_match.group(2).lower()
-        simplified_name = f"llama{version}:{size}b"
-    
-    # Check for Mistral models
-    mistral_match = re.search(r'(?i)Mistral[-_]?(\d+)B', model_name)
-    if mistral_match:
-        size = mistral_match.group(1).lower()
-        simplified_name = f"mistral:{size}b"
-    
-    # Check for DeepSeek models
-    deepseek_match = re.search(r'(?i)DeepSeek[-_]?(\d+)B', model_name)
-    if deepseek_match:
-        size = deepseek_match.group(1).lower()
-        simplified_name = f"deepseek:{size}b"
-    
-    # If we couldn't match a known pattern, create a generic simplified name
-    if not simplified_name:
-        # Remove common suffixes and prefixes
-        name = model_name
-        name = re.sub(r'[-_]rk\d{4}.*$', '', name)  # Remove RK platform suffix
-        name = re.sub(r'[-_]Instruct.*$', '', name)  # Remove Instruct suffix
-        name = re.sub(r'[-_]Chat.*$', '', name)      # Remove Chat suffix
-        name = re.sub(r'[-_]v\d+\.\d+.*$', '', name) # Remove version suffix
-        
-        # Try to find size marker
-        size_match = re.search(r'[-_]?(\d+)B', name)
+    # Extract parameter size
+    param_size = ""
+    # Try to find a pattern like "7B" or "3b"
+    size_match = re.search(r'(?i)(\d+\.?\d*)B', full_name)
+    if size_match:
+        param_size = size_match.group(1).lower() + 'b'
+    else:
+        # Try other number patterns
+        size_match = re.search(r'[-_](\d+)(?:[-_]|$)', full_name)
         if size_match:
-            base_name = name[:size_match.start()].lower().replace('_', '').replace('-', '')
-            size = size_match.group(1).lower()
-            simplified_name = f"{base_name}:{size}b"
-        else:
-            # If no size found, just use lowercase name
-            simplified_name = name.lower().replace('_', '').replace('-', '')
-            simplified_name = f"{simplified_name}:latest"
+            size = size_match.group(1)
+            if len(size) <= 2:  # Likely a small number like 3, 7
+                param_size = size + 'b'
     
-    logger.debug(f"Converted model name '{original_name}' to '{simplified_name}'")
-    
-    # Store the mapping for reverse lookup
-    model_name_mappings[simplified_name] = model_path
-    
-    return simplified_name
+    # Combine family and size with Ollama's naming convention
+    if model_family and param_size:
+        return f"{model_family}:{param_size}"
+    elif model_family:
+        return model_family
+    else:
+        # Fallback to a simplified version of the original name
+        return re.sub(r'[^a-zA-Z0-9]', '-', full_name).lower()
 
 def get_original_model_path(simplified_name):
     """
-    Look up the original model path from a simplified name
+    Look up the original model directory name from a simplified name
     
     Args:
-        simplified_name: Simplified model name like 'qwen2.5:3b'
+        simplified_name: A simplified model name like "qwen2:3b"
         
     Returns:
-        The original model path, or None if not found
+        The original model directory name or None if not found
     """
-    return model_name_mappings.get(simplified_name)
+    if simplified_name in SIMPLE_TO_FULL_MAP:
+        return SIMPLE_TO_FULL_MAP[simplified_name]
+    return None
 
 def initialize_model_mappings():
     """
-    Scan the models directory and initialize mappings between simplified 
-    and full model names to ensure they're available even without calling /api/tags
+    Initialize the model name mappings by scanning the models directory
+    This should be called at server startup
     """
+    global SIMPLE_TO_FULL_MAP, FULL_TO_SIMPLE_MAP
+    SIMPLE_TO_FULL_MAP.clear()
+    FULL_TO_SIMPLE_MAP.clear()
+    
     models_dir = os.path.expanduser("~/RKLLAMA/models")
+    
     if not os.path.exists(models_dir):
+        logger.warning(f"Models directory not found: {models_dir}")
         return
     
-    for subdir in os.listdir(models_dir):
-        subdir_path = os.path.join(models_dir, subdir)
-        if os.path.isdir(subdir_path):
-            for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
-                    # Create the mapping for this model
-                    simple_name = get_simplified_model_name(subdir)
-                    logger.debug(f"Initialized mapping: {simple_name} -> {subdir}")
-                    break
+    # Scan all subdirectories in the models directory
+    for model_dir in os.listdir(models_dir):
+        full_path = os.path.join(models_dir, model_dir)
+        
+        if os.path.isdir(full_path):
+            # Check if it contains a .rkllm file
+            has_rkllm = any(f.endswith('.rkllm') for f in os.listdir(full_path))
+            
+            if has_rkllm:
+                simple_name = get_simplified_model_name(model_dir)
+                SIMPLE_TO_FULL_MAP[simple_name] = model_dir
+                FULL_TO_SIMPLE_MAP[model_dir] = simple_name
+                
+                # Also add the original name as a key to allow direct lookups
+                SIMPLE_TO_FULL_MAP[model_dir] = model_dir
+                
+                logger.debug(f"Mapped model: {model_dir} -> {simple_name}")
 
-def find_model_by_name(model_name):
+def find_model_by_name(name):
     """
-    Find a model by name, handling both simplified and full names.
+    Find the actual model directory name from a simplified name or direct name
     
     Args:
-        model_name: Either a simplified name like 'qwen:3b' or a full name
-        
+        name: A model name (either simplified like "qwen2:3b" or full path)
+    
     Returns:
-        The full model name/path if found, or None if not found
+        The full model directory name or None if not found
     """
-    # First check if this is a simplified name we already know
-    original_path = get_original_model_path(model_name)
-    if original_path:
-        return original_path
+    # Try direct lookup first - maybe it's already the full path
+    if name in SIMPLE_TO_FULL_MAP:
+        return SIMPLE_TO_FULL_MAP[name]
     
-    # If not found in mappings, check if the model directory exists directly
-    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
-    if os.path.exists(model_dir):
-        return model_name
-    
-    # If still not found, try to match by pattern (reverse lookup)
-    # This is more expensive but helps with compatibility
+    # Check if it's a fully qualified path that exists directly
     models_dir = os.path.expanduser("~/RKLLAMA/models")
-    if os.path.exists(models_dir):
-        for subdir in os.listdir(models_dir):
-            subdir_path = os.path.join(models_dir, subdir)
-            if os.path.isdir(subdir_path):
-                # Check if any files with .rkllm extension exist
-                has_rkllm = any(f.endswith(".rkllm") for f in os.listdir(subdir_path))
-                if has_rkllm:
-                    # Get the simplified name for this model
-                    simple_name = get_simplified_model_name(subdir)
-                    # Store in mappings for future use
-                    model_name_mappings[simple_name] = subdir
-                    
-                    # Check if this matches what we're looking for
-                    if model_name.lower() == simple_name.lower():
-                        return subdir
-                    
-                    # Also check without version numbers (e.g., 'qwen' matches 'qwen:3b')
-                    base_simple = simple_name.split(':')[0]
-                    base_input = model_name.split(':')[0]
-                    if base_input.lower() == base_simple.lower():
-                        return subdir
+    direct_path = os.path.join(models_dir, name)
+    if os.path.isdir(direct_path):
+        # It exists directly, add to our maps
+        simple = get_simplified_model_name(name)
+        SIMPLE_TO_FULL_MAP[simple] = name
+        SIMPLE_TO_FULL_MAP[name] = name
+        FULL_TO_SIMPLE_MAP[name] = simple
+        return name
     
-    # Not found
+    # Try case-insensitive matching
+    for full_name in FULL_TO_SIMPLE_MAP.keys():
+        if name.lower() == full_name.lower():
+            return full_name
+            
+    # Check if any of the model directories contain the name
+    for model_dir in os.listdir(models_dir):
+        full_path = os.path.join(models_dir, model_dir)
+        if os.path.isdir(full_path) and name.lower() in model_dir.lower():
+            # Add to our maps for future lookups
+            simple = get_simplified_model_name(model_dir)
+            SIMPLE_TO_FULL_MAP[simple] = model_dir
+            SIMPLE_TO_FULL_MAP[name] = model_dir
+            FULL_TO_SIMPLE_MAP[model_dir] = simple
+            return model_dir
+    
+    # If we get here, the model was not found
+    logger.error(f"Model not found: {name}")
     return None
+
+def ensure_model_loaded(model_name):
+    """
+    Ensure a model is properly resolved to a valid directory path
+    
+    Args:
+        model_name: A model name (either simplified or full)
+    
+    Returns:
+        The resolved model directory name or None if not found
+    """
+    # Try looking up the model by name
+    full_model_name = find_model_by_name(model_name)
+    if not full_model_name:
+        # As a last resort, try direct path
+        models_dir = os.path.expanduser("~/RKLLAMA/models")
+        if os.path.exists(os.path.join(models_dir, model_name)):
+            return model_name
+        
+        # Try case-insensitive directory matching
+        for dir_name in os.listdir(models_dir):
+            if os.path.isdir(os.path.join(models_dir, dir_name)) and model_name.lower() == dir_name.lower():
+                return dir_name
+        
+        # If we reach here, the model truly wasn't found
+        return None
+    
+    return full_model_name

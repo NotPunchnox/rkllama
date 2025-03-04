@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 from flask import jsonify, Response
 import src.variables as variables
 from src.model_utils import get_simplified_model_name
+from .format_utils import create_format_instruction, validate_format_response
 
 # Check for debug mode
 DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
@@ -31,429 +32,519 @@ class RequestWrapper:
         self.path = path
 
 
-def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", stream=True):
-    """
-    Process an Ollama-style chat request
+class EndpointHandler:
+    """Base class for endpoint handlers with common functionality"""
     
-    Args:
-        modele_rkllm: The model instance
-        model_name: Name of the model
-        messages: List of message objects
-        system: System prompt
-        stream: Whether to stream the response
-        
-    Returns:
-        Flask response with generated text
-    """
-    if DEBUG_MODE:
-        logger.debug(f"Processing Ollama chat request for model: {model_name}, stream={stream}")
-    
-    # Get simplified model name for response
-    simplified_model_name = get_simplified_model_name(model_name)
-    
-    # Save original system prompt and set new one if provided
-    original_system = variables.system
-    if system:
-        if DEBUG_MODE:
-            logger.debug(f"Setting system prompt: {system}")
-        variables.system = system
-        
-    try:
-        # Reset global status for new request
-        variables.global_status = -1
-        variables.generation_complete = False
-        
-        # Measure time for prompt preparation and tokenization
-        prompt_eval_start = time.time()
-        
-        # Set up tokenizer
-        if DEBUG_MODE:
-            logger.debug(f"Setting up tokenizer for model_id: {variables.model_id}")
+    @staticmethod
+    def prepare_prompt(messages, system=""):
+        """Prepare prompt with proper system handling"""
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
-        # Process messages - handle system message specially
-        chat_messages = []
-        system_prompt_found = False
-        
-        # Extract system message if present as the first message
-        if messages and messages[0]["role"] == "system":
-            if DEBUG_MODE:
-                logger.debug("System message found in first position")
-            # Use the system message from messages if provided
-            variables.system = messages[0]["content"]
-            system_prompt_found = True
-            # Skip the system message for further processing
-            messages = messages[1:]
-        
-        # Now add all other messages, excluding system message
-        for message in messages:
-            chat_messages.append(message)
-        
-        # Prepare prompt with system if supported
-        if variables.system and supports_system_role:
-            if DEBUG_MODE:
-                logger.debug("Adding system prompt")
-            prompt = [{"role": "system", "content": variables.system}] + chat_messages
+        if system and supports_system_role:
+            prompt_messages = [{"role": "system", "content": system}] + messages
         else:
-            prompt = chat_messages
+            prompt_messages = messages
+        
+        prompt_tokens = tokenizer.apply_chat_template(prompt_messages, tokenize=True, add_generation_prompt=True)
+        return tokenizer, prompt_tokens, len(prompt_tokens)
+    
+    @staticmethod
+    def calculate_durations(start_time, prompt_eval_time, current_time=None):
+        """Calculate duration metrics for responses"""
+        if not current_time:
+            current_time = time.time()
             
-        # Validate message sequence - only validate non-system messages
-        for i in range(1, len(chat_messages)):
-            if chat_messages[i]["role"] == chat_messages[i - 1]["role"]:
-                err_msg = "Roles must alternate between 'user' and 'assistant'"
-                if DEBUG_MODE:
-                    logger.error(err_msg)
-                raise ValueError(err_msg)
-                
-        # Apply chat template
-        if DEBUG_MODE:
-            logger.debug("Applying chat template")
-        prompt_tokens = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
-        prompt_token_count = len(prompt_tokens)
+        total_duration = current_time - start_time
         
-        # Calculate prompt evaluation duration
-        prompt_eval_duration = time.time() - prompt_eval_start
-        prompt_eval_duration_ns = int(prompt_eval_duration * 1000000000)  # Convert to nanoseconds
+        if prompt_eval_time is None:
+            prompt_eval_time = start_time + (total_duration * 0.1)
+            
+        prompt_eval_duration = prompt_eval_time - start_time
+        eval_duration = current_time - prompt_eval_time
         
-        if DEBUG_MODE:
-            logger.debug(f"Prompt token count: {prompt_token_count}")
-            logger.debug(f"Prompt evaluation took: {prompt_eval_duration:.4f}s ({prompt_eval_duration_ns}ns)")
+        return {
+            "total": int(total_duration * 1_000_000_000),
+            "prompt_eval": int(prompt_eval_duration * 1_000_000_000),
+            "eval": int(eval_duration * 1_000_000_000),
+            "load": int(0.1 * 1_000_000_000)
+        }
+
+
+class ChatEndpointHandler(EndpointHandler):
+    """Handler for /api/chat endpoint requests"""
+    
+    @staticmethod
+    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None):
+        """Format a streaming chunk for chat endpoint"""
+        chunk = {
+            "model": model_name,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "message": {
+                "role": "assistant",
+                "content": token if not is_final else ""
+            },
+            "done": is_final
+        }
         
-        if stream:
-            def generate():
-                # Set up model thread
-                if DEBUG_MODE:
-                    logger.debug("Starting model inference thread")
-                generation_start = time.time()
-                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-                thread_modele.start()
+        if is_final:
+            chunk["done_reason"] = "stop"
+            if metrics:
+                chunk.update({
+                    "total_duration": metrics["total"],
+                    "load_duration": metrics["load"],
+                    "prompt_eval_count": metrics.get("prompt_tokens", 0),
+                    "prompt_eval_duration": metrics["prompt_eval"],
+                    "eval_count": metrics.get("token_count", 0),
+                    "eval_duration": metrics["eval"]
+                })
                 
-                thread_finished = False
-                count = 0
-                start = time.time()
-                full_response = ""
-                last_check_time = time.time()
-                check_interval = 0.1  # Check thread status every 100ms
-                final_sent = False
-                
-                while not thread_finished or len(variables.global_text) > 0:
-                    # Process any new tokens from the model
-                    tokens_processed = False
-                    while len(variables.global_text) > 0:
-                        count += 1
-                        output_text = variables.global_text.pop(0)
-                        full_response += output_text
-                        tokens_processed = True
-                        
-                        # Format response in Ollama style with simplified model name
-                        ollama_chunk = {
-                            "model": simplified_model_name,
-                            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                            "message": {
-                                "role": "assistant",
-                                "content": output_text
-                            },
-                            "done": False  # Always false until final message
-                        }
-                        
-                        if DEBUG_MODE:
-                            logger.debug(f"Streaming chunk: {len(output_text)} chars, done=False")
-                        yield f"{json.dumps(ollama_chunk)}\n"
-                        last_check_time = time.time()  # Reset the check timer
-                    
-                    # Check if thread is still running periodically
-                    current_time = time.time()
-                    if current_time - last_check_time >= check_interval:
-                        thread_modele.join(timeout=0.005)
-                        thread_finished = not thread_modele.is_alive()
-                        last_check_time = current_time
-                        
-                        # If no tokens were processed this loop and model is done, break
-                        if thread_finished and not tokens_processed and len(variables.global_text) == 0:
+        return chunk
+    
+    @staticmethod
+    def format_complete_response(model_name, complete_text, metrics, format_data=None):
+        """Format a complete non-streaming response for chat endpoint"""
+        response = {
+            "model": model_name,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "message": {
+                "role": "assistant",
+                "content": complete_text if not (format_data and "cleaned_json" in format_data) 
+                          else format_data["cleaned_json"]
+            },
+            "done_reason": "stop",
+            "done": True,
+            "total_duration": metrics["total"],
+            "load_duration": metrics["load"],
+            "prompt_eval_count": metrics.get("prompt_tokens", 0),
+            "prompt_eval_duration": metrics["prompt_eval"],
+            "eval_count": metrics.get("token_count", 0),
+            "eval_duration": metrics["eval"]
+        }
+        
+        return response
+        
+    @classmethod
+    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None):
+        """Process a chat request with proper format handling"""
+        simplified_model_name = get_simplified_model_name(model_name)
+        
+        original_system = variables.system
+        if system:
+            variables.system = system
+            
+        try:
+            variables.global_status = -1
+            
+            if format_spec:
+                format_instruction = create_format_instruction(format_spec)
+                if format_instruction:
+                    for i in range(len(messages) - 1, -1, -1):
+                        if messages[i]["role"] == "user":
+                            messages[i]["content"] += format_instruction
                             break
+            
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system)
+            
+            if stream:
+                return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
+                                          prompt_token_count, format_spec)
+            else:
+                return cls.handle_complete(modele_rkllm, simplified_model_name, prompt_tokens, 
+                                         prompt_token_count, format_spec)
+        finally:
+            variables.system = original_system
+            
+    @classmethod
+    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+        """Handle streaming chat response"""
+        def generate():
+            thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+            thread_model.start()
+            
+            count = 0
+            start_time = time.time()
+            prompt_eval_time = None
+            complete_text = ""
+            final_sent = False
+            
+            thread_finished = False
+            
+            while not thread_finished or not final_sent:
+                tokens_processed = False
                 
-                # Always send the final message with done=true
-                if not final_sent:
-                    total_time = time.time() - start
-                    generation_time = time.time() - generation_start
-                    total_duration_ns = int(total_time * 1000000000)
-                    eval_duration_ns = int(generation_time * 1000000000)
+                while len(variables.global_text) > 0:
+                    tokens_processed = True
+                    count += 1
+                    token = variables.global_text.pop(0)
                     
-                    # Send final message with done=true and EMPTY response
-                    # This matches real Ollama API behavior
-                    final_chunk = {
-                        "model": simplified_model_name,
-                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                        "message": {
-                            "role": "assistant",
-                            "content": ""  # Empty content in final message
-                        },
-                        "done_reason": "stop",  # Add the done_reason field
-                        "done": True,
-                        "total_duration": total_duration_ns,  # Use integer nanoseconds
-                        "load_duration": 0,  # We don't track this separately yet
-                        "prompt_eval_count": prompt_token_count,
-                        "prompt_eval_duration": prompt_eval_duration_ns,
-                        "eval_count": count,
-                        "eval_duration": eval_duration_ns  # Use integer nanoseconds
-                    }
-                    if DEBUG_MODE:
-                        logger.debug(f"Sending final message with empty content, done=True")
-                    yield f"{json.dumps(final_chunk)}\n"
+                    if count == 1:
+                        prompt_eval_time = time.time()
+                    
+                    complete_text += token
+                    
+                    if variables.global_status != 1:
+                        chunk = cls.format_streaming_chunk(model_name, token)
+                        yield f"{json.dumps(chunk)}\n"
+                    else:
+                        pass
+                
+                thread_model.join(timeout=0.005)
+                thread_finished = not thread_model.is_alive()
+                
+                if thread_finished and not final_sent:
                     final_sent = True
                     
-                variables.generation_complete = True
-                if DEBUG_MODE:
-                    logger.debug(f"Generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
+                    metrics = cls.calculate_durations(start_time, prompt_eval_time)
+                    metrics["prompt_tokens"] = prompt_token_count
+                    metrics["token_count"] = count
                     
-            return Response(generate(), content_type='application/x-ndjson')
-        else:
-            # Non-streaming response
-            if DEBUG_MODE:
-                logger.debug("Processing non-streaming request")
-            generation_start = time.time()
-            thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-            thread_modele.start()
-            
-            output_text = ""
-            count = 0
-            start = time.time()
-            
-            # Wait for completion
-            while thread_modele.is_alive() or len(variables.global_text) > 0:
-                while len(variables.global_text) > 0:
-                    count += 1
-                    output_text += variables.global_text.pop(0)
+                    format_data = None
+                    if format_spec and complete_text:
+                        success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                        if success and parsed_data:
+                            format_type = (
+                                format_spec.get("type", "") if isinstance(format_spec, dict) 
+                                else "json"
+                            )
+                            format_data = {
+                                "format_type": format_type,
+                                "parsed": parsed_data,
+                                "cleaned_json": cleaned_json
+                            }
                     
-                thread_modele.join(timeout=0.005)
+                    final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
+                    yield f"{json.dumps(final_chunk)}\n"
                 
-            total_time = time.time() - start
-            generation_time = time.time() - generation_start
-            variables.generation_complete = True
-            if DEBUG_MODE:
-                logger.debug(f"Non-streaming generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
+                if not tokens_processed:
+                    time.sleep(0.01)
+                    
+        return Response(generate(), content_type='application/x-ndjson')
+    
+    @classmethod
+    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+        """Handle complete non-streaming chat response"""
+        start_time = time.time()
+        prompt_eval_time = None
+        
+        thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+        thread_model.start()
+        
+        count = 0
+        complete_text = ""
+        
+        while thread_model.is_alive() or len(variables.global_text) > 0:
+            while len(variables.global_text) > 0:
+                count += 1
+                token = variables.global_text.pop(0)
                 
-            # Return complete response
-            ollama_response = {
-                "model": simplified_model_name,
-                "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "message": {
-                    "role": "assistant",
-                    "content": output_text
-                },
-                "done_reason": "stop",  # Add the done_reason field
-                "done": True,
-                "total_duration": int(total_time * 1000000000),  # Use integer nanoseconds
-                "load_duration": 0,
-                "prompt_eval_count": prompt_token_count,
-                "prompt_eval_duration": prompt_eval_duration_ns,
-                "eval_count": count,
-                "eval_duration": int(generation_time * 1000000000)  # Use integer nanoseconds
-            }
+                if count == 1:
+                    prompt_eval_time = time.time()
+                
+                complete_text += token
             
-            return jsonify(ollama_response), 200
-    except Exception as e:
-        if DEBUG_MODE:
-            logger.exception(f"Error processing Ollama chat request: {str(e)}")
-        raise e
-    finally:
-        # Restore original system prompt
-        variables.system = original_system
+            thread_model.join(timeout=0.005)
+        
+        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+        metrics["prompt_tokens"] = prompt_token_count
+        metrics["token_count"] = count
+        
+        format_data = None
+        if format_spec and complete_text:
+            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+            if success and parsed_data:
+                format_type = (
+                    format_spec.get("type", "") if isinstance(format_spec, dict) 
+                    else "json"
+                )
+                format_data = {
+                    "format_type": format_type,
+                    "parsed": parsed_data,
+                    "cleaned_json": cleaned_json
+                }
+        
+        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
+        return jsonify(response), 200
 
 
-def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="", stream=True):
-    """
-    Process an Ollama-style generate request (different from chat)
+class GenerateEndpointHandler(EndpointHandler):
+    """Handler for /api/generate endpoint requests"""
     
-    Args:
-        modele_rkllm: The model instance
-        model_name: Name of the model
-        prompt: The text prompt
-        system: System prompt
-        stream: Whether to stream the response
+    @staticmethod
+    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None):
+        """Format a streaming chunk for generate endpoint"""
+        chunk = {
+            "model": model_name,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "response": token if not is_final else "",
+            "done": is_final
+        }
         
-    Returns:
-        Flask response with generated text
-    """
-    if DEBUG_MODE:
-        logger.debug(f"Processing Ollama generate request for model: {model_name}, stream={stream}")
+        if is_final:
+            chunk["done_reason"] = "stop"
+            if metrics:
+                chunk.update({
+                    "total_duration": metrics["total"],
+                    "load_duration": metrics["load"],
+                    "prompt_eval_count": metrics.get("prompt_tokens", 0),
+                    "prompt_eval_duration": metrics["prompt_eval"],
+                    "eval_count": metrics.get("token_count", 0),
+                    "eval_duration": metrics["eval"]
+                })
+                
+        return chunk
     
-    # Get simplified model name for response
-    simplified_model_name = get_simplified_model_name(model_name)
+    @staticmethod
+    def format_complete_response(model_name, complete_text, metrics, format_data=None):
+        """Format a complete non-streaming response for generate endpoint"""
+        response = {
+            "model": model_name,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "response": complete_text if not (format_data and "cleaned_json" in format_data) 
+                       else format_data["cleaned_json"],
+            "done_reason": "stop",
+            "done": True,
+            "total_duration": metrics["total"],
+            "load_duration": metrics["load"],
+            "prompt_eval_count": metrics.get("prompt_tokens", 0),
+            "prompt_eval_duration": metrics["prompt_eval"],
+            "eval_count": metrics.get("token_count", 0),
+            "eval_duration": metrics["eval"],
+            "context": []
+        }
+        
+        return response
     
-    # Save original system prompt and set new one if provided
-    original_system = variables.system
-    if system:
-        if DEBUG_MODE:
-            logger.debug(f"Setting system prompt: {system}")
-        variables.system = system
-        
-    try:
-        # Reset global status for new request
-        variables.global_status = -1
-        variables.generation_complete = False
-        
-        # Measure time for prompt preparation and tokenization
-        prompt_eval_start = time.time()
-        
-        # Set up tokenizer
-        if DEBUG_MODE:
-            logger.debug(f"Setting up tokenizer for model_id: {variables.model_id}")
-        tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
-        
-        # Create a message format for processing
+    @classmethod
+    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None):
+        """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
-        # Apply system prompt if provided
-        supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
-        if variables.system and supports_system_role:
-            if DEBUG_MODE:
-                logger.debug("Adding system prompt to messages")
-            messages_with_system = [{"role": "system", "content": variables.system}] + messages
-            prompt_tokens = tokenizer.apply_chat_template(messages_with_system, tokenize=True, add_generation_prompt=True)
-        else:
-            prompt_tokens = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
+        simplified_model_name = get_simplified_model_name(model_name)
         
-        prompt_token_count = len(prompt_tokens)
-        
-        # Calculate prompt evaluation duration
-        prompt_eval_duration = time.time() - prompt_eval_start
-        prompt_eval_duration_ns = int(prompt_eval_duration * 1000000000)  # Convert to nanoseconds
+        original_system = variables.system
+        if system:
+            variables.system = system
         
         if DEBUG_MODE:
-            logger.debug(f"Prompt token count: {prompt_token_count}")
-            logger.debug(f"Prompt evaluation took: {prompt_eval_duration:.4f}s ({prompt_eval_duration_ns}ns)")
+            logger.debug(f"GenerateEndpointHandler: processing request for {simplified_model_name}")
+            logger.debug(f"Format spec: {format_spec}")
+        
+        try:
+            variables.global_status = -1
             
-        if stream:
-            def generate():
-                # Set up model thread
-                if DEBUG_MODE:
-                    logger.debug("Starting model inference thread for generate")
-                generation_start = time.time()
-                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-                thread_modele.start()
-                
-                thread_finished = False
-                count = 0
-                start = time.time()
-                full_response = ""
-                last_check_time = time.time()
-                check_interval = 0.1  # Check thread status every 100ms
-                final_sent = False
-                
-                while not thread_finished or len(variables.global_text) > 0:
-                    # Process any new tokens from the model
-                    tokens_processed = False
-                    while len(variables.global_text) > 0:
-                        count += 1
-                        output_text = variables.global_text.pop(0)
-                        full_response += output_text
-                        tokens_processed = True
-                        
-                        # Format response in Ollama generate style with simplified model name
-                        ollama_chunk = {
-                            "model": simplified_model_name,
-                            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                            "response": output_text,
-                            "done": False  # Always false until final message
-                        }
-                        
-                        if DEBUG_MODE:
-                            logger.debug(f"Streaming generate chunk: {len(output_text)} chars, done=False")
-                        yield f"{json.dumps(ollama_chunk)}\n"
-                        last_check_time = time.time()  # Reset the check timer
-                    
-                    # Check if thread is still running periodically
-                    current_time = time.time()
-                    if current_time - last_check_time >= check_interval:
-                        thread_modele.join(timeout=0.005)
-                        thread_finished = not thread_modele.is_alive()
-                        last_check_time = current_time
-                        
-                        # If no tokens were processed this loop and model is done, break
-                        if thread_finished and not tokens_processed and len(variables.global_text) == 0:
-                            break
-                
-                # Always send the final message with done=true
-                if not final_sent:
-                    total_time = time.time() - start
-                    generation_time = time.time() - generation_start
-                    total_duration_ns = int(total_time * 1000000000)
-                    eval_duration_ns = int(generation_time * 1000000000)
-                    
-                    # Send final message with done=true and empty response
-                    final_chunk = {
-                        "model": simplified_model_name,
-                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                        "response": "",  # Empty response in final message
-                        "done": True,
-                        "done_reason": "stop",
-                        "context": [],  # This would normally contain token IDs
-                        "total_duration": total_duration_ns,  # Use integer nanoseconds
-                        "load_duration": 0,
-                        "prompt_eval_count": prompt_token_count,
-                        "prompt_eval_duration": prompt_eval_duration_ns,
-                        "eval_count": count,
-                        "eval_duration": eval_duration_ns  # Use integer nanoseconds
-                    }
+            if format_spec:
+                format_instruction = create_format_instruction(format_spec)
+                if format_instruction and messages:
                     if DEBUG_MODE:
-                        logger.debug(f"Sending final generate message with empty response, done=True")
-                    yield f"{json.dumps(final_chunk)}\n"
+                        logger.debug(f"Adding format instruction to prompt: {format_instruction}")
+                    messages[0]["content"] += format_instruction
+            
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system)
+            
+            if stream:
+                return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
+                                          prompt_token_count, format_spec)
+            else:
+                return cls.handle_complete(modele_rkllm, simplified_model_name, prompt_tokens, 
+                                         prompt_token_count, format_spec)
+        finally:
+            variables.system = original_system
+    
+    @classmethod
+    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+        """Handle streaming generate response"""
+        def generate():
+            thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+            thread_model.start()
+            
+            count = 0
+            start_time = time.time()
+            prompt_eval_time = None
+            complete_text = ""
+            final_sent = False
+            
+            thread_finished = False
+            
+            while not thread_finished or not final_sent:
+                tokens_processed = False
+                
+                while len(variables.global_text) > 0:
+                    tokens_processed = True
+                    count += 1
+                    token = variables.global_text.pop(0)
+                    
+                    if count == 1:
+                        prompt_eval_time = time.time()
+                    
+                    complete_text += token
+                    
+                    if variables.global_status != 1:
+                        chunk = cls.format_streaming_chunk(model_name, token)
+                        yield f"{json.dumps(chunk)}\n"
+                    else:
+                        pass
+                
+                thread_model.join(timeout=0.005)
+                thread_finished = not thread_model.is_alive()
+                
+                if thread_finished and not final_sent:
                     final_sent = True
                     
-                variables.generation_complete = True
+                    metrics = cls.calculate_durations(start_time, prompt_eval_time)
+                    metrics["prompt_tokens"] = prompt_token_count
+                    metrics["token_count"] = count
+                    
+                    format_data = None
+                    if format_spec and complete_text:
+                        success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                        if success and parsed_data:
+                            format_type = (
+                                format_spec.get("type", "") if isinstance(format_spec, dict) 
+                                else "json"
+                            )
+                            format_data = {
+                                "format_type": format_type,
+                                "parsed": parsed_data,
+                                "cleaned_json": cleaned_json
+                            }
+                    
+                    final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
+                    yield f"{json.dumps(final_chunk)}\n"
+                
+                if not tokens_processed:
+                    time.sleep(0.01)
+                    
+        return Response(generate(), content_type='application/x-ndjson')
+    
+    @classmethod
+    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+        """Handle complete generate response"""
+        start_time = time.time()
+        prompt_eval_time = None
+        
+        thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
+        thread_model.start()
+        
+        count = 0
+        complete_text = ""
+        
+        while thread_model.is_alive() or len(variables.global_text) > 0:
+            while len(variables.global_text) > 0:
+                count += 1
+                token = variables.global_text.pop(0)
+                
+                if count == 1:
+                    prompt_eval_time = time.time()
+                
+                complete_text += token
+            
+            thread_model.join(timeout=0.005)
+        
+        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+        metrics["prompt_tokens"] = prompt_token_count
+        metrics["token_count"] = count
+        
+        format_data = None
+        if format_spec and complete_text:
+            if DEBUG_MODE:
+                logger.debug(f"Validating format for complete text: {complete_text[:300]}...")
+                if isinstance(format_spec, str):
+                    logger.debug(f"Format is string type: {format_spec}")
+            
+            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+            
+            if not success and isinstance(format_spec, str) and format_spec.lower() == 'json':
                 if DEBUG_MODE:
-                    logger.debug(f"Generation complete. Total tokens: {count}, Total time: {total_time:.2f}s")
-                    
-            return Response(generate(), content_type='application/x-ndjson')
-        else:
-            # Non-streaming response
-            if DEBUG_MODE:
-                logger.debug("Processing non-streaming generate request")
-            generation_start = time.time()
-            thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-            thread_modele.start()
-            
-            output_text = ""
-            count = 0
-            start = time.time()
-            
-            # Wait for completion
-            while thread_modele.is_alive() or len(variables.global_text) > 0:
-                while len(variables.global_text) > 0:
-                    count += 1
-                    output_text += variables.global_text.pop(0)
-                    
-                thread_modele.join(timeout=0.005)
+                    logger.debug("Simple JSON format validation failed, attempting additional extraction")
                 
-            total_time = time.time() - start
-            generation_time = time.time() - generation_start
-            variables.generation_complete = True
-            if DEBUG_MODE:
-                logger.debug(f"Non-streaming generate complete. Total tokens: {count}, Total time: {total_time:.2f}s")
+                json_pattern = r'\{[\s\S]*?\}'
+                matches = re.findall(json_pattern, complete_text)
                 
-            # Return complete response in the expected format
-            ollama_response = {
-                "model": simplified_model_name,
-                "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "response": output_text,
-                "done": True,
-                "done_reason": "stop",
-                "context": [],  # This would normally contain token IDs
-                "total_duration": int(total_time * 1000000000),
-                "load_duration": 0,
-                "prompt_eval_count": prompt_token_count,
-                "prompt_eval_duration": prompt_eval_duration_ns,
-                "eval_count": count,
-                "eval_duration": int(generation_time * 1000000000)
-            }
+                for match in matches:
+                    try:
+                        fixed = match.replace("'", '"')
+                        fixed = re.sub(r'(\w+):', r'"\1":', fixed)
+                        test_parsed = json.loads(fixed)
+                        success, parsed_data, error, cleaned_json = True, test_parsed, None, fixed
+                        if DEBUG_MODE:
+                            logger.debug(f"Extracted valid JSON using additional methods: {cleaned_json}")
+                        break
+                    except:
+                        continue
             
-            return jsonify(ollama_response), 200
-    except Exception as e:
-        if DEBUG_MODE:
-            logger.exception(f"Error processing Ollama generate request: {str(e)}")
-        raise e
-    finally:
-        # Restore original system prompt
-        variables.system = original_system
+            elif not success and isinstance(format_spec, dict) and format_spec.get('type') == 'object':
+                if DEBUG_MODE:
+                    logger.debug(f"Initial validation failed: {error}. Trying to fix JSON...")
+                
+                json_pattern = r'\{[\s\S]*?\}'
+                matches = re.findall(json_pattern, complete_text)
+                
+                for match in matches:
+                    fixed = match.replace("'", '"')
+                    fixed = re.sub(r'(\w+):', r'"\1":', fixed)
+                    
+                    try:
+                        test_parsed = json.loads(fixed)
+                        required_fields = format_spec.get('required', [])
+                        has_required = all(field in test_parsed for field in required_fields)
+                        
+                        if has_required:
+                            success, parsed_data, error, cleaned_json = validate_format_response(fixed, format_spec)
+                            if success:
+                                if DEBUG_MODE:
+                                    logger.debug(f"Fixed JSON validation succeeded: {cleaned_json}")
+                                break
+                    except:
+                        continue
+            
+            if DEBUG_MODE:
+                logger.debug(f"Format validation result: success={success}, error={error}")
+                if cleaned_json and success:
+                    logger.debug(f"Cleaned JSON: {cleaned_json}")
+                elif not success:
+                    logger.debug(f"JSON validation failed, response will not include parsed data")
+            
+            if success and parsed_data:
+                if isinstance(format_spec, str):
+                    format_type = format_spec
+                else:
+                    format_type = format_spec.get("type", "json") if isinstance(format_spec, dict) else "json"
+                
+                format_data = {
+                    "format_type": format_type,
+                    "parsed": parsed_data,
+                    "cleaned_json": cleaned_json
+                }
+        
+        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
+        
+        if DEBUG_MODE and format_data:
+            logger.debug(f"Created formatted response with JSON content")
+            
+        return jsonify(response), 200
+
+
+def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None):
+    """Process /api/chat request with correct format"""
+    return ChatEndpointHandler.handle_request(
+        modele_rkllm=modele_rkllm,
+        model_name=model_name,
+        messages=messages,
+        system=system,
+        stream=stream,
+        format_spec=format_spec,
+        options=options
+    )
+
+def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None):
+    """Process /api/generate request with correct format"""
+    return GenerateEndpointHandler.handle_request(
+        modele_rkllm=modele_rkllm,
+        model_name=model_name,
+        prompt=prompt,
+        system=system,
+        stream=stream,
+        format_spec=format_spec,
+        options=options
+    )
