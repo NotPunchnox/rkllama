@@ -117,6 +117,7 @@ def Request(modele_rkllm, custom_request=None):
                     
                     # Initialize accumulated text for JSON format validation
                     complete_text = ""
+                    tokens_since_last_response = 0  # Track tokens since last response sent
 
                     while not thread_modele_terminé or not final_message_sent:
                         processed_tokens = False
@@ -125,6 +126,7 @@ def Request(modele_rkllm, custom_request=None):
                             processed_tokens = True
                             count += 1
                             current_token = variables.global_text.pop(0)
+                            tokens_since_last_response += 1
                             
                             # Mark time when first token is generated
                             if count == 1:
@@ -133,17 +135,7 @@ def Request(modele_rkllm, custom_request=None):
                             # Accumulate text for format validation
                             complete_text += current_token
 
-                            llmResponse["choices"] = [
-                                {
-                                "role": "assistant",
-                                "content": current_token,
-                                "logprobs": None,
-                                "finish_reason": "stop" if variables.global_status == 1 else None,
-                                }
-                            ]
-                            llmResponse["usage"]["completion_tokens"] = count
-                            llmResponse["usage"]["total_tokens"] += 1
-                            
+                            # Prepare response based on request type
                             if is_ollama_request:
                                 # Get simplified model name for consistency
                                 simplified_model_name = get_simplified_model_name(variables.model_id)
@@ -203,19 +195,20 @@ def Request(modele_rkllm, custom_request=None):
                                         "eval_duration": int(eval_duration * 1_000_000_000)
                                     }
                                     
-                                    # Add format information if available
-                                    if format_spec and parsed_data:
-                                        format_type = (
-                                            format_spec.get("type", "") if isinstance(format_spec, dict)
-                                            else "json"
-                                        )
-                                        # Remove format and parsed from response - they are not part of Ollama API
-                                        # ollama_chunk["format"] = format_type
-                                        # ollama_chunk["parsed"] = parsed_data
-                                    
                                     yield f"{json.dumps(ollama_chunk)}\n"
                             else:
-                                # For non-Ollama streaming
+                                # For original RKLLAMA API streaming
+                                llmResponse["choices"] = [
+                                    {
+                                    "role": "assistant",
+                                    "content": current_token,
+                                    "logprobs": None,
+                                    "finish_reason": "stop" if variables.global_status == 1 else None,
+                                    }
+                                ]
+                                llmResponse["usage"]["completion_tokens"] = count
+                                llmResponse["usage"]["total_tokens"] += 1
+                                
                                 # Process format in the final chunk
                                 if variables.global_status == 1 and format_spec:
                                     success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
@@ -223,14 +216,16 @@ def Request(modele_rkllm, custom_request=None):
                                         llmResponse["choices"][0]["format"] = format_spec
                                         llmResponse["choices"][0]["parsed"] = parsed_data
                                 
+                                # Send the response
                                 yield f"{json.dumps(llmResponse)}\n\n"
+                                tokens_since_last_response = 0
 
                         # Check if thread is done but we haven't sent final message yet
                         thread_modele.join(timeout=0.005)
                         thread_modele_terminé = not thread_modele.is_alive()
                         
                         # If model is done and we haven't sent the final message yet, do it now
-                        if thread_modele_terminé and not final_message_sent and is_ollama_request:
+                        if thread_modele_terminé and not final_message_sent:
                             final_message_sent = True
                             
                             # Calculate final metrics
@@ -249,41 +244,53 @@ def Request(modele_rkllm, custom_request=None):
                             if format_spec and complete_text:
                                 success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
                             
-                            # Create final message with empty content to avoid duplication
-                            ollama_final = {
-                                "model": get_simplified_model_name(variables.model_id),
-                                "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                                "message": {
-                                    "role": "assistant",
-                                    "content": ""  # Empty content to avoid duplicating text
-                                },
-                                "done": True,
-                                "done_reason": "stop",
-                                "total_duration": int(total_duration * 1_000_000_000),
-                                "load_duration": int(load_duration * 1_000_000_000),
-                                "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
-                                "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
-                                "eval_count": count,
-                                "eval_duration": int(eval_duration * 1_000_000_000)
-                            }
-                            
-                            # Add format information if available
-                            if format_spec and parsed_data:
-                                format_type = (
-                                    format_spec.get("type", "") if isinstance(format_spec, dict)
-                                    else "json"
-                                )
-                                # Remove format and parsed fields
-                                # ollama_final["format"] = format_type
-                                # ollama_final["parsed"] = parsed_data
-                            
-                            yield f"{json.dumps(ollama_final)}\n"
+                            if is_ollama_request:
+                                # Create final message for Ollama API
+                                ollama_final = {
+                                    "model": get_simplified_model_name(variables.model_id),
+                                    "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": ""  # Empty content to avoid duplicating text
+                                    },
+                                    "done": True,
+                                    "done_reason": "stop",
+                                    "total_duration": int(total_duration * 1_000_000_000),
+                                    "load_duration": int(load_duration * 1_000_000_000),
+                                    "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
+                                    "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
+                                    "eval_count": count,
+                                    "eval_duration": int(eval_duration * 1_000_000_000)
+                                }
+                                
+                                yield f"{json.dumps(ollama_final)}\n"
+                            else:
+                                # Handle final message for RKLLAMA API
+                                # If there are still tokens waiting to send, create one final response
+                                if tokens_since_last_response > 0:
+                                    llmResponse["choices"] = [
+                                        {
+                                        "role": "assistant",
+                                        "content": "",  # Empty to avoid duplication
+                                        "logprobs": None,
+                                        "finish_reason": "stop"
+                                        }
+                                    ]
+                                    llmResponse["usage"]["completion_tokens"] = count
+                                    llmResponse["usage"]["total_tokens"] += 1
+                                    
+                                    # Add format information if available
+                                    if format_spec and parsed_data:
+                                        llmResponse["choices"][0]["format"] = format_spec
+                                        llmResponse["choices"][0]["parsed"] = parsed_data
+                                    
+                                    yield f"{json.dumps(llmResponse)}\n\n"
                             
                         # If we didn't process any tokens in this loop iteration, add a small sleep to avoid CPU spin
                         if not processed_tokens:
                             time.sleep(0.01)
                     
-                # Return appropriate streaming response
+                # Return appropriate streaming response based on request type
                 return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
             
             # For non-streaming responses
@@ -337,55 +344,8 @@ def Request(modele_rkllm, custom_request=None):
                     # Updated to unpack the additional cleaned_json return value
                     success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
                     logger.debug(f"Format validation: success={success}, error={error}")
-                    
-                    # Structure Ollama-compatible response
-                    if is_ollama_request:
-                        # Get simplified model name for consistency
-                        simplified_model_name = get_simplified_model_name(variables.model_id)
-                        
-                        ollama_response = {
-                            "model": simplified_model_name,
-                            "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                            "message": {
-                                "role": "assistant", 
-                                # Use only the clean JSON text if available, otherwise use complete response
-                                "content": cleaned_json if success and cleaned_json else complete_text
-                            },
-                            "done_reason": "stop",  # Always add done_reason for completed responses
-                            "done": True,
-                            # Add all required duration fields in nanoseconds
-                            "total_duration": int(total_duration * 1_000_000_000),
-                            "load_duration": int(load_duration * 1_000_000_000),  # Fixed 100ms
-                            "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
-                            "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
-                            "eval_count": count,
-                            "eval_duration": int(eval_duration * 1_000_000_000)
-                        }
-                        
-                        # Remove format and parsed fields
-                        # if success and parsed_data:
-                        #     ollama_response["format"] = format_type
-                        #     ollama_response["parsed"] = parsed_data
-                        
-                        return jsonify(ollama_response), 200
-                    else:
-                        # Standard API response
-                        llmResponse["choices"] = [{
-                            "role": "assistant",
-                            # Use only the clean JSON text if available
-                            "content": cleaned_json if success and cleaned_json else complete_text,
-                            "logprobs": None,
-                            "finish_reason": "stop"
-                        }]
-                        
-                        # Remove format and parsed fields
-                        # if success and parsed_data:
-                        #     llmResponse["choices"][0]["format"] = format_spec
-                        #     llmResponse["choices"][0]["parsed"] = parsed_data
-                        
-                        return jsonify(llmResponse), 200
-
-                # Default response format if no format specification or validation failed
+                
+                # Prepare appropriate response based on request type
                 if is_ollama_request:
                     # Get simplified model name for consistency
                     simplified_model_name = get_simplified_model_name(variables.model_id)
@@ -394,27 +354,45 @@ def Request(modele_rkllm, custom_request=None):
                         "model": simplified_model_name,
                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "message": {
-                            "role": "assistant",
-                            "content": complete_text
+                            "role": "assistant", 
+                            # Use only the clean JSON text if available, otherwise use complete response
+                            "content": cleaned_json if success and cleaned_json else complete_text
                         },
-                        "done_reason": "stop",
+                        "done_reason": "stop",  # Always add done_reason for completed responses
                         "done": True,
                         # Add all required duration fields in nanoseconds
                         "total_duration": int(total_duration * 1_000_000_000),
-                        "load_duration": int(load_duration * 1_000_000_000),
+                        "load_duration": int(load_duration * 1_000_000_000),  # Fixed 100ms
                         "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
                         "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
                         "eval_count": count,
                         "eval_duration": int(eval_duration * 1_000_000_000)
                     }
+                    
                     return jsonify(ollama_response), 200
                 else:
+                    # Standard RKLLAMA API response
                     llmResponse["choices"] = [{
                         "role": "assistant",
-                        "content": complete_text,
+                        # Use only the clean JSON text if available
+                        "content": cleaned_json if success and cleaned_json else complete_text,
                         "logprobs": None,
                         "finish_reason": "stop"
                     }]
+                    
+                    # Add format information if available
+                    if success and parsed_data:
+                        llmResponse["choices"][0]["format"] = format_spec
+                        llmResponse["choices"][0]["parsed"] = parsed_data
+                    
+                    # Update token counts
+                    llmResponse["usage"]["completion_tokens"] = count
+                    llmResponse["usage"]["total_tokens"] = llmResponse["usage"]["prompt_tokens"] + count
+                    
+                    # Calculate tokens per second if we have meaningful duration
+                    if eval_duration > 0:
+                        llmResponse["usage"]["tokens_per_second"] = round(count / eval_duration, 2)
+                    
                     return jsonify(llmResponse), 200
                     
         else:
