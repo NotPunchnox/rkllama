@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.3](#New-Version)
+### [Version: 0.0.4](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -18,7 +18,6 @@ Video demo ( version 0.0.1 ):
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
 * Version `Lib rkllm-runtime`: V1.1.4.
-* Tested on an `Orange Pi 5 Pro (16GB RAM)`.
 
 ## File Structure
 - **`./models`**: contains your rkllm models.
@@ -30,18 +29,23 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - Python 3.8 to 3.12
 
 ## Tested Hardware and Environment
-- **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS).
+- **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
+- **Hardware**: Orange Pi 5 Plus: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **OS**: [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
+- **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
 
 ## Main Features
 - **Running models on NPU.**
-- **Pull models directly from Huggingface**
-- **include a API REST with documentation**
+- **Partial Ollama API compatibility** - Primary support for `/api/chat` and `/api/generate` endpoints.
+- **Pull models directly from Huggingface.**
+- **Include a API REST with documentation.**
 - **Listing available models.**
 - **Dynamic loading and unloading of models.**
-- **Inference requests.**
-- **Streaming and non-streaming modes.**
+- **Inference requests with streaming and non-streaming modes.**
 - **Message history.**
+- **Simplified model naming** - Use models with familiar names like "qwen2.5:3b".
+- **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
+- **Optional Debug Mode** - Detailed debugging with `--debug` flag.
 
 ## Documentation
 
@@ -50,6 +54,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - Client   : [Installation guide](#installation).
 - API REST : [English documentation](./documentation/api/english.md)
 - API REST : [French documentation](./documentation/api/french.md)
+- Ollama API: [Compatibility guide](./documentation/api/ollama-compatibility.md)
+- Model Naming: [Naming convention](./documentation/api/model_naming.md)
 
 ## Installation
 
@@ -95,6 +101,12 @@ docker run -it --privileged -p 8080:8080 ghcr.io/notpunchnox/rkllama:main
 ```bash
 rkllama serve
 ```
+
+To enable debug mode:
+```bash
+rkllama serve --debug
+```
+
 **Output:**
 ![Image](./documentation/ressources/server.png)
 
@@ -209,27 +221,32 @@ This will automatically download the specified model file and prepare it for use
 
 # New-Version
 
-**Extended Compatibility**: All models, including DeepSeek, Qwen, Llama, and many others, are now fully supported by RKLLAMA.
+**Ollama API Compatibility**: RKLLAMA now implements key Ollama API endpoints, with primary focus on `/api/chat` and `/api/generate`, allowing integration with many Ollama clients. Additional endpoints are in various stages of implementation.
 
-**Enhanced Performance**: Instead of using raw prompts, inputs are now tokenized before being sent to the model, which significantly improves response speed.
+**Enhanced Model Naming**: Simplified model naming convention allows using models with familiar names like "qwen2.5:3b" or "llama3-instruct:8b" while handling the full file paths internally.
 
-**Modelfile System**: A new Modelfile system—modeled after Ollama—has been implemented. By simply providing the HuggingFace path, the system automatically initializes both the tokenizer and chattemplate. Additionally, it allows you to adjust parameters such as the model's temperature, its location, and the system prompt.
+**Improved Performance and Reliability**: Enhanced streaming responses with better handling of completion signals and optimized token processing.
 
-**Simplified Organization**: Models are now neatly organized into dedicated folders that are automatically created when you run the `rkllama list` command. Only the model name is required to launch a model, as the `.rkllm` files are referenced directly in the Modelfile.
+**CPU Auto-detection**: Automatic detection of RK3588 or RK3576 platform with fallback to interactive selection.
 
-**Automatic Modelfile Creation**: When using the pull command, the Modelfile is generated automatically. For models downloaded before this update, simply run a one-time command (for example: `rkllama run modelname file.rkllm huggingface_path`) to create the Modelfile.
+**Debug Mode**: Optional debugging tools with detailed logs that can be enabled with the `--debug` flag.
 
-**Future Enhancements**: Upcoming updates will allow further customization of the chattemplate and enable adjustments to additional hyperparameters (such as top_k) to further optimize the user experience.
+**Simplified Model Management**: 
+- Delete models with one command using the simplified name
+- Pull models directly from Hugging Face with automatic Modelfile creation
+- Custom model configurations through Modelfiles
+- Smart collision handling for models with similar names
 
 If you have already downloaded models and do not wish to reinstall everything, please follow this guide: [Rebuild Architecture](./documentation/Guide/en/Rebuild-arch.md)
 
 ---
 
 ## Upcoming Features
-- OpenAI/Ollama API compatible.
+- OpenAI API compatible.
+- Ollama API improvements
 - Add multimodal models
 - Add embedding models
-- Add RKNN for onnx models ( TTS, image classification/segmentation... )
+- Add RKNN for onnx models (TTS, image classification/segmentation...)
 - `GGUF/HF to RKLLM` conversion software
 
 ---
@@ -251,4 +268,4 @@ System Monitor:
 ##  Contributors
 
 *  [**ichlaffterlalu**](https://github.com/ichlaffterlalu): Contributed with a pull request for [Docker-Rkllama](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker) and fixed multiple errors.
-*  [**TomJacobsUK**](https://github.com/TomJacobsUK): Contributed with a pull request to correct a "Cpu no detected" error in [server.sh](./server.sh).
+*  [**TomJacobsUK**](https://github.com/TomJacobsUK): Contributed with pull requests for Ollama API compatibility and model naming improvements, and fixed CPU detection errors.

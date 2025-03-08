@@ -5,3 +5,4 @@ python-dotenv
 transformers
 torch
 flask-cors
+pydantic>=2.0.0

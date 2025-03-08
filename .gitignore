@@ -1,3 +1,4 @@
 models/*/*.rkllm
 models/*/*
 src/__pycache__
+*.log

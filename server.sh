@@ -6,20 +6,47 @@ YELLOW='\033[1;33m'
 RESET='\033[0m'
 
 # Default values
-PORT=8080
+PORT="8080"  # Default port
+DEBUG_MODE=false
 
 # Miniconda installation path
 MINICONDA_DIR=~/miniconda3
 
-# Check if --no-conda argument is passed
+# Parse command line arguments
 USE_CONDA=true
 for arg in "$@"; do
     if [[ "$arg" == "--no-conda" ]]; then
         USE_CONDA=false
+    elif [[ "$arg" == "--debug" ]]; then
+        DEBUG_MODE=true
     elif [[ "$arg" == --port=* ]]; then
         PORT="${arg#*=}"
+        # Validate that port is not empty
+        if [[ -z "$PORT" ]]; then
+            echo -e "${YELLOW}Warning: Empty port specified, using default port 8080${RESET}"
+            PORT="8080"
+        fi
     fi
 done
+
+# Update the rkllama.ini file with the port
+CONFIG_FILE=~/RKLLAMA/rkllama.ini
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Creating config file with default port..."
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    echo "[server]" > "$CONFIG_FILE"
+    echo "port = $PORT" >> "$CONFIG_FILE"
+fi
+
+# Update the port in the config file
+if grep -q "^\[server\]" "$CONFIG_FILE"; then
+    # Section exists, update port
+    sed -i "s/^port = .*/port = $PORT/" "$CONFIG_FILE"
+else
+    # Section doesn't exist, create it
+    echo "[server]" >> "$CONFIG_FILE"
+    echo "port = $PORT" >> "$CONFIG_FILE"
+fi
 
 # If Miniconda is enabled, check if it exists and activate it
 if $USE_CONDA; then

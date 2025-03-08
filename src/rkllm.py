@@ -9,6 +9,11 @@ callback = callback_type(callback_impl)
 # Définir la classe RKLLM, qui inclut l'initialisation, l'inférence et les opérations de libération pour le modèle RKLLM dans la bibliothèque dynamique
 class RKLLM(object):
     def __init__(self, model_path, lora_model_path = None, prompt_cache_path = None):
+        
+        self.format_schema = None
+        self.format_type = None
+        self.format_options = {}
+        
         rkllm_param = RKLLMParam()
         rkllm_param.model_path = bytes(model_path, 'utf-8')
 

@@ -1,4 +1,5 @@
 import ctypes, sys
+import time
 from .classes import *
 from .variables import *
 
@@ -45,11 +46,40 @@ def callback_impl(resultat, donnees_utilisateur, etat):
     else:
         # Sauvegarder le texte du token de sortie et l'etat d'execution de RKLLM
         global_status = etat
-        # Surveiller si les donnees en bytes actuelles sont completes ; si incompletes, les enregistrer pour une analyse ulterieure
+        # Check if resultat or resultat.contents or resultat.contents.text is None
         try:
-            global_text.append((split_byte_data + resultat.contents.text).decode('utf-8'))
-            print((split_byte_data + resultat.contents.text).decode('utf-8'), end='')
-            split_byte_data = bytes(b"")
-        except:
-            split_byte_data += resultat.contents.text
+            # Add defensive checks to prevent None concatenation
+            if resultat and resultat.contents and resultat.contents.text:
+                text_bytes = resultat.contents.text
+                if not isinstance(text_bytes, bytes):
+                    # If not bytes, try to convert or use empty bytes
+                    try:
+                        text_bytes = bytes(text_bytes)
+                    except:
+                        text_bytes = b""
+                        
+                # Now safely concatenate
+                try:
+                    decoded_text = (split_byte_data + text_bytes).decode('utf-8')
+                    global_text.append(decoded_text)
+                    print(decoded_text, end='')
+                    split_byte_data = bytes(b"")
+                except UnicodeDecodeError:
+                    # Handle incomplete UTF-8 sequences
+                    split_byte_data += text_bytes
+            else:
+                # Handle case where text is None
+                if split_byte_data:
+                    try:
+                        # Try to decode any accumulated bytes
+                        decoded_text = split_byte_data.decode('utf-8')
+                        global_text.append(decoded_text)
+                        print(decoded_text, end='')
+                        split_byte_data = bytes(b"")
+                    except UnicodeDecodeError:
+                        # Still incomplete, keep for next time
+                        pass
+        except Exception as e:
+            print(f"\nError processing callback: {str(e)}", end='')
+            
         sys.stdout.flush()
