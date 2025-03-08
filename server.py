@@ -169,6 +169,8 @@ def Rm_model():
 
     os.remove(model_path)
 
+    initialize_model_mappings()
+
     return jsonify({"message": f"The model has been successfully deleted!"}), 200
 
 # route to pull a model
@@ -774,18 +776,33 @@ def delete_model_ollama():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
 
-    model_path = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
-    if not os.path.exists(model_path):
+    # Resolve simplified name to full model name
+    full_model_name = find_model_by_name(model_name)
+    if not full_model_name:
+        if DEBUG_MODE:
+            logger.error(f"Model '{model_name}' not found for deletion")
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
+    
+    model_path = os.path.expanduser(f"~/RKLLAMA/models/{full_model_name}")
+    if not os.path.exists(model_path):
+        return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
     # Check if model is currently loaded
-    if current_model == model_name:
+    if current_model == full_model_name:
+        if DEBUG_MODE:
+            logger.debug(f"Unloading model '{full_model_name}' before deletion")
         unload_model()
     
     try:
+        if DEBUG_MODE:
+            logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
+        
+        initialize_model_mappings()
+        
         return jsonify({}), 200
     except Exception as e:
+        logger.error(f"Failed to delete model '{full_model_name}': {str(e)}")
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
 @app.route('/api/generate', methods=['POST'])
