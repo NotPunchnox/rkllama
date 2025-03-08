@@ -5,7 +5,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RESET='\033[0m'
 
-CPU_MODEL=""
+# Default values
 PORT="8080"  # Default port
 DEBUG_MODE=false
 
@@ -81,25 +81,22 @@ select_cpu_model() {
     echo -e "${GREEN}Selected CPU model: $CPU_MODEL${RESET}"
 }
 
-# Extract the CPU model if not defined in the environment
+# First check if CPU_MODEL is set in the environment
 if [ -z "$CPU_MODEL" ]; then
+  # Try to extract the CPU model from cpuinfo if not defined in environment
   CPU_MODEL=$(grep -i "cpu model" /proc/cpuinfo | head -n 1 | sed 's/.*Rockchip \(RK[0-9]*\).*/\1/' | tr '[:upper:]' '[:lower:]')
   echo "CPU_MODEL: $CPU_MODEL"
 fi
 
+# If still not detected, prompt for selection (only in interactive mode)
 if [ -z "$CPU_MODEL" ]; then
-  select_cpu_model
+  # Check if we're running in a container (non-interactive)
+  if [ -f "/.dockerenv" ]; then
+    echo -e "${YELLOW}Running in Docker without CPU_MODEL set. Defaulting to rk3588.${RESET}"
+    CPU_MODEL="rk3588"
+  else
+    select_cpu_model
+  fi
 fi
 
-# Build the command with proper arguments
-COMMAND="python3 ~/RKLLAMA/server.py --target_platform $CPU_MODEL --port $PORT"
-
-# Add debug flag if needed
-if $DEBUG_MODE; then
-  COMMAND="$COMMAND --debug"
-  echo -e "${YELLOW}Debug mode enabled${RESET}"
-fi
-
-# Execute the command
-echo "Executing: $COMMAND"
-eval $COMMAND
+python3 ~/RKLLAMA/server.py --target_platform "$CPU_MODEL" --port "$PORT"
