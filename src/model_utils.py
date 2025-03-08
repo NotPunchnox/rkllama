@@ -232,26 +232,54 @@ def extract_model_details(model_name):
             
     return details
 
-def get_simplified_model_name(full_name):
+def get_simplified_model_name(full_name, check_collision_map=True):
     """
     Convert a full model name to a simplified Ollama-style name
     
     Args:
         full_name: The full model name/path
+        check_collision_map: If True, check if there's already a collision-aware name
         
     Returns:
-        A simplified name like "qwen2:3b"
+        A simplified name like "qwen2.5-coder:7b"
     """
     # Handle paths - extract just the directory name
     if os.path.sep in full_name:
         full_name = os.path.basename(os.path.normpath(full_name))
+        
+    # First check if we already have a collision-resolved name for this model
+    if check_collision_map and full_name in FULL_TO_SIMPLE_MAP:
+        return FULL_TO_SIMPLE_MAP[full_name]
     
     # Remove any file extension
     full_name = os.path.splitext(full_name)[0]
     
     # Extract model family
     model_family = ""
-    if re.search(r'(?i)qwen\d*', full_name):
+    model_variants = []
+    
+    # First, check for model variants throughout the name
+    # We'll do this first to ensure we capture all variants regardless of position
+    variant_patterns = [
+        ('coder', r'(?i)(^|[-_\s])coder($|[-_\s])'),
+        ('math', r'(?i)(^|[-_\s])math($|[-_\s])'),
+        ('chat', r'(?i)(^|[-_\s])chat($|[-_\s])'),
+        ('instruct', r'(?i)(^|[-_\s])instruct($|[-_\s])'),
+        ('vision', r'(?i)(^|[-_\s])vision($|[-_\s])'),
+        ('mini', r'(?i)(^|[-_\s])mini($|[-_\s])'),
+        ('small', r'(?i)(^|[-_\s])small($|[-_\s])'),
+        ('medium', r'(?i)(^|[-_\s])medium($|[-_\s])'),
+        ('large', r'(?i)(^|[-_\s])large($|[-_\s])'),
+    ]
+    
+    for variant_name, pattern in variant_patterns:
+        if re.search(pattern, full_name) and variant_name not in model_variants:
+            model_variants.append(variant_name)
+    
+    # Now handle model family identification
+    if re.search(r'(?i)deepseek', full_name):
+        model_family = 'deepseek'
+    elif re.search(r'(?i)qwen\d*', full_name):
         match = re.search(r'(?i)(qwen\d*)', full_name)
         if match:
             model_family = match.group(1).lower()
@@ -261,6 +289,8 @@ def get_simplified_model_name(full_name):
                 model_family = 'qwen'
     elif re.search(r'(?i)mistral', full_name):
         model_family = 'mistral'
+        if re.search(r'(?i)(^|[-_\s])nemo($|[-_\s])', full_name) and 'nemo' not in model_variants:
+            model_variants.append('nemo')
     elif re.search(r'(?i)tinyllama', full_name):
         model_family = 'tinyllama'
     elif re.search(r'(?i)llama[-_]?3', full_name):
@@ -269,6 +299,12 @@ def get_simplified_model_name(full_name):
         model_family = 'llama2'
     elif re.search(r'(?i)llama', full_name):
         model_family = 'llama'
+    elif re.search(r'(?i)phi-3', full_name):
+        model_family = 'phi3'
+    elif re.search(r'(?i)phi-2', full_name):
+        model_family = 'phi2'
+    elif re.search(r'(?i)phi', full_name):
+        model_family = 'phi'
     else:
         # Default to the first part of the name as family
         # Example: "Phi-2" becomes "phi"
@@ -288,11 +324,18 @@ def get_simplified_model_name(full_name):
             if len(size) <= 2:  # Likely a small number like 3, 7
                 param_size = size + 'b'
     
-    # Combine family and size with Ollama's naming convention
-    if model_family and param_size:
-        return f"{model_family}:{param_size}"
-    elif model_family:
-        return model_family
+    # Combine family, variant, and size with the new naming convention
+    if model_family:
+        # When multiple variants are present, join them with hyphens
+        base_part = model_family
+        if model_variants:
+            variant_part = "-".join(model_variants)
+            base_part = f"{model_family}-{variant_part}"
+            
+        if param_size:
+            return f"{base_part}:{param_size}"
+        else:
+            return base_part
     else:
         # Fallback to a simplified version of the original name
         return re.sub(r'[^a-zA-Z0-9]', '-', full_name).lower()
@@ -326,23 +369,113 @@ def initialize_model_mappings():
         logger.warning(f"Models directory not found: {models_dir}")
         return
     
-    # Scan all subdirectories in the models directory
+    # First pass: Create simplified names for all models
+    model_names = {}  # Maps simple name to a list of full model names
+    
     for model_dir in os.listdir(models_dir):
         full_path = os.path.join(models_dir, model_dir)
         
-        if os.path.isdir(full_path):
-            # Check if it contains a .rkllm file
-            has_rkllm = any(f.endswith('.rkllm') for f in os.listdir(full_path))
+        if os.path.isdir(full_path) and any(f.endswith('.rkllm') for f in os.listdir(full_path)):
+            simple_name = get_simplified_model_name(model_dir)
             
-            if has_rkllm:
-                simple_name = get_simplified_model_name(model_dir)
-                SIMPLE_TO_FULL_MAP[simple_name] = model_dir
-                FULL_TO_SIMPLE_MAP[model_dir] = simple_name
-                
-                # Also add the original name as a key to allow direct lookups
-                SIMPLE_TO_FULL_MAP[model_dir] = model_dir
-                
-                logger.debug(f"Mapped model: {model_dir} -> {simple_name}")
+            if simple_name not in model_names:
+                model_names[simple_name] = []
+            model_names[simple_name].append(model_dir)
+    
+    # Second pass: Handle collisions by detecting differences
+    for simple_name, full_names in model_names.items():
+        # If only one model has this simple name, no collision to handle
+        if len(full_names) == 1:
+            SIMPLE_TO_FULL_MAP[simple_name] = full_names[0]
+            FULL_TO_SIMPLE_MAP[full_names[0]] = simple_name
+            SIMPLE_TO_FULL_MAP[full_names[0]] = full_names[0]  # Allow direct lookup too
+            logger.debug(f"Mapped model: {full_names[0]} -> {simple_name}")
+            continue
+        
+        # We have a collision - multiple models with the same simple name
+        logger.warning(f"Simplified name collision: {simple_name} for models {', '.join(full_names)}")
+        
+        # For each colliding model, detect its distinctive features
+        model_features = {}
+        
+        # Look for distinctive features in each model
+        for model_dir in full_names:
+            features = {}
+            
+            # Check for quantization type
+            for pattern in ['w4a16', 'w4a16_g32', 'w4a16_g64', 'w4a16_g128', 
+                           'w8a8', 'w8a8_g128', 'w8a8_g256', 'w8a8_g512']:
+                if pattern in model_dir.lower():
+                    features['quant'] = pattern.replace('_', '-')
+                    break
+            
+            # Check for optimization level
+            opt_match = re.search(r'opt-(\d+)', model_dir.lower())
+            if opt_match:
+                features['opt'] = f"opt{opt_match.group(1)}"
+            
+            # Check for hybrid ratio
+            ratio_match = re.search(r'ratio-(\d+\.\d+|\d+)', model_dir.lower())
+            if ratio_match:
+                features['ratio'] = f"r{ratio_match.group(1)}"
+            
+            model_features[model_dir] = features
+        
+        # Find the most distinctive feature across models
+        feature_counts = {'quant': {}, 'opt': {}, 'ratio': {}}
+        
+        for model_dir, features in model_features.items():
+            for feature_type, value in features.items():
+                if value not in feature_counts[feature_type]:
+                    feature_counts[feature_type][value] = 0
+                feature_counts[feature_type][value] += 1
+        
+        # Choose the feature type that has the most unique values
+        best_feature_type = None
+        max_unique_values = 0
+        
+        for feature_type, values in feature_counts.items():
+            unique_count = len(values)
+            if unique_count > max_unique_values:
+                max_unique_values = unique_count
+                best_feature_type = feature_type
+        
+        # If we found a good feature to differentiate, use it
+        if best_feature_type and max_unique_values > 1:
+            for model_dir in full_names:
+                if best_feature_type in model_features[model_dir]:
+                    feature_value = model_features[model_dir][best_feature_type]
+                    
+                    # If all models in the collision have this feature, we need to use it for all
+                    # to differentiate them (otherwise we'll still have collisions)
+                    if len(feature_counts[best_feature_type]) == len(full_names):
+                        new_name = f"{simple_name}-{feature_value}"
+                    else:
+                        # Only add the feature to models that have it
+                        new_name = f"{simple_name}-{feature_value}" if feature_value else simple_name
+                    
+                    SIMPLE_TO_FULL_MAP[new_name] = model_dir
+                    FULL_TO_SIMPLE_MAP[model_dir] = new_name
+                    SIMPLE_TO_FULL_MAP[model_dir] = model_dir  # Allow direct lookup
+                    logger.info(f"Differentiated model: {model_dir} -> {new_name}")
+                else:
+                    # This model doesn't have the distinctive feature
+                    SIMPLE_TO_FULL_MAP[simple_name] = model_dir
+                    FULL_TO_SIMPLE_MAP[model_dir] = simple_name
+                    SIMPLE_TO_FULL_MAP[model_dir] = model_dir  # Allow direct lookup
+                    logger.info(f"Kept original name: {model_dir} -> {simple_name}")
+        else:
+            # If we couldn't find a good feature, use numeric suffixes
+            SIMPLE_TO_FULL_MAP[simple_name] = full_names[0]
+            FULL_TO_SIMPLE_MAP[full_names[0]] = simple_name
+            SIMPLE_TO_FULL_MAP[full_names[0]] = full_names[0]  # Allow direct lookup
+            
+            for i, model_dir in enumerate(full_names[1:], 1):
+                new_name = f"{simple_name}-{i}"
+                SIMPLE_TO_FULL_MAP[new_name] = model_dir
+                FULL_TO_SIMPLE_MAP[model_dir] = new_name
+                SIMPLE_TO_FULL_MAP[model_dir] = model_dir  # Allow direct lookup
+                logger.info(f"Added numeric suffix: {model_dir} -> {new_name}")
 
 def find_model_by_name(name):
     """
@@ -362,11 +495,7 @@ def find_model_by_name(name):
     models_dir = os.path.expanduser("~/RKLLAMA/models")
     direct_path = os.path.join(models_dir, name)
     if os.path.isdir(direct_path):
-        # It exists directly, add to our maps
-        simple = get_simplified_model_name(name)
-        SIMPLE_TO_FULL_MAP[simple] = name
-        SIMPLE_TO_FULL_MAP[name] = name
-        FULL_TO_SIMPLE_MAP[name] = simple
+        # It exists directly, make sure we use the collision-aware name
         return name
     
     # Try case-insensitive matching
@@ -378,11 +507,6 @@ def find_model_by_name(name):
     for model_dir in os.listdir(models_dir):
         full_path = os.path.join(models_dir, model_dir)
         if os.path.isdir(full_path) and name.lower() in model_dir.lower():
-            # Add to our maps for future lookups
-            simple = get_simplified_model_name(model_dir)
-            SIMPLE_TO_FULL_MAP[simple] = model_dir
-            SIMPLE_TO_FULL_MAP[name] = model_dir
-            FULL_TO_SIMPLE_MAP[model_dir] = simple
             return model_dir
     
     # If we get here, the model was not found
