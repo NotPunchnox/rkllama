@@ -11,8 +11,8 @@ RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface t
 | `/api/tags` | GET | List available models | ✅ |
 | `/api/version` | GET | Get API version (Dummy version to fix some apps) | ✅ |
 | `/api/show` | POST | Show model information | ✅ |
-| `/api/create` | POST | Create model from Modelfile | ✅ |
-| `/api/pull` | POST | Pull a model | ✅ |
+| `/api/create` | POST | Create model from Modelfile | ⚠️ | FIX
+| `/api/pull` | POST | Pull a model | ⚠️ | FIX
 | `/api/delete` | DELETE | Delete a model | ✅ |
 | `/api/generate` | POST | Generate a completion | ✅ |
 | `/api/chat` | POST | Generate a chat completion | ✅ |
