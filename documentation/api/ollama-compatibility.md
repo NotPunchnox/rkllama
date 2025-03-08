@@ -2,7 +2,7 @@
 
 ## Overview
 
-RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface that matches Ollama's endpoint structure. This enables integration with tools and scripts designed for Ollama's API.
+RKLLAMA now implements an Ollama-compatible API, providing an interface that matches key Ollama endpoints. This enables integration with many tools and scripts designed for Ollama's API, particularly those using the chat and generate functionality.
 
 ## Supported Endpoints
 
@@ -11,12 +11,13 @@ RKLLAMA now implements an Ollama-compatible API, providing a drop-in interface t
 | `/api/tags` | GET | List available models | ✅ |
 | `/api/version` | GET | Get API version (Dummy version to fix some apps) | ✅ |
 | `/api/show` | POST | Show model information | ✅ |
-| `/api/create` | POST | Create model from Modelfile | ⚠️ | FIX
-| `/api/pull` | POST | Pull a model | ⚠️ | FIX
+| `/api/create` | POST | Create model from Modelfile | ⚠️ Basic implementation |
+| `/api/pull` | POST | Pull a model | ⚠️ Basic implementation |
 | `/api/delete` | DELETE | Delete a model | ✅ |
 | `/api/generate` | POST | Generate a completion | ✅ |
 | `/api/chat` | POST | Generate a chat completion | ✅ |
-| `/api/embeddings` | POST | Generate embeddings | ❌ |
+| `/api/embeddings` | POST | Generate embeddings | ❌ Not implemented |
+| `/api/embed` | POST | Generate embeddings | ❌ Not implemented |
 
 ## Usage Examples
 
@@ -26,7 +27,7 @@ This endpoint uses a chat-style format with message roles and is best for multi-
 
 ```bash
 curl -X POST http://localhost:8080/api/chat -d '{
-  "model": "TinyLlama-1.1B-Chat-v1.0",
+  "model": "qwen2.5:3b",
   "messages": [
     {"role": "user", "content": "Hello, how are you today?"}
   ]
@@ -39,7 +40,7 @@ This endpoint is used for single-turn completions based on a prompt:
 
 ```bash
 curl -X POST http://localhost:8080/api/generate -d '{
-  "model": "TinyLlama-1.1B-Chat-v1.0",
+  "model": "qwen2.5:3b",
   "prompt": "Write a poem about AI"
 }'
 ```
@@ -96,10 +97,12 @@ Recent updates have significantly improved streaming reliability:
 
 ## Limitations
 
+- Only core endpoints (`/api/chat` and `/api/generate`) are fully implemented
+- Pull and Create endpoints have basic implementations
 - Embeddings API is not currently implemented
-- Some advanced Ollama formatting features are not supported
-- Client compatibility has not been extensively tested
-- Full OpenAI compatibility is still in development
+- Some advanced Ollama formatting features are not yet supported
+- Not all Ollama clients have been tested for compatibility
+- OpenAI API compatibility is still in development
 
 ## Troubleshooting Tips
 
