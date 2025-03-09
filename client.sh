@@ -54,7 +54,6 @@ done
 # If Miniconda is enabled, check if it exists and activate it
 if $USE_CONDA; then
     if [ -d "$MINICONDA_DIR" ]; then
-        echo -e "${GREEN}Starting the environment with Miniconda3.${RESET}"
         source "$MINICONDA_DIR/bin/activate" ""
     else
         echo -e "Miniconda3 is not installed. Please install it first or use --no-conda."
