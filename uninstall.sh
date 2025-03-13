@@ -8,6 +8,16 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RESET='\033[0m'
 
+# Determine script location to find application root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+APP_ROOT="$SCRIPT_DIR"
+CONFIG_DIR="$APP_ROOT/config"
+
+# Source configuration if available
+if [ -f "$CONFIG_DIR/config.env" ]; then
+    source "$CONFIG_DIR/config.env"
+fi
+
 # Confirmation prompt
 echo -e "${YELLOW}Are you sure you want to uninstall RKLLama? This action will delete all associated files.${RESET}"
 read -p "Type 'y' to continue, 'n' to cancel: " confirmation
@@ -22,14 +32,23 @@ echo -e "${YELLOW}Do you want to back up the models?${RESET}"
 read -p "Type 'y' to continue, 'n' to cancel: " confirmation_models
 
 if [[ "$confirmation_models" == "y" || "$confirmation_models" == "Y" ]]; then
+    # Get models directory from configuration or use default
+    MODELS_DIR="${RKLLAMA_PATHS_MODELS_RESOLVED:-$APP_ROOT/models}"
+    BACKUP_DIR="/home/$(whoami)/Desktop/rkllm_models"
+    
     # Back up the models
-    echo -e "${GREEN}The models will be saved to /home/$(whoami)/Desktop/rkllm_models.${RESET}"
+    echo -e "${GREEN}The models will be saved to $BACKUP_DIR${RESET}"
     # Create the directory if needed
-    mkdir -p "/home/$(whoami)/Desktop/rkllm_models"
-    cp ~/RKLLAMA/models/*.rkllm "/home/$(whoami)/Desktop/rkllm_models"
-
-    echo -e "${GREEN}Models have been successfully backed up.${RESET}"
-fi  # <-- This was missing in your original script
+    mkdir -p "$BACKUP_DIR"
+    
+    # Only copy if models directory exists and contains files
+    if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR")" ]; then
+        cp "$MODELS_DIR"/*.rkllm "$BACKUP_DIR" 2>/dev/null
+        echo -e "${GREEN}Models have been successfully backed up.${RESET}"
+    else
+        echo -e "${YELLOW}No models found to back up.${RESET}"
+    fi
+fi
 
 # Start uninstallation message
 echo -e "${CYAN}Starting uninstallation...${RESET}"

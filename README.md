@@ -197,6 +197,12 @@ This will automatically download the specified model file and prepare it for use
 
    *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
 
+## Configuration
+
+RKLLAMA uses a flexible configuration system that loads settings from multiple sources in a priority order:
+
+See the [Configuration Documentation](documentation/configuration.md) for complete details.
+
 ## Uninstall
 
 1. Go to the `~/RKLLAMA/` folder

@@ -1,6 +1,8 @@
 import os
 
-MODEL_PATH = "~/RKLLAMA/models"
+import config
+
+MODEL_PATH = os.path.join(config.get_path("models"))
 
 
 def GetModels():

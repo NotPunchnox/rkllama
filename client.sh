@@ -2,41 +2,45 @@
 
 # Define colors
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 RESET='\033[0m'
 
-# Parse arguments for port specification
-PORT="8080"  # Default port
+# Determine script location to find application root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+APP_ROOT="$SCRIPT_DIR"
+CONFIG_DIR="$APP_ROOT/config"
 
-# Check for port specification in arguments
+# Default port
+PORT="8080"
+
+# Source configuration if available
+if [ -f "$CONFIG_DIR/config.env" ]; then
+    source "$CONFIG_DIR/config.env"
+    
+    # Apply values from config.env if available
+    if [ -n "$RKLLAMA_SERVER_PORT" ]; then
+        PORT="$RKLLAMA_SERVER_PORT"
+    fi
+fi
+
+# Parse arguments for port specification and other options
+# Build a clean args array to pass to the Python script
+PYTHON_ARGS=()
+
+# Check for port specification and other args in arguments
 for arg in "$@"; do
     if [[ "$arg" == --port=* ]]; then
         PORT="${arg#*=}"
-        # Remove this argument from parameters passed to the Python script
-        set -- "${@/$arg/}"
+        # This argument will be passed directly to Python
+        PYTHON_ARGS+=("$arg")
+    elif [[ "$arg" == "--no-conda" ]]; then
+        USE_CONDA=false
+        # Don't add this to Python args
+    else
+        # Pass through all other arguments
+        PYTHON_ARGS+=("$arg")
     fi
 done
-
-# Update the rkllama.ini file with the port if specified
-CONFIG_FILE=~/RKLLAMA/rkllama.ini
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Creating config file with default port..."
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    echo "[server]" > "$CONFIG_FILE"
-    echo "port = 8080" >> "$CONFIG_FILE"
-fi
-
-# If port was specified, update the config
-if [ "$PORT" != "8080" ]; then
-    echo "Updating port to $PORT..."
-    if grep -q "^\[server\]" "$CONFIG_FILE"; then
-        # Section exists, update port
-        sed -i "s/^port = .*/port = $PORT/" "$CONFIG_FILE"
-    else
-        # Section doesn't exist, create it
-        echo "[server]" >> "$CONFIG_FILE"
-        echo "port = $PORT" >> "$CONFIG_FILE"
-    fi
-fi
 
 # Miniconda installation path
 MINICONDA_DIR=~/miniconda3
@@ -46,8 +50,6 @@ USE_CONDA=true
 for arg in "$@"; do
     if [[ "$arg" == "--no-conda" ]]; then
         USE_CONDA=false
-        # Remove this argument from parameters passed to the Python script
-        set -- "${@/$arg/}"
     fi
 done
 
@@ -56,10 +58,10 @@ if $USE_CONDA; then
     if [ -d "$MINICONDA_DIR" ]; then
         source "$MINICONDA_DIR/bin/activate" ""
     else
-        echo -e "Miniconda3 is not installed. Please install it first or use --no-conda."
+        echo -e "${YELLOW}Miniconda3 is not installed. Please install it first or use --no-conda.${RESET}"
         exit 1
     fi
 fi
 
-# Execute the Python script with the remaining arguments
-python3 ~/RKLLAMA/client.py "$@"
+# Execute the Python script with all arguments
+python3 "$APP_ROOT/client.py" "${PYTHON_ARGS[@]}"

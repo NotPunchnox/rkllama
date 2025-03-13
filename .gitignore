@@ -2,3 +2,4 @@ models/*/*.rkllm
 models/*/*
 src/__pycache__
 *.log
+config/config.env

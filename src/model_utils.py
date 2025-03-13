@@ -3,6 +3,7 @@ import re
 import logging
 import requests
 from pathlib import Path
+import config
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
@@ -37,8 +38,8 @@ def get_huggingface_model_info(model_path):
         if not model_path or '/' not in model_path:
             return None
         
-        # Get DEBUG_MODE from environment for logging
-        debug_mode = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+        # Get DEBUG_MODE from configuration
+        debug_mode = config.is_debug_mode()
         
         # Extract repo_id from HUGGINGFACE_PATH
         url = f"https://huggingface.co/api/models/{model_path}"
@@ -160,7 +161,7 @@ def get_huggingface_model_info(model_path):
                 logger.debug(f"Failed to get HF data: {response.status_code}")
             return None
     except Exception as e:
-        debug_mode = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+        debug_mode = config.is_debug_mode()
         if debug_mode:
             logger.exception(f"Error fetching HF model info: {str(e)}")
         return None
@@ -363,7 +364,8 @@ def initialize_model_mappings():
     SIMPLE_TO_FULL_MAP.clear()
     FULL_TO_SIMPLE_MAP.clear()
     
-    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    # Use config module to get models directory path
+    models_dir = config.get_path("models")
     
     if not os.path.exists(models_dir):
         logger.warning(f"Models directory not found: {models_dir}")
@@ -492,7 +494,7 @@ def find_model_by_name(name):
         return SIMPLE_TO_FULL_MAP[name]
     
     # Check if it's a fully qualified path that exists directly
-    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    models_dir = config.get_path("models")
     direct_path = os.path.join(models_dir, name)
     if os.path.isdir(direct_path):
         # It exists directly, make sure we use the collision-aware name
@@ -527,7 +529,7 @@ def ensure_model_loaded(model_name):
     full_model_name = find_model_by_name(model_name)
     if not full_model_name:
         # As a last resort, try direct path
-        models_dir = os.path.expanduser("~/RKLLAMA/models")
+        models_dir = config.get_path("models")
         if os.path.exists(os.path.join(models_dir, model_name)):
             return model_name
         

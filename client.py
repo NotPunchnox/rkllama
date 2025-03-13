@@ -4,7 +4,8 @@ import sys
 import os
 import configparser
 
-CONFIG_FILE = os.path.expanduser("~/RKLLAMA/rkllama.ini")
+import config
+
 STREAM_MODE = True
 VERBOSE = False
 HISTORY = []
@@ -18,19 +19,7 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
-
-if not os.path.exists(CONFIG_FILE):
-    print("Configuration file not found. Creating with default values...")
-    config = configparser.ConfigParser()
-    config["server"] = {"port": "8080"}
-    with open(CONFIG_FILE, "w") as configfile:
-        config.write(configfile)
-
-config = configparser.ConfigParser()
-config.read(CONFIG_FILE)
-
-
-PORT = config["server"].get("port", "8080")
+PORT = config.get("server", "port")
 API_URL = f"http://127.0.0.1:{PORT}/"
 
 
@@ -307,7 +296,7 @@ def chat():
             send_message(user_input)
 
 def update():
-    setup_path = os.path.expanduser('~/RKLLAMA/setup.sh')
+    setup_path = os.path.join(config.get_path(), 'setup.sh')
     
     # Check if setup.sh exists
     if not os.path.exists(setup_path):
@@ -354,7 +343,8 @@ def main():
         if len(sys.argv) > 2:
             PORT = sys.argv[2]
 
-        os.system(f"bash ~/RKLLAMA/server.sh {"--no-conda" if use_no_conda else ""} --port={PORT}")
+        server_script = os.path.join(config.get_path(), 'server.sh')
+        os.system(f"bash {server_script} {'--no-conda' if use_no_conda else ''} --port={PORT}")
 
     elif command == "update":
         update()
