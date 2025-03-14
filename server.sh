@@ -97,9 +97,6 @@ if [ -z "$PROCESSOR" ]; then
   elif [ -n "$RKLLAMA_PLATFORM_PROCESSOR" ]; then
     # Use platform.processor setting from config
     PROCESSOR="$RKLLAMA_PLATFORM_PROCESSOR"
-  elif [ -n "$RKLLAMA_PLATFORM_TARGET" ]; then
-    # Use platform.target for backward compatibility
-    PROCESSOR="$RKLLAMA_PLATFORM_TARGET"
   else
     # Try to extract the processor type from cpuinfo if not defined
     PROCESSOR=$(grep -i "cpu model" /proc/cpuinfo | head -n 1 | sed 's/.*Rockchip \(RK[0-9]*\).*/\1/' | tr '[:upper:]' '[:lower:]')
