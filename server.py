@@ -1080,6 +1080,7 @@ def main():
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         print_color("Debug mode enabled", "yellow")
+        config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
     # Get port from config
@@ -1096,7 +1097,10 @@ def main():
             sys.exit(1)
         print_color(f"Setting the frequency for the {processor} platform...", "cyan")
         library_path = os.path.join(config.get_path("lib"), f"fix_freq_{processor}.sh")
-        command = f"sudo bash {library_path}"
+        
+        # Pass debug flag as parameter to the shell script
+        debug_param = "1" if DEBUG_MODE else "0"
+        command = f"sudo bash {library_path} {debug_param}"
         subprocess.run(command, shell=True)
 
     # Set the resource limits

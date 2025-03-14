@@ -119,7 +119,6 @@ if [ -z "$PROCESSOR" ]; then
 fi
 
 # Build full command with all arguments
-# Use both --processor (new standard) and --target_platform (backward compatibility)
 COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
 
 # Add debug flag if enabled
