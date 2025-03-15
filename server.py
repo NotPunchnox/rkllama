@@ -19,8 +19,15 @@ from src.model_utils import (
     initialize_model_mappings, find_model_by_name, get_huggingface_model_info
 )
 
-# Check for debug mode
-DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+# Import the config module
+import config
+
+# Check for debug mode using the improved method
+DEBUG_MODE = config.is_debug_mode()
+
+# Ensure logs directory exists before configuring logging
+logs_dir = config.get_path("logs")
+os.makedirs(logs_dir, exist_ok=True)
 
 # Set up logging with appropriate level based on debug mode
 logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
@@ -29,7 +36,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.expanduser("~/RKLLAMA/rkllama_server.log"))
+        logging.FileHandler(os.path.join(logs_dir, "rkllama_server.log"))
     ]
 )
 logger = logging.getLogger("rkllama.server")
@@ -47,7 +54,6 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-CONFIG_FILE = os.path.expanduser("~/RKLLAMA/rkllama.ini")
 current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
@@ -63,8 +69,8 @@ SYSTEM="{system}"
 TEMPERATURE={temperature}
 """
 
-    # Expand the path to the full directory path
-    path = os.path.expanduser(f"~/RKLLAMA/models/{From.replace('.rkllm', '')}")
+    # Use config for models path
+    path = os.path.join(config.get_path("models"), From.replace('.rkllm', ''))
 
     # Create the directory if it doesn't exist
     if not os.path.exists(path):
@@ -76,8 +82,8 @@ TEMPERATURE={temperature}
 
 
 def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
-
-    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    # Use config for models path
+    model_dir = os.path.join(config.get_path("models"), model_name)
     
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
@@ -128,11 +134,11 @@ CORS(app)
 # Route to view models
 @app.route('/models', methods=['GET'])
 def list_models():
-    # Return the list of available models in ~/RKLLAMA/models
-    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    # Return the list of available models using config path
+    models_dir = config.get_path("models")
     
     if not os.path.exists(models_dir):
-        return jsonify({"error": "Le dossier ~/RKLLAMA/models est introuvable."}), 500
+        return jsonify({"error": f"The models directory {models_dir} is not found."}), 500
 
     direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm")]
 
@@ -155,7 +161,6 @@ def list_models():
 
     return jsonify({"models": model_dirs}), 200
 
-
 # Delete a model
 @app.route('/rm', methods=['DELETE'])
 def Rm_model():
@@ -163,7 +168,7 @@ def Rm_model():
     if "model" not in data:
         return jsonify({"error": "Please specify a model."}), 400
 
-    model_path = os.path.expanduser(f"~/RKLLAMA/models/{data['model']}")
+    model_path = os.path.join(config.get_path("models"), data['model'])
     if not os.path.exists(model_path):
         return jsonify({"error": f"The model: {data['model']} cannot be found."}), 404
 
@@ -201,12 +206,12 @@ def pull_model():
                 yield "Error: Unable to retrieve file size.\n"
                 return
 
-            # Créer un dossier pour le model
-            os.makedirs(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"))
+            # Use config to get models path
+            model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
+            os.makedirs(model_dir, exist_ok=True)
 
             # Définir le fichier à télécharger
-            local_filename = os.path.join(os.path.expanduser(f"~/RKLLAMA/models/{file.replace('.rkllm', '')}"), file)
-            os.makedirs(os.path.dirname(local_filename), exist_ok=True)
+            local_filename = os.path.join(model_dir, file)
 
             # Créer le fichier de configuration du model
             create_modelfile(huggingface_path=repo, From=file)
@@ -309,7 +314,7 @@ def recevoir_message():
 @app.route('/api/tags', methods=['GET'])
 def list_ollama_models():
     # Return models in Ollama API format
-    models_dir = os.path.expanduser("~/RKLLAMA/models")
+    models_dir = config.get_path("models")
     
     if not os.path.exists(models_dir):
         return jsonify({"models": []}), 200
@@ -360,7 +365,7 @@ def show_model_info():
     if original_model_path:
         model_name = original_model_path
         
-    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    model_dir = os.path.join(config.get_path("models"), model_name)
     
     if not os.path.exists(model_dir):
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
@@ -733,7 +738,7 @@ def create_model():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
     
-    model_dir = os.path.expanduser(f"~/RKLLAMA/models/{model_name}")
+    model_dir = os.path.join(config.get_path("models"), model_name)
     os.makedirs(model_dir, exist_ok=True)
     
     with open(os.path.join(model_dir, "Modelfile"), "w") as f:
@@ -783,7 +788,7 @@ def delete_model_ollama():
             logger.error(f"Model '{model_name}' not found for deletion")
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
     
-    model_path = os.path.expanduser(f"~/RKLLAMA/models/{full_model_name}")
+    model_path = os.path.join(config.get_path("models"), full_model_name)
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
@@ -1061,51 +1066,41 @@ def default_route():
 def main():
     # Define the arguments for the launch function
     parser = argparse.ArgumentParser(description="RKLLM server initialization with configurable options.")
-    parser.add_argument('--target_platform', type=str, help="Target platform: rk3588/rk3576.")
-    parser.add_argument('--port', type=str, default="8080", help="Default port: 8080") # Added default value
+    parser.add_argument('--processor', type=str, help="Processor: rk3588/rk3576.")
+    parser.add_argument('--port', type=str, help="Port for the server")
     parser.add_argument('--debug', action='store_true', help="Enable debug mode")
     args = parser.parse_args()
 
-    # Set debug mode if specified
-    if args.debug:
-        os.environ["RKLLAMA_DEBUG"] = "1"
-        global DEBUG_MODE
-        DEBUG_MODE = True
+    # Load arguments into the config
+    config.load_args(args)
+    
+    # Set debug mode if specified in config - using the improved method
+    global DEBUG_MODE
+    DEBUG_MODE = config.is_debug_mode()
+    if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         print_color("Debug mode enabled", "yellow")
+        config.display()
+        os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
-    # Check if the configuration file exists
-    if not os.path.exists(CONFIG_FILE):
-        print("Configuration file not found. Creating with default values...")
-        config = configparser.ConfigParser()
-        config["server"] = {"port": "8080"}
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
+    # Get port from config
+    port = config.get("server", "port", "8080")
 
-    # Load the configuration
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
-
-    # If a port is specified by the user, update it in the config
-    if args.port:
-        port = args.port
-        config["server"]["port"] = port
-        with open(CONFIG_FILE, "w") as configfile:
-            config.write(configfile)
+    # Check the processor
+    processor = config.get("platform", "processor", None)
+    if not processor:
+        print_color("Error: processor not configured", "red")
+        sys.exit(1)
     else:
-        # Otherwise, use the default port from the config
-        port = config["server"].get("port", "8080")
-
-    # Check the target platform
-    if not args.target_platform:
-        print_color("Error argument not found: --target_platform", "red")
-    else:
-        if args.target_platform not in ["rk3588", "rk3576"]:
-            print_color("Error: Invalid target platform. Please enter rk3588 or rk3576.", "red")
+        if processor not in ["rk3588", "rk3576"]:
+            print_color("Error: Invalid processor. Please enter rk3588 or rk3576.", "red")
             sys.exit(1)
-        print_color(f"Setting the frequency for the {args.target_platform} platform...", "cyan")
-        library_path = os.path.expanduser(f"~/RKLLAMA/lib/fix_freq_{args.target_platform}.sh")
-        command = f"sudo bash {library_path}"
+        print_color(f"Setting the frequency for the {processor} platform...", "cyan")
+        library_path = os.path.join(config.get_path("lib"), f"fix_freq_{processor}.sh")
+        
+        # Pass debug flag as parameter to the shell script
+        debug_param = "1" if DEBUG_MODE else "0"
+        command = f"sudo bash {library_path} {debug_param}"
         subprocess.run(command, shell=True)
 
     # Set the resource limits
@@ -1119,8 +1114,8 @@ def main():
     print_color(f"Start the API at http://localhost:{port}", "blue")
     
     # Set Flask debug mode to match our debug flag
-    flask_debug = DEBUG_MODE
-    app.run(host='0.0.0.0', port=int(port), threaded=True, debug=flask_debug)
+    flask_debug = config.is_debug_mode()
+    app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
 
 if __name__ == "__main__":
     main()

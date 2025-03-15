@@ -1,11 +1,13 @@
 import ctypes
 import os
 
+import config
+
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
 
 # Définir le chemin de la bibliothèque dynamique
-library_path = os.path.expanduser('~/RKLLAMA/lib/librkllmrt.so')
+library_path = os.path.join(config.get_path("lib"), "librkllmrt.so")
 rkllm_lib = ctypes.CDLL(library_path)
 
 # Définir les structures de la bibliothèque

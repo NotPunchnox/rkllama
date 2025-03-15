@@ -4,9 +4,11 @@ import datetime
 import logging
 import threading
 import time
+from config import is_debug_mode
+
 
 # Check for debug mode
-DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+DEBUG_MODE = is_debug_mode()
 
 # Configure logger
 logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO

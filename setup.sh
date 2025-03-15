@@ -8,6 +8,14 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RESET='\033[0m'
 
+# Determine script location to find application root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+APP_ROOT="$SCRIPT_DIR"
+CONFIG_DIR="$APP_ROOT/config"
+
+# Create config directory if it doesn't exist
+mkdir -p "$CONFIG_DIR"
+
 # Check for the argument to disable Miniconda
 USE_CONDA=true
 CONDA_ARG=""  # This will hold "--no-conda" if conda is disabled
@@ -39,11 +47,27 @@ echo -e "${CYAN}Checking for updates...${RESET}"
 git pull
 echo -e "${GREEN}Update check completed successfully!${RESET}"
 
-# Create the RKLLAMA directory
-echo -e "${CYAN}Creating the ~/RKLLAMA directory...${RESET}"
-mkdir -p ~/RKLLAMA/
-echo -e "${CYAN}Installing resources in ~/RKLLAMA...${RESET}"
-cp -rf . ~/RKLLAMA/
+# Create the RKLLAMA directory in user's home
+INSTALL_DIR="$HOME/RKLLAMA"
+echo -e "${CYAN}Installing RKLLAMA to $INSTALL_DIR...${RESET}"
+mkdir -p "$INSTALL_DIR"
+echo -e "${CYAN}Copying resources to $INSTALL_DIR...${RESET}"
+cp -rf . "$INSTALL_DIR/"
+
+# Generate initial configuration first so we can use it to create the right directories
+echo -e "${CYAN}Generating initial configuration...${RESET}"
+cd "$INSTALL_DIR"
+python3 -c "import config; config.validate()"
+
+# Create required directories based on configured paths
+echo -e "${CYAN}Creating required directories based on configuration...${RESET}"
+source "$INSTALL_DIR/config/config.env"
+mkdir -p "$RKLLAMA_PATHS_MODELS_RESOLVED"
+mkdir -p "$RKLLAMA_PATHS_LOGS_RESOLVED"
+mkdir -p "$RKLLAMA_PATHS_DATA_RESOLVED"
+mkdir -p "$RKLLAMA_PATHS_TEMP_RESOLVED"
+mkdir -p "$RKLLAMA_PATHS_SRC_RESOLVED"
+mkdir -p "$RKLLAMA_PATHS_LIB_RESOLVED"
 
 # Activate Miniconda and install dependencies (if enabled)
 if $USE_CONDA; then
@@ -52,7 +76,7 @@ fi
 
 # Install dependencies using pip
 echo -e "${CYAN}Installing dependencies from requirements.txt...${RESET}"
-pip3 install -r ~/RKLLAMA/requirements.txt
+pip3 install -r "$INSTALL_DIR/requirements.txt"
 
 # Install python libraries
 echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
@@ -60,23 +84,23 @@ echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
 pip install requests flask huggingface_hub flask-cors python-dotenv transformers
 
 # Make client.sh and server.sh executable
-echo -e "${CYAN}Making ./client.sh and ./server.sh executable${RESET}"
-chmod +x ~/RKLLAMA/client.sh
-chmod +x ~/RKLLAMA/server.sh
-chmod +x ~/RKLLAMA/uninstall.sh
+echo -e "${CYAN}Making scripts executable${RESET}"
+chmod +x "$INSTALL_DIR/client.sh"
+chmod +x "$INSTALL_DIR/server.sh"
+chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Modify client.sh and server.sh to always use --no-conda if conda is disabled
 if ! $USE_CONDA; then
     echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
     
     # Add --no-conda to client.sh if not already present
-    if ! grep -q -- "--no-conda" ~/RKLLAMA/client.sh; then
-        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' ~/RKLLAMA/client.sh
+    if ! grep -q -- "--no-conda" "$INSTALL_DIR/client.sh"; then
+        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/client.sh"
     fi
 
     # Add --no-conda to server.sh if not already present
-    if ! grep -q -- "--no-conda" ~/RKLLAMA/server.sh; then
-        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' ~/RKLLAMA/server.sh
+    if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
+        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/server.sh"
     fi
 fi
 
@@ -85,6 +109,15 @@ echo -e "${CYAN}Creating a global executable for rkllama...${RESET}"
 
 cat << 'EOF' | sudo tee /usr/local/bin/rkllama > /dev/null
 #!/bin/bash
+
+# Use user's installation directory
+INSTALL_DIR="$HOME/RKLLAMA"
+CONFIG_DIR="$INSTALL_DIR/config"
+
+# Source configuration if available
+if [ -f "$CONFIG_DIR/config.env" ]; then
+    source "$CONFIG_DIR/config.env"
+fi
 
 # Parse arguments to pass along
 ARGS=""
@@ -110,7 +143,7 @@ done
 # Build command with all detected options
 if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
     # For 'serve' command, use server.sh
-    FINAL_CMD="~/RKLLAMA/server.sh"
+    FINAL_CMD="$INSTALL_DIR/server.sh"
     
     # Add port if specified
     if [[ -n "$PORT_ARG" ]]; then
@@ -126,7 +159,7 @@ if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
     FINAL_CMD="$FINAL_CMD $ARGS"
 else
     # For all other commands, use client.sh
-    FINAL_CMD="~/RKLLAMA/client.sh"
+    FINAL_CMD="$INSTALL_DIR/client.sh"
     
     # Add port if specified
     if [[ -n "$PORT_ARG" ]]; then
@@ -153,6 +186,6 @@ echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
 echo -e "${GREEN}+ Configuration: OK.${RESET}"
 echo -e "${GREEN}+ Installation : OK.${RESET}"
 
-echo -e "${BLUE}Server${GREEN}  : ./server.sh $CONDA_ARG${RESET}"
-echo -e "${BLUE}Client${GREEN}  : ./client.sh $CONDA_ARG${RESET}\n"
+echo -e "${BLUE}Server${GREEN}  : $INSTALL_DIR/server.sh $CONDA_ARG${RESET}"
+echo -e "${BLUE}Client${GREEN}  : $INSTALL_DIR/client.sh $CONDA_ARG${RESET}\n"
 echo -e "${BLUE}Global command  : ${RESET}rkllama"

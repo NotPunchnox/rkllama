@@ -4,14 +4,14 @@ from flask import Flask, request, jsonify, Response
 import src.variables as variables
 import datetime
 import logging
-import os  # For accessing environment variables
+from config import is_debug_mode  # Import the config module
 from .format_utils import create_format_instruction, validate_format_response
 from src.model_utils import get_simplified_model_name  # Import at the top level
 
 logger = logging.getLogger("rkllama.process")
 
-# Import DEBUG_MODE setting from environment variables
-DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+# Get DEBUG_MODE from config instead of environment variable
+DEBUG_MODE = is_debug_mode()
 
 def Request(modele_rkllm, custom_request=None):
     """
@@ -83,7 +83,8 @@ def Request(modele_rkllm, custom_request=None):
                     if last_user_msg_idx >= 0:
                         original_content = messages[last_user_msg_idx]["content"]
                         messages[last_user_msg_idx]["content"] = original_content + format_instruction
-                        logger.debug(f"Added format instruction: {format_instruction}")
+                        if DEBUG_MODE:
+                            logger.debug(f"Added format instruction: {format_instruction}")
 
             # Mise en place du tokenizer
             tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)

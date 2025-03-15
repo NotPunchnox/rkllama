@@ -1,5 +1,16 @@
 #!/system/bin/sh
 
+# Check if debug mode is enabled (first argument)
+DEBUG_MODE=${1:-0}
+
+# Function for conditional echo based on debug mode
+debug_echo() {
+  if [ "$DEBUG_MODE" = "1" ]; then
+    echo "$@"
+  fi
+}
+
+# Disable CPU idle states to maximize performance
 echo 1 > /sys/devices/system/cpu/cpu0/cpuidle/state1/disable
 echo 1 > /sys/devices/system/cpu/cpu1/cpuidle/state1/disable
 echo 1 > /sys/devices/system/cpu/cpu2/cpuidle/state1/disable
@@ -9,38 +20,67 @@ echo 1 > /sys/devices/system/cpu/cpu5/cpuidle/state1/disable
 echo 1 > /sys/devices/system/cpu/cpu6/cpuidle/state1/disable
 echo 1 > /sys/devices/system/cpu/cpu7/cpuidle/state1/disable
 
-echo "NPU available frequencies:"
-cat /sys/class/devfreq/fdab0000.npu/available_frequencies
-echo "Fix NPU max frequency:"
+# NPU frequency management
+debug_echo "NPU available frequencies:"
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/fdab0000.npu/available_frequencies
+fi
+debug_echo "Fix NPU max frequency:"
 echo userspace > /sys/class/devfreq/fdab0000.npu/governor
 echo 1000000000 > /sys/class/devfreq/fdab0000.npu/userspace/set_freq
-cat /sys/class/devfreq/fdab0000.npu/cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/fdab0000.npu/cur_freq
+fi
 
-echo "CPU available frequencies:"
-cat /sys/devices/system/cpu/cpufreq/policy0/scaling_available_frequencies
-cat /sys/devices/system/cpu/cpufreq/policy4/scaling_available_frequencies
-cat /sys/devices/system/cpu/cpufreq/policy6/scaling_available_frequencies
-echo "Fix CPU max frequency:"
+# CPU frequency management
+debug_echo "CPU available frequencies:"
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/devices/system/cpu/cpufreq/policy0/scaling_available_frequencies
+  cat /sys/devices/system/cpu/cpufreq/policy4/scaling_available_frequencies
+  cat /sys/devices/system/cpu/cpufreq/policy6/scaling_available_frequencies
+fi
+debug_echo "Fix CPU max frequency:"
 echo userspace > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 echo 1800000 > /sys/devices/system/cpu/cpufreq/policy0/scaling_setspeed
-cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq
+fi
 echo userspace > /sys/devices/system/cpu/cpufreq/policy4/scaling_governor
 echo 2352000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_setspeed
-cat /sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq
+fi
 echo userspace > /sys/devices/system/cpu/cpufreq/policy6/scaling_governor
 echo 2352000 > /sys/devices/system/cpu/cpufreq/policy6/scaling_setspeed
-cat /sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq
+fi
 
-echo "GPU available frequencies:"
-cat /sys/class/devfreq/fb000000.gpu/available_frequencies
-echo "Fix GPU max frequency:"
+# GPU frequency management
+debug_echo "GPU available frequencies:"
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/fb000000.gpu/available_frequencies
+fi
+debug_echo "Fix GPU max frequency:"
 echo userspace > /sys/class/devfreq/fb000000.gpu/governor
 echo 1000000000 > /sys/class/devfreq/fb000000.gpu/userspace/set_freq
-cat /sys/class/devfreq/fb000000.gpu/cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/fb000000.gpu/cur_freq
+fi
 
-echo "DDR available frequencies:"
-cat /sys/class/devfreq/dmc/available_frequencies
-echo "Fix DDR max frequency:"
+# DDR frequency management
+debug_echo "DDR available frequencies:"
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/dmc/available_frequencies
+fi
+debug_echo "Fix DDR max frequency:"
 echo userspace > /sys/class/devfreq/dmc/governor
 echo 2112000000 > /sys/class/devfreq/dmc/userspace/set_freq
-cat /sys/class/devfreq/dmc/cur_freq
+if [ "$DEBUG_MODE" = "1" ]; then
+  cat /sys/class/devfreq/dmc/cur_freq
+fi
+
+# When not in debug mode, just print a simple summary
+if [ "$DEBUG_MODE" != "1" ]; then
+  echo "RK3588 frequencies optimized for NPU inferencing"
+fi

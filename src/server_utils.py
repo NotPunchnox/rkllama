@@ -4,14 +4,17 @@ import time
 import datetime
 import logging
 import os
+import re  # Add import for regex used in JSON extraction
 from transformers import AutoTokenizer
 from flask import jsonify, Response
 import src.variables as variables
 from src.model_utils import get_simplified_model_name
 from .format_utils import create_format_instruction, validate_format_response
 
-# Check for debug mode
-DEBUG_MODE = os.environ.get("RKLLAMA_DEBUG", "0").lower() in ["1", "true", "yes", "on"]
+import config
+
+# Check for debug mode using the improved method from config
+DEBUG_MODE = config.is_debug_mode()
 
 # Set up logging based on debug mode
 logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
@@ -20,7 +23,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.expanduser("~/RKLLAMA/rkllama_debug.log")) if DEBUG_MODE else logging.NullHandler()
+        logging.FileHandler(os.path.join(config.get_path("logs"),'rkllama_debug.log')) if DEBUG_MODE else logging.NullHandler()
     ]
 )
 logger = logging.getLogger("rkllama.server_utils")
