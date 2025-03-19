@@ -1,0 +1,9 @@
+name: rkllm-server
+services:
+    rkllama:
+        volumes:
+          - ./models:/root/RKLLAMA/models
+        privileged: true
+        ports:
+          - 8080:8080
+        image: thanhtantran/rkllama:arm64
