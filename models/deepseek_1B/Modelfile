@@ -1,5 +1,0 @@
-HUGGINGFACE_PATH="c01zaut/deepseek-llm-7b-chat-rk3588-1.1.4"
-
-SYSTEM="Tu es un assistant IA"
-
-FROM="deepseek-llm-7b-chat-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm"
