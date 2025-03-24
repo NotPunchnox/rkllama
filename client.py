@@ -352,12 +352,12 @@ def main():
     elif command =="list":
         list_models()
 
-    elif command == "load_model":
+    elif command == "load":
         if len(sys.argv) < 3:
             print(f"{RED}Error: You must specify the model name.{RESET}")
         else:
             load_model(sys.argv[2])
-    
+
     elif command == "unload":
         unload_model()
 
