@@ -309,10 +309,7 @@ def recevoir_message():
         return jsonify({"error": "No models are currently loaded."}), 400
 
     # Load modelfile
-    load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
-    
-    from_value = os.getenv("FROM")
-    huggingface_path = os.getenv("HUGGINGFACE_PATH")
+    modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
 
     variables.verrou.acquire()
     return Request(modele_rkllm, modelfile)
