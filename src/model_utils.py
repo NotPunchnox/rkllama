@@ -553,7 +553,6 @@ def get_context_length(model_name: str, models_path: str = "models") -> Union[in
     model_dir = os.path.join(models_path, model_name)
 
     # Check if the model directory exists
-    print("DEBUG: ", models_path, model_dir)
     if not os.path.exists(os.path.join(model_dir, "Modelfile")):
         return 2048
 
