@@ -110,7 +110,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     variables.model_id = huggingface_path
 
     
-    modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), temperature=float(temperature))
     return modele_rkllm, None
 
 def unload_model():
