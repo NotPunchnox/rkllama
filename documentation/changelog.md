@@ -9,9 +9,6 @@
 ### New Commands
 - `rkllama info param`: Affiche les informations d'un model dans RKLLAMA-CLI
 
-### Improvements
-- More reliable "done" signaling for streaming responses
-- Auto-detection of CPU model (RK3588 or RK3576) with fallback to user selection
 
 ### Technical Changes
 - Ajout de la température dans la classe RKLLM

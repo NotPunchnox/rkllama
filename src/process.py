@@ -13,7 +13,7 @@ logger = logging.getLogger("rkllama.process")
 # Get DEBUG_MODE from config instead of environment variable
 DEBUG_MODE = is_debug_mode()
 
-def Request(modele_rkllm, custom_request=None):
+def Request(modele_rkllm, modelfile, custom_request=None):
     """
     Process a request to the language model
     

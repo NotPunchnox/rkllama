@@ -112,7 +112,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     context_length = get_context_length(model_name, onfig.get_path("models"))
 
     
-    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), temperature=float(temperature), context_length=context_length)
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, temperature=float(temperature), context_length=context_length)
     return modele_rkllm, None
 
 def unload_model():
@@ -308,8 +308,14 @@ def recevoir_message():
     if not modele_rkllm:
         return jsonify({"error": "No models are currently loaded."}), 400
 
+    # Load modelfile
+    load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
+    
+    from_value = os.getenv("FROM")
+    huggingface_path = os.getenv("HUGGINGFACE_PATH")
+
     variables.verrou.acquire()
-    return Request(modele_rkllm)
+    return Request(modele_rkllm, modelfile)
 
 # Ollama API compatibility routes
 
