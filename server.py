@@ -16,7 +16,8 @@ from src.server_utils import process_ollama_chat_request, process_ollama_generat
 from src.debug_utils import StreamDebugger, check_response_format
 from src.model_utils import (
     get_simplified_model_name, get_original_model_path, extract_model_details, 
-    initialize_model_mappings, find_model_by_name, get_huggingface_model_info
+    initialize_model_mappings, find_model_by_name, get_huggingface_model_info,
+    get_context_length
 )
 
 # Import the config module
@@ -108,9 +109,10 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
 
     # Change value of model_id with huggingface_path
     variables.model_id = huggingface_path
+    context_length = get_context_length(model_name, onfig.get_path("models"))
 
     
-    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), temperature=float(temperature))
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), temperature=float(temperature), context_length=context_length)
     return modele_rkllm, None
 
 def unload_model():

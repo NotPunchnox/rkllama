@@ -1,6 +1,24 @@
 # RKLLAMA Changelog
 
-## Version 0.0.4 (Current)
+
+## Version 0.0.5 (Beta)
+
+### Major Features
+- **Récupération des informations d'un model**: Ajout de la commande `rkllama info modelname` dans le client CLI.
+
+### New Commands
+- `rkllama info param`: Affiche les informations d'un model dans RKLLAMA-CLI
+
+### Improvements
+- More reliable "done" signaling for streaming responses
+- Auto-detection of CPU model (RK3588 or RK3576) with fallback to user selection
+
+### Technical Changes
+- Ajout de la température dans la classe RKLLM
+- Ajout de context-length dans la classe RKLLM, s'adapte aux besoin réél du model
+
+
+## Version 0.0.4 (Beta)
 
 ### Major Features
 - **Ollama API Compatibility**: Added support for the Ollama API interface, allowing RKLLAMA to work with Ollama clients and tools.
