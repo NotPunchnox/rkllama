@@ -1,6 +1,18 @@
 # RKLLAMA Changelog
 
-## Version 0.0.4 (Current)
+
+## Version 0.0.41 (Current)
+
+### New Commands
+- `rkllama info param`: Displays model details in the RKLLAMA CLI.
+
+### Technical Changes
+- Added temperature parameter to the RKLLM class for enhanced control over generation.
+- Introduced context-length in the RKLLM class, dynamically adapting to the model's requirements.
+- Enabled custom tokenizer import via the Modelfile, supporting offline deployment without an internet connection.
+
+
+## Version 0.0.4
 
 ### Major Features
 - **Ollama API Compatibility**: Added support for the Ollama API interface, allowing RKLLAMA to work with Ollama clients and tools.

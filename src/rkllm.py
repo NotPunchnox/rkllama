@@ -8,22 +8,23 @@ callback = callback_type(callback_impl)
 
 # Définir la classe RKLLM, qui inclut l'initialisation, l'inférence et les opérations de libération pour le modèle RKLLM dans la bibliothèque dynamique
 class RKLLM(object):
-    def __init__(self, model_path, lora_model_path = None, prompt_cache_path = None):
+    def __init__(self, model_path, model_dir, temperature=0.8, context_length=2048, lora_model_path = None, prompt_cache_path = None):
         
         self.format_schema = None
         self.format_type = None
         self.format_options = {}
+        self.model_dir = model_dir
         
         rkllm_param = RKLLMParam()
         rkllm_param.model_path = bytes(model_path, 'utf-8')
 
-        rkllm_param.max_context_len = 1024
+        rkllm_param.max_context_len = context_length
         rkllm_param.max_new_tokens = -1
         rkllm_param.skip_special_token = True
 
         rkllm_param.top_k = 1
         rkllm_param.top_p = 0.9
-        rkllm_param.temperature = 0.8
+        rkllm_param.temperature = temperature
         rkllm_param.repeat_penalty = 1.1
         rkllm_param.frequency_penalty = 0.0
         rkllm_param.presence_penalty = 0.0

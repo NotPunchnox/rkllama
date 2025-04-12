@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.4](#New-Version)
+### [Version: 0.0.41](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -185,6 +185,8 @@ This will automatically download the specified model file and prepare it for use
     SYSTEM="Your system prompt"
 
     TEMPERATURE=1.0
+
+    TOKENIZER="path-to-tokenizer"
     ```
 
    Example directory structure:

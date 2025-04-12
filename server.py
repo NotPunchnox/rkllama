@@ -16,7 +16,8 @@ from src.server_utils import process_ollama_chat_request, process_ollama_generat
 from src.debug_utils import StreamDebugger, check_response_format
 from src.model_utils import (
     get_simplified_model_name, get_original_model_path, extract_model_details, 
-    initialize_model_mappings, find_model_by_name, get_huggingface_model_info
+    initialize_model_mappings, find_model_by_name, get_huggingface_model_info,
+    get_context_length
 )
 
 # Import the config module
@@ -108,9 +109,10 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
 
     # Change value of model_id with huggingface_path
     variables.model_id = huggingface_path
+    context_length = get_context_length(model_name, config.get_path("models"))
 
     
-    modele_rkllm = RKLLM(os.path.join(model_dir, from_value))
+    modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, temperature=float(temperature), context_length=context_length)
     return modele_rkllm, None
 
 def unload_model():
@@ -210,10 +212,10 @@ def pull_model():
             model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
             os.makedirs(model_dir, exist_ok=True)
 
-            # Définir le fichier à télécharger
+            # Define a file to download
             local_filename = os.path.join(model_dir, file)
 
-            # Créer le fichier de configuration du model
+            # Create fonfiguration file for model
             create_modelfile(huggingface_path=repo, From=file)
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
@@ -306,8 +308,11 @@ def recevoir_message():
     if not modele_rkllm:
         return jsonify({"error": "No models are currently loaded."}), 400
 
+    # define modelfile path
+    modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
+
     variables.verrou.acquire()
-    return Request(modele_rkllm)
+    return Request(modele_rkllm, modelfile)
 
 # Ollama API compatibility routes
 

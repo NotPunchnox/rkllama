@@ -542,3 +542,67 @@ def ensure_model_loaded(model_name):
         return None
     
     return full_model_name
+
+import os
+import re
+from typing import Union
+
+def get_context_length(model_name: str, models_path: str = "models") -> Union[int, str]:
+
+    # Construct the full path to the model directory
+    model_dir = os.path.join(models_path, model_name)
+
+    # Check if the model directory exists
+    if not os.path.exists(os.path.join(model_dir, "Modelfile")):
+        return 2048
+
+    # Initialize default model family
+    family = "llama"
+
+    # Check for Modelfile to infer model family
+    modelfile_path = os.path.join(model_dir, "Modelfile")
+    if os.path.exists(modelfile_path):
+        try:
+            with open(modelfile_path, "r", encoding="utf-8") as file:
+                modelfile_content = file.read()
+                if re.search(r'(?i)qwen', modelfile_content):
+                    family = "qwen2"
+                elif re.search(r'(?i)mistral', modelfile_content):
+                    family = "mistral"
+                elif re.search(r'(?i)llama[-_]?3', modelfile_content):
+                    family = "llama3"
+                elif re.search(r'(?i)llama[-_]?2', modelfile_content):
+                    family = "llama2"
+                elif re.search(r'(?i)gemma', modelfile_content):
+                    family = "gemma"
+                elif re.search(r'(?i)phi', modelfile_content):
+                    family = "phi"
+        except (IOError, UnicodeDecodeError):
+            pass
+
+    # Fallback to model name analysis if Modelfile is absent or unreadable
+    if family == "llama":
+        if re.search(r'(?i)qwen', model_name):
+            family = "qwen2"
+        elif re.search(r'(?i)mistral', model_name):
+            family = "mistral"
+        elif re.search(r'(?i)llama[-_]?3', model_name):
+            family = "llama3"
+        elif re.search(r'(?i)llama[-_]?2', model_name):
+            family = "llama2"
+        elif re.search(r'(?i)gemma', model_name):
+            family = "gemma"
+        elif re.search(r'(?i)phi', model_name):
+            family = "phi"
+
+    context_lengths = {
+        "qwen2": 32768,
+        "mistral": 8192,
+        "llama3": 8192,
+        "llama2": 4096,
+        "llama": 4096,
+        "gemma": 8192,
+        "phi": 2048
+    }
+
+    return context_lengths.get(family, 2048)

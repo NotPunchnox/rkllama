@@ -13,7 +13,48 @@ logger = logging.getLogger("rkllama.process")
 # Get DEBUG_MODE from config instead of environment variable
 DEBUG_MODE = is_debug_mode()
 
-def Request(modele_rkllm, custom_request=None):
+import os
+from typing import Optional
+from transformers import AutoTokenizer
+from dotenv import load_dotenv
+
+def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
+
+    # Load environment variables from Modelfile
+    load_dotenv(modelfile, override=True)
+
+    # Retrieve custom tokenizer path
+    custom_tokenizer = os.getenv("TOKENIZER")
+    tokenizer = None
+
+    if custom_tokenizer:
+        # Check if the custom tokenizer path exists
+        if os.path.exists(custom_tokenizer):
+            try:
+                # Attempt to load the custom tokenizer
+                tokenizer = AutoTokenizer.from_pretrained(custom_tokenizer, trust_remote_code=True)
+                print(f"Loaded custom tokenizer from {custom_tokenizer}")
+            except Exception as e:
+                # Warn user and prepare to fallback
+                print(f"Warning: Could not load tokenizer from {custom_tokenizer}. \nError: {str(e)}. Falling back to default tokenizer.")
+        else:
+            # Warn user if path is invalid
+            print(f"Warning: Tokenizer path {custom_tokenizer} does not exist.\nFalling back to default tokenizer.")
+
+    # Fallback to default AutoTokenizer if necessary
+    if tokenizer is None:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            print(f"Loaded default tokenizer for model {model_id}")
+        except Exception as e:
+            print(f"Error: Failed to load default tokenizer for {model_id}.\nError: {str(e)}.")
+            return None
+
+    return tokenizer
+
+
+
+def Request(modele_rkllm, modelfile, custom_request=None):
     """
     Process a request to the language model
     
@@ -86,8 +127,9 @@ def Request(modele_rkllm, custom_request=None):
                         if DEBUG_MODE:
                             logger.debug(f"Added format instruction: {format_instruction}")
 
-            # Mise en place du tokenizer
-            tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
+            # Setup tokenizer
+            tokenizer = load_tokenizer(modelfile, variables.model_id)
+
             supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
 
             if variables.system and supports_system_role:
