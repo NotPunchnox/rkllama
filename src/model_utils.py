@@ -11,6 +11,7 @@ logger = logging.getLogger("rkllama.model_utils")
 # Global dictionaries for model mappings
 SIMPLE_TO_FULL_MAP = {}  # Maps simplified names (e.g., "qwen2:3b") to full paths
 FULL_TO_SIMPLE_MAP = {}  # Maps full paths to simplified names
+TAG_TO_MODEL_MAP = {}  # Maps tag names from /api/tags to real model names
 
 # Mapping from RKLLM quantization types to Ollama-style formats
 QUANT_MAPPING = {
@@ -360,9 +361,10 @@ def initialize_model_mappings():
     Initialize the model name mappings by scanning the models directory
     This should be called at server startup
     """
-    global SIMPLE_TO_FULL_MAP, FULL_TO_SIMPLE_MAP
+    global SIMPLE_TO_FULL_MAP, FULL_TO_SIMPLE_MAP, TAG_TO_MODEL_MAP
     SIMPLE_TO_FULL_MAP.clear()
     FULL_TO_SIMPLE_MAP.clear()
+    TAG_TO_MODEL_MAP.clear()
     
     # Use config module to get models directory path
     models_dir = config.get_path("models")
@@ -379,7 +381,10 @@ def initialize_model_mappings():
         
         if os.path.isdir(full_path) and any(f.endswith('.rkllm') for f in os.listdir(full_path)):
             simple_name = get_simplified_model_name(model_dir)
-            
+
+            # Build tag alias mapping for Open WebUI
+            TAG_TO_MODEL_MAP[simple_name] = model_dir    
+    
             if simple_name not in model_names:
                 model_names[simple_name] = []
             model_names[simple_name].append(model_dir)
@@ -492,6 +497,11 @@ def find_model_by_name(name):
     # Try direct lookup first - maybe it's already the full path
     if name in SIMPLE_TO_FULL_MAP:
         return SIMPLE_TO_FULL_MAP[name]
+
+    # Try Open WebUI tag map
+    if name in TAG_TO_MODEL_MAP:
+        return TAG_TO_MODEL_MAP[name]
+
     
     # Check if it's a fully qualified path that exists directly
     models_dir = config.get_path("models")
