@@ -79,7 +79,7 @@ chmod +x setup.sh
 ![Image](./documentation/ressources/setup.png)
 
 
-###  Rkllama-Server Docker Installation
+### Docker Installation
 
 Pull the RKLLama Docker image:
 
@@ -92,6 +92,14 @@ docker run -it --privileged -p 8080:8080 ghcr.io/notpunchnox/rkllama:main
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
+
+#### Docker Compose
+
+Docker Compose facilities much of the extra flags declaration such as volumes:
+
+```bash
+docker compose up --detach --remove-orphans
+```
 
 ## Usage
 

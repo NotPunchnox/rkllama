@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # Define colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -9,7 +11,7 @@ CYAN='\033[0;36m'
 RESET='\033[0m'
 
 # Determine script location to find application root
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 APP_ROOT="$SCRIPT_DIR"
 CONFIG_DIR="$APP_ROOT/config"
 
@@ -18,7 +20,7 @@ mkdir -p "$CONFIG_DIR"
 
 # Check for the argument to disable Miniconda
 USE_CONDA=true
-CONDA_ARG=""  # This will hold "--no-conda" if conda is disabled
+CONDA_ARG="" # This will hold "--no-conda" if conda is disabled
 if [[ "$1" == "--no-conda" ]]; then
     USE_CONDA=false
     CONDA_ARG="--no-conda"
@@ -44,7 +46,7 @@ fi
 
 # Check for Git repository updates
 echo -e "${CYAN}Checking for updates...${RESET}"
-git pull
+git pull || true
 echo -e "${GREEN}Update check completed successfully!${RESET}"
 
 # Create the RKLLAMA directory in user's home
@@ -92,7 +94,7 @@ chmod +x "$INSTALL_DIR/uninstall.sh"
 # Modify client.sh and server.sh to always use --no-conda if conda is disabled
 if ! $USE_CONDA; then
     echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
-    
+
     # Add --no-conda to client.sh if not already present
     if ! grep -q -- "--no-conda" "$INSTALL_DIR/client.sh"; then
         sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/client.sh"
@@ -107,7 +109,7 @@ fi
 # Create a global executable for rkllama that properly handles arguments
 echo -e "${CYAN}Creating a global executable for rkllama...${RESET}"
 
-cat << 'EOF' | sudo tee /usr/local/bin/rkllama > /dev/null
+cat <<'EOF' | sudo tee /usr/local/bin/rkllama >/dev/null
 #!/bin/bash
 
 # Use user's installation directory
@@ -122,7 +124,7 @@ fi
 # Parse arguments to pass along
 ARGS=""
 PORT_ARG=""
-USE_NO_CONDA=false
+USE_CONDA={{USE_CONDA}}
 
 for arg in "$@"; do
     if [[ "$arg" == "serve" ]]; then
@@ -130,7 +132,7 @@ for arg in "$@"; do
         COMMAND="serve"
     elif [[ "$arg" == "--no-conda" ]]; then
         # Handle no-conda flag
-        USE_NO_CONDA=true
+        USE_CONDA=false
     elif [[ "$arg" == --port=* ]]; then
         # Extract port argument
         PORT_ARG="$arg"
@@ -144,33 +146,33 @@ done
 if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
     # For 'serve' command, use server.sh
     FINAL_CMD="$INSTALL_DIR/server.sh"
-    
+
     # Add port if specified
     if [[ -n "$PORT_ARG" ]]; then
         FINAL_CMD="$FINAL_CMD $PORT_ARG"
     fi
-    
+
     # Add no-conda flag if specified
-    if $USE_NO_CONDA; then
+    if [[ "$USE_CONDA" == false ]]; then
         FINAL_CMD="$FINAL_CMD --no-conda"
     fi
-    
+
     # Add any remaining args
     FINAL_CMD="$FINAL_CMD $ARGS"
 else
     # For all other commands, use client.sh
     FINAL_CMD="$INSTALL_DIR/client.sh"
-    
+
     # Add port if specified
     if [[ -n "$PORT_ARG" ]]; then
         FINAL_CMD="$FINAL_CMD $PORT_ARG"
     fi
-    
+
     # Add no-conda flag if specified
-    if $USE_NO_CONDA; then
+    if [ "$USE_CONDA" == false ]; then
         FINAL_CMD="$FINAL_CMD --no-conda"
     fi
-    
+
     # Add all other arguments
     FINAL_CMD="$FINAL_CMD $ARGS"
 fi
@@ -178,6 +180,8 @@ fi
 # Execute the final command
 eval $FINAL_CMD
 EOF
+
+sed -i "s|{{USE_CONDA}}|$USE_CONDA|" /usr/local/bin/rkllama
 
 sudo chmod +x /usr/local/bin/rkllama
 echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
