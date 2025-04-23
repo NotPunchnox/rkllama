@@ -21,10 +21,10 @@ mkdir -p "$CONFIG_DIR"
 # Check for the argument to disable Miniconda
 USE_CONDA=true
 CONDA_ARG="" # This will hold "--no-conda" if conda is disabled
-if [[ "$1" == "--no-conda" ]]; then
-    USE_CONDA=false
-    CONDA_ARG="--no-conda"
-    echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
+if [[ -n "${1-}" && "$1" == "--no-conda" ]]; then
+  USE_CONDA=false
+  CONDA_ARG="--no-conda"
+  echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
 fi
 
 # Miniconda installation path
@@ -33,15 +33,15 @@ MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch
 
 # Install Miniconda (if enabled)
 if $USE_CONDA; then
-    if [ -d "$MINICONDA_DIR" ]; then
-        echo -e "${GREEN}Miniconda is already installed.${RESET}"
-    else
-        echo -e "${YELLOW}Miniconda is not installed. Proceeding with installation...${RESET}"
-        wget "$MINICONDA_URL" -O /tmp/miniconda.sh
-        bash /tmp/miniconda.sh -b -p "$MINICONDA_DIR"
-        rm /tmp/miniconda.sh
-        echo -e "${GREEN}Miniconda was successfully installed.${RESET}"
-    fi
+  if [ -d "$MINICONDA_DIR" ]; then
+    echo -e "${GREEN}Miniconda is already installed.${RESET}"
+  else
+    echo -e "${YELLOW}Miniconda is not installed. Proceeding with installation...${RESET}"
+    wget "$MINICONDA_URL" -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p "$MINICONDA_DIR"
+    rm /tmp/miniconda.sh
+    echo -e "${GREEN}Miniconda was successfully installed.${RESET}"
+  fi
 fi
 
 # Check for Git repository updates
@@ -73,7 +73,7 @@ mkdir -p "$RKLLAMA_PATHS_LIB_RESOLVED"
 
 # Activate Miniconda and install dependencies (if enabled)
 if $USE_CONDA; then
-    source "$MINICONDA_DIR/bin/activate"
+  source "$MINICONDA_DIR/bin/activate"
 fi
 
 # Install dependencies using pip
@@ -93,17 +93,17 @@ chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Modify client.sh and server.sh to always use --no-conda if conda is disabled
 if ! $USE_CONDA; then
-    echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
+  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
 
-    # Add --no-conda to client.sh if not already present
-    if ! grep -q -- "--no-conda" "$INSTALL_DIR/client.sh"; then
-        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/client.sh"
-    fi
+  # Add --no-conda to client.sh if not already present
+  if ! grep -q -- "--no-conda" "$INSTALL_DIR/client.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/client.sh"
+  fi
 
-    # Add --no-conda to server.sh if not already present
-    if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
-        sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/server.sh"
-    fi
+  # Add --no-conda to server.sh if not already present
+  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/server.sh"
+  fi
 fi
 
 # Create a global executable for rkllama that properly handles arguments
