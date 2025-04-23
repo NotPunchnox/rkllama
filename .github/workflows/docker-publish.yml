@@ -79,8 +79,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache,mode=max
           platforms: linux/arm64
 
       # Sign the resulting Docker image digest except on PRs.
