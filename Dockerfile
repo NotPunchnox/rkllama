@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     sudo \
     wget \
+    nano \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 COPY ./lib ./lib
