@@ -4,3 +4,26 @@ src/__pycache__
 *.log
 config/config.env
 tests
+
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# Converter directory
+# Uncomment if you want to ignore it
+# converter/

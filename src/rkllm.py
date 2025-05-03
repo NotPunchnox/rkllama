@@ -2,11 +2,11 @@ import ctypes
 from .classes import *
 from .callback import *
 
-# Connecter la fonction de rappel entre le côté Python et le côté C++
+# Connect the callback function between Python and C++
 callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
 callback = callback_type(callback_impl)
 
-# Définir la classe RKLLM, qui inclut l'initialisation, l'inférence et les opérations de libération pour le modèle RKLLM dans la bibliothèque dynamique
+# Define the RKLLM class, which includes initialization, inference, and release operations for the RKLLM model in the dynamic library
 class RKLLM(object):
     def __init__(self, model_path, model_dir, temperature=0.8, context_length=2048, lora_model_path = None, prompt_cache_path = None):
         
