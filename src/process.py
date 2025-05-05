@@ -66,8 +66,8 @@ def Request(modele_rkllm, modelfile, custom_request=None):
         Flask response with generated text
     """
     try:
-        # Mettre le serveur en état de blocage.
-        isLocked = True
+        # Put the server in a locked state
+        is_locked = True
 
         # Use custom_request if provided, otherwise use Flask's request
         req = custom_request if custom_request is not None else request
@@ -87,10 +87,10 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                 )
                 modele_rkllm.format_options = format_options
             
-            # Réinitialiser les variables globales.
+            # Reset global variables
             variables.global_status = -1
 
-            # Définir la structure de la réponse renvoyée.
+            # Define the structure of the returned response
             llmResponse = {
                 "id": "rkllm_chat",
                 "object": "rkllm_chat",
@@ -107,7 +107,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
             # Check if this is an Ollama-style request
             is_ollama_request = req.path.startswith('/api/')
             
-            # Récupérer l'historique du chat depuis la requête JSON
+            # Get chat history from JSON request
             messages = data["messages"]
 
             # Create format instructions
@@ -139,9 +139,9 @@ def Request(modele_rkllm, modelfile, custom_request=None):
 
             for i in range(1, len(prompt)):
                 if prompt[i]["role"] == prompt[i - 1]["role"]:
-                    raise ValueError("Les rôles doivent alterner entre 'user' et 'assistant'.")
+                    raise ValueError("Roles must alternate between 'user' and 'assistant'.")
 
-            # Mise en place du chat Template
+            # Set up chat template
             prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
             llmResponse["usage"]["prompt_tokens"] = llmResponse["usage"]["total_tokens"] = len(prompt)
 
@@ -152,7 +152,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                     thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                     thread_modele.start()
 
-                    thread_modele_terminé = False
+                    thread_model_finished = False
                     count = 0
                     start = time.time()
                     prompt_eval_end_time = None
@@ -162,7 +162,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                     complete_text = ""
                     tokens_since_last_response = 0  # Track tokens since last response sent
 
-                    while not thread_modele_terminé or not final_message_sent:
+                    while not thread_model_finished or not final_message_sent:
                         processed_tokens = False
                         
                         while len(variables.global_text) > 0:
@@ -265,10 +265,10 @@ def Request(modele_rkllm, modelfile, custom_request=None):
 
                         # Check if thread is done but we haven't sent final message yet
                         thread_modele.join(timeout=0.005)
-                        thread_modele_terminé = not thread_modele.is_alive()
+                        thread_model_finished = not thread_modele.is_alive()
                         
                         # If model is done and we haven't sent the final message yet, do it now
-                        if thread_modele_terminé and not final_message_sent:
+                        if thread_model_finished and not final_message_sent:
                             final_message_sent = True
                             
                             # Calculate final metrics
@@ -347,14 +347,14 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                     print("Error starting thread:", e)
 
                 # Wait for model to finish
-                threadFinish = False
+                thread_model_finished = False
                 count = 0
                 start = time.time()
                 prompt_eval_end_time = None  # Will store time when first token is generated
                 complete_text = ""
                 first_token_generated = False
 
-                while not threadFinish:
+                while not thread_model_finished:
                     while len(variables.global_text) > 0:
                         count += 1
                         token = variables.global_text.pop(0)
@@ -368,7 +368,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                         time.sleep(0.005)
 
                         thread_modele.join(timeout=0.005)
-                    threadFinish = not thread_modele.is_alive()
+                    thread_model_finished = not thread_modele.is_alive()
 
                 end_time = time.time()
                 total_duration = end_time - start
@@ -439,9 +439,9 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                     return jsonify(llmResponse), 200
                     
         else:
-            return jsonify({'status': 'error', 'message': 'Données JSON invalides !'}), 400
+            return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
     finally:
         # No need to release the lock here as it should be handled by the calling function
         if custom_request is None:
             variables.verrou.release()
-        est_bloqué = False
+        is_locked = False

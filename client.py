@@ -366,10 +366,28 @@ def show_model_info(model_name):
 
 
 def main():
-    global PORT
+    global PORT, API_URL
 
     use_no_conda = "--no-conda" in sys.argv
     sys.argv = [arg for arg in sys.argv if arg != "--no-conda"]
+
+    # Parse host and port from command line arguments
+    host = "127.0.0.1"  # default host
+    filtered_args = []
+    
+    for arg in sys.argv:
+        if arg.startswith("--host="):
+            host = arg.split("=")[1]
+        elif arg.startswith("--port="):
+            PORT = arg.split("=")[1]
+        else:
+            filtered_args.append(arg)
+    
+    # Update sys.argv with filtered arguments
+    sys.argv = filtered_args
+
+    # Update API_URL with the correct host and port
+    API_URL = f"http://{host}:{PORT}/"
 
     # Check minimum number of entries
     if len(sys.argv) < 2:
@@ -379,7 +397,7 @@ def main():
     command = sys.argv[1]
 
     if check_status() != 200 and command not in ['serve', 'update']:
-        print(f"{RED}Error: Server not started!\n{RESET}rkllama serve{CYAN} command to start the server.{RESET}")
+        print(f"{RED}Error: Server not started or not accessible at {API_URL}!\n{RESET}rkllama serve{CYAN} command to start the server.{RESET}")
         sys.exit(0)
 
     # Start of condition sequence
@@ -387,7 +405,6 @@ def main():
         print_help()
 
     elif command == "serve":
-
         if len(sys.argv) > 2:
             PORT = sys.argv[2]
 
@@ -397,7 +414,7 @@ def main():
     elif command == "update":
         update()
 
-    elif command =="list":
+    elif command == "list":
         list_models()
 
     elif command == "load":
@@ -425,7 +442,7 @@ def main():
             remove_model(sys.argv[2])
     
     elif command == "pull":
-        pull_model(sys.argv[2] if len(sys.argv) < 2 else "" )
+        pull_model(sys.argv[2] if len(sys.argv) > 2 else "")
     
     elif command == "info":
         if len(sys.argv) < 3:
