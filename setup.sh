@@ -181,7 +181,7 @@ fi
 eval $FINAL_CMD
 EOF
 
-sed -i "s|{{USE_CONDA}}|$USE_CONDA|" /usr/local/bin/rkllama
+sudo sed -i "s|{{USE_CONDA}}|$USE_CONDA|" /usr/local/bin/rkllama
 
 sudo chmod +x /usr/local/bin/rkllama
 echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
