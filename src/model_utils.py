@@ -606,12 +606,12 @@ def get_context_length(model_name: str, models_path: str = "models") -> Union[in
             family = "phi"
 
     context_lengths = {
-        "qwen2": 32768,
-        "mistral": 8192,
-        "llama3": 8192,
+        "qwen2": 4096, #RKNN-LLM 1.1.4. From 1.2.0 up to 16K
+        "mistral": 4096,
+        "llama3": 4096,
         "llama2": 4096,
         "llama": 4096,
-        "gemma": 8192,
+        "gemma": 4096,
         "phi": 2048
     }
 

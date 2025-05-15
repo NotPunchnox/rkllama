@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 from flask import jsonify, Response
 import src.variables as variables
 from src.model_utils import get_simplified_model_name
-from .format_utils import create_format_instruction, validate_format_response
+from .format_utils import create_format_instruction, validate_format_response, get_tool_calls
 
 import config
 
@@ -39,7 +39,7 @@ class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
     
     @staticmethod
-    def prepare_prompt(messages, system=""):
+    def prepare_prompt(messages, system="", tools=None):
         """Prepare prompt with proper system handling"""
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
@@ -49,7 +49,7 @@ class EndpointHandler:
         else:
             prompt_messages = messages
         
-        prompt_tokens = tokenizer.apply_chat_template(prompt_messages, tokenize=True, add_generation_prompt=True)
+        prompt_tokens = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=True, add_generation_prompt=True)
         return tokenizer, prompt_tokens, len(prompt_tokens)
     
     @staticmethod
@@ -72,8 +72,7 @@ class EndpointHandler:
             "eval": int(eval_duration * 1_000_000_000),
             "load": int(0.1 * 1_000_000_000)
         }
-
-
+    
 class ChatEndpointHandler(EndpointHandler):
     """Handler for /api/chat endpoint requests"""
     
@@ -124,11 +123,14 @@ class ChatEndpointHandler(EndpointHandler):
             "eval_count": metrics.get("token_count", 0),
             "eval_duration": metrics["eval"]
         }
+
+        if format_data and "tool_call" in format_data:
+            response["message"]["tool_calls"] = format_data["tool_call"]
         
         return response
         
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None):
+    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None):
         """Process a chat request with proper format handling"""
         simplified_model_name = get_simplified_model_name(model_name)
         
@@ -147,7 +149,7 @@ class ChatEndpointHandler(EndpointHandler):
                             messages[i]["content"] += format_instruction
                             break
             
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system)
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, tools)
             
             if stream:
                 return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
@@ -253,7 +255,8 @@ class ChatEndpointHandler(EndpointHandler):
         metrics["token_count"] = count
         
         format_data = None
-        if format_spec and complete_text:
+        tool_calls = get_tool_calls(complete_text)
+        if format_spec and complete_text and not tool_calls:
             success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
             if success and parsed_data:
                 format_type = (
@@ -266,6 +269,14 @@ class ChatEndpointHandler(EndpointHandler):
                     "cleaned_json": cleaned_json
                 }
         
+        if tool_calls:
+           format_data = {
+                   "format_type" : "json",
+                   "parsed": "",
+                   "cleaned_json": "",
+                   "tool_call": tool_calls
+           }
+
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
         return jsonify(response), 200
 
