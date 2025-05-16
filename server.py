@@ -166,7 +166,7 @@ def list_models():
 # Delete a model
 @app.route('/rm', methods=['DELETE'])
 def Rm_model():
-    data = request.json
+    data = request.get_json(force=True)
     if "model" not in data:
         return jsonify({"error": "Please specify a model."}), 400
 
@@ -185,7 +185,7 @@ def Rm_model():
 def pull_model():
     @stream_with_context
     def generate_progress():
-        data = request.json
+        data = request.get_json(force=True)
         if "model" not in data:
             yield "Error: Model not specified.\n"
             return
@@ -258,7 +258,7 @@ def load_model_route():
     if modele_rkllm:
         return jsonify({"error": "A model is already loaded. Please unload it first."}), 400
 
-    data = request.json
+    data = request.get_json(force=True)
     if "model_name" not in data:
         return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
 
@@ -359,7 +359,7 @@ def list_ollama_models():
 
 @app.route('/api/show', methods=['POST'])
 def show_model_info():
-    data = request.json
+    data = request.get_json(force=True)
     model_name = data.get('name')
     
     if not model_name:
@@ -736,7 +736,7 @@ def show_model_info():
 
 @app.route('/api/create', methods=['POST'])
 def create_model():
-    data = request.json
+    data = request.get_json(force=True)
     model_name = data.get('name')
     modelfile = data.get('modelfile', '')
     
@@ -767,7 +767,7 @@ def create_model():
 @app.route('/api/pull', methods=['POST'])
 def pull_model_ollama():
     # TODO: Implement the pull model
-    data = request.json
+    data = request.get_json(force=True)
     model = data.get('name')
     
     if not model:
@@ -780,7 +780,7 @@ def pull_model_ollama():
 
 @app.route('/api/delete', methods=['DELETE'])
 def delete_model_ollama():
-    data = request.json
+    data = request.get_json(force=True)
     model_name = data.get('name')
     
     if not model_name:
@@ -822,7 +822,7 @@ def generate_ollama():
     lock_acquired = False  # Track lock status
 
     try:
-        data = request.json
+        data = request.get_json(force=True)
         model_name = data.get('model')
         prompt = data.get('prompt')
         system = data.get('system', '')
@@ -893,11 +893,12 @@ def chat_ollama():
     lock_acquired = False  # Track lock status
 
     try:
-        data = request.json
+        data = request.get_json(force=True)
         model_name = data.get('model')
         messages = data.get('messages', [])
         system = data.get('system', '')
         stream = data.get('stream', True)
+        tools = data.get('tools', None)
         
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
@@ -990,7 +991,8 @@ def chat_ollama():
                 "stream": stream,
                 "system": system,
                 "format": format_spec,
-                "options": options
+                "options": options,
+                "tools": tools
             },
             'path': '/api/chat'
         })
@@ -1008,7 +1010,8 @@ def chat_ollama():
             system=system,
             stream=stream,
             format_spec=format_spec,
-            options=options
+            options=options,
+            tools=tools
         )
     
     except Exception as e:
@@ -1027,7 +1030,7 @@ if DEBUG_MODE:
     @app.route('/api/debug', methods=['POST'])
     def debug_streaming():
         """Endpoint to diagnose streaming issues"""
-        data = request.json
+        data = request.get_json(force=True)
         stream_data = data.get('stream_data', '')
         
         issues = check_response_format(stream_data)
