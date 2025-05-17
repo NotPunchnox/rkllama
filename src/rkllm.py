@@ -46,7 +46,9 @@ class RKLLM(object):
         self.rkllm_init = rkllm_lib.rkllm_init
         self.rkllm_init.argtypes = [ctypes.POINTER(RKLLM_Handle_t), ctypes.POINTER(RKLLMParam), callback_type]
         self.rkllm_init.restype = ctypes.c_int
-        self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(rkllm_param), callback)
+        ret = self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(rkllm_param), callback)
+        if(ret != 0):
+            raise RuntimeError(f"Failed to initialize RKLLM model: {ret}")
 
         self.rkllm_run = rkllm_lib.rkllm_run
         self.rkllm_run.argtypes = [RKLLM_Handle_t, ctypes.POINTER(RKLLMInput), ctypes.POINTER(RKLLMInferParam), ctypes.c_void_p]
