@@ -34,7 +34,10 @@ RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER = 1
 class RKLLMExtendParam(ctypes.Structure):
     _fields_ = [
         ("base_domain_id", ctypes.c_int32),
-        ("reserved", ctypes.c_uint8 * 112)
+        ("embed_flash", ctypes.c_int8),
+        ("enabled_cpus_num", ctypes.c_int8),
+        ("enabled_cpus_mask", ctypes.c_int32),
+        ("reserved", ctypes.c_uint8 * 106)
     ]
 
 class RKLLMParam(ctypes.Structure):
@@ -43,6 +46,7 @@ class RKLLMParam(ctypes.Structure):
         ("max_context_len", ctypes.c_int32),
         ("max_new_tokens", ctypes.c_int32),
         ("top_k", ctypes.c_int32),
+        ("n_keep", ctypes.c_int32),
         ("top_p", ctypes.c_float),
         ("temperature", ctypes.c_float),
         ("repeat_penalty", ctypes.c_float),
@@ -82,7 +86,10 @@ class RKLLMMultiModelInput(ctypes.Structure):
     _fields_ = [
         ("prompt", ctypes.c_char_p),
         ("image_embed", ctypes.POINTER(ctypes.c_float)),
-        ("n_image_tokens", ctypes.c_size_t)
+        ("n_image_tokens", ctypes.c_size_t),
+        ("n_image", ctypes.c_size_t),
+        ("image_width", ctypes.c_size_t),
+        ("image_height", ctypes.c_size_t)
     ]
 
 class RKLLMInputUnion(ctypes.Union):
@@ -124,9 +131,17 @@ class RKLLMResultLastHiddenLayer(ctypes.Structure):
         ("num_tokens", ctypes.c_int)
     ]
 
+class RKLLMResultLogits(ctypes.Structure):
+    _fields_ = [
+        ("logits", ctypes.POINTER(ctypes.c_float)),
+        ("vocab_size", ctypes.c_int),
+        ("num_tokens", ctypes.c_int)
+    ]
+
 class RKLLMResult(ctypes.Structure):
     _fields_ = [
         ("text", ctypes.c_char_p),
         ("size", ctypes.c_int),
-        ("last_hidden_layer", RKLLMResultLastHiddenLayer)
+        ("last_hidden_layer", RKLLMResultLastHiddenLayer),
+        ("logits", RKLLMResultLogits)
     ]

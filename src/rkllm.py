@@ -1,6 +1,7 @@
 import ctypes
 from .classes import *
 from .callback import *
+import multiprocessing
 
 # Connect the callback function between Python and C++
 callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
@@ -40,13 +41,18 @@ class RKLLM(object):
         rkllm_param.img_content = "".encode('utf-8')
 
         rkllm_param.extend_param.base_domain_id = 0
+        rkllm_param.extend_param.embed_flash = 1
+        rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
+        rkllm_param.extend_param.enabled_cpus_mask = (1<<(rkllm_param.extend_param.enabled_cpus_num+1))-1
         
         self.handle = RKLLM_Handle_t()
 
         self.rkllm_init = rkllm_lib.rkllm_init
         self.rkllm_init.argtypes = [ctypes.POINTER(RKLLM_Handle_t), ctypes.POINTER(RKLLMParam), callback_type]
         self.rkllm_init.restype = ctypes.c_int
-        self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(rkllm_param), callback)
+        ret = self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(rkllm_param), callback)
+        if(ret != 0):
+            raise RuntimeError(f"Failed to initialize RKLLM model: {ret}")
 
         self.rkllm_run = rkllm_lib.rkllm_run
         self.rkllm_run.argtypes = [RKLLM_Handle_t, ctypes.POINTER(RKLLMInput), ctypes.POINTER(RKLLMInferParam), ctypes.c_void_p]
