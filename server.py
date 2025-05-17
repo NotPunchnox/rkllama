@@ -109,7 +109,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
 
     # Change value of model_id with huggingface_path
     variables.model_id = huggingface_path
-    context_length = get_context_length(model_name, config.get_path("models"))
+    context_length = int(os.getenv("CONTEXT_LENGTH", get_context_length(model_name, config.get_path("models"))))
 
     try:
         modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, temperature=float(temperature), context_length=context_length)

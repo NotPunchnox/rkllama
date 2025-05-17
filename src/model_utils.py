@@ -557,62 +557,26 @@ import os
 import re
 from typing import Union
 
+MODEL_SPECS = {
+    "qwen2":    (4096, [r'(?i)qwen']),
+    "mistral":  (4096,  [r'(?i)mistral']),
+    "llama3":   (4096,  [r'(?i)llama[-_]?3']),
+    "llama2":   (4096,  [r'(?i)llama[-_]?2']),
+    "gemma":    (4096,  [r'(?i)gemma']),
+    "phi":      (2048,  [r'(?i)phi']),
+    "llama":    (4096,  [])  # fallback
+}
+
+def detect_family(text: str) -> str:
+    return next((name for name, (_, patterns) in MODEL_SPECS.items()
+                 for p in patterns if re.search(p, text)), "llama")
+
 def get_context_length(model_name: str, models_path: str = "models") -> Union[int, str]:
-
-    # Construct the full path to the model directory
-    model_dir = os.path.join(models_path, model_name)
-
-    # Check if the model directory exists
-    if not os.path.exists(os.path.join(model_dir, "Modelfile")):
-        return 2048
-
-    # Initialize default model family
-    family = "llama"
-
-    # Check for Modelfile to infer model family
-    modelfile_path = os.path.join(model_dir, "Modelfile")
-    if os.path.exists(modelfile_path):
-        try:
-            with open(modelfile_path, "r", encoding="utf-8") as file:
-                modelfile_content = file.read()
-                if re.search(r'(?i)qwen', modelfile_content):
-                    family = "qwen2"
-                elif re.search(r'(?i)mistral', modelfile_content):
-                    family = "mistral"
-                elif re.search(r'(?i)llama[-_]?3', modelfile_content):
-                    family = "llama3"
-                elif re.search(r'(?i)llama[-_]?2', modelfile_content):
-                    family = "llama2"
-                elif re.search(r'(?i)gemma', modelfile_content):
-                    family = "gemma"
-                elif re.search(r'(?i)phi', modelfile_content):
-                    family = "phi"
-        except (IOError, UnicodeDecodeError):
-            pass
-
-    # Fallback to model name analysis if Modelfile is absent or unreadable
-    if family == "llama":
-        if re.search(r'(?i)qwen', model_name):
-            family = "qwen2"
-        elif re.search(r'(?i)mistral', model_name):
-            family = "mistral"
-        elif re.search(r'(?i)llama[-_]?3', model_name):
-            family = "llama3"
-        elif re.search(r'(?i)llama[-_]?2', model_name):
-            family = "llama2"
-        elif re.search(r'(?i)gemma', model_name):
-            family = "gemma"
-        elif re.search(r'(?i)phi', model_name):
-            family = "phi"
-
-    context_lengths = {
-        "qwen2": 4096, #RKNN-LLM 1.1.4. From 1.2.0 up to 16K
-        "mistral": 4096,
-        "llama3": 4096,
-        "llama2": 4096,
-        "llama": 4096,
-        "gemma": 4096,
-        "phi": 2048
-    }
-
-    return context_lengths.get(family, 2048)
+    modelfile = os.path.join(models_path, model_name, "Modelfile")
+    try:
+        with open(modelfile, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        text = model_name
+    family = detect_family(text)
+    return MODEL_SPECS[family][0]
