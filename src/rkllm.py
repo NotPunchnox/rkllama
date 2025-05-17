@@ -1,6 +1,7 @@
 import ctypes
 from .classes import *
 from .callback import *
+import multiprocessing
 
 # Connect the callback function between Python and C++
 callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
@@ -40,6 +41,9 @@ class RKLLM(object):
         rkllm_param.img_content = "".encode('utf-8')
 
         rkllm_param.extend_param.base_domain_id = 0
+        rkllm_param.extend_param.embed_flash = 1
+        rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
+        rkllm_param.extend_param.enabled_cpus_mask = (1<<(rkllm_param.extend_param.enabled_cpus_num+1))-1
         
         self.handle = RKLLM_Handle_t()
 
