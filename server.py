@@ -830,6 +830,7 @@ def generate_ollama():
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
+        enable_thinking = data.get('enable_thinking', True)
         
         # Support format options for structured JSON output
         format_spec = data.get('format')
@@ -877,7 +878,8 @@ def generate_ollama():
             system=system,
             stream=stream,
             format_spec=format_spec,
-            options=options
+            options=options,
+            enable_thinking=enable_thinking
         )
     except Exception as e:
         if DEBUG_MODE:
@@ -902,6 +904,7 @@ def chat_ollama():
         system = data.get('system', '')
         stream = data.get('stream', True)
         tools = data.get('tools', None)
+        enable_thinking = data.get('enable_thinking', True)
         
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
@@ -995,7 +998,8 @@ def chat_ollama():
                 "system": system,
                 "format": format_spec,
                 "options": options,
-                "tools": tools
+                "tools": tools,
+                "enable_thinking": enable_thinking
             },
             'path': '/api/chat'
         })
@@ -1014,7 +1018,8 @@ def chat_ollama():
             stream=stream,
             format_spec=format_spec,
             options=options,
-            tools=tools
+            tools=tools,
+            enable_thinking=enable_thinking
         )
     
     except Exception as e:
