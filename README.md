@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.41](#New-Version)
+### [Version: 0.0.42](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -17,7 +17,7 @@ Video demo ( version 0.0.1 ):
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
-* Version `Lib rkllm-runtime`: V1.1.4.
+* Version `Lib rkllm-runtime`: V 1.2.1b1.
 
 ## File Structure
 - **`./models`**: contains your rkllm models.
@@ -31,6 +31,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 ## Tested Hardware and Environment
 - **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **Hardware**: Orange Pi 5 Plus: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
+- **Hardware**: Orange Pi 5 Max: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **OS**: [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
 - **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
 

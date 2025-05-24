@@ -367,9 +367,12 @@ def get_tool_calls_standard(response):
 
     tool_calls = []
     for tools in re.findall("<tool_call>(.*?)</tool_call>", response, re.DOTALL):
-      tool_calls += [{ "function": json.loads(tool) } for tool in tools.split('\n') if tool]
-
+      # tool_calls += [{ "function": json.loads(tool) } for tool in tools.split('\n') if tool]
+      # To make more smartt LLM in case LLM response inside <tool_call><t/ool_call> but with an extra word. 
+      # For example: <tool_call> Output : {"name": <function_name>, "arguments": <dictionary_of_argument_name_value>} </tool_call>
+      tool_calls += get_tool_calls_generic(tools) 
     return tool_calls
+
 
 def get_tool_calls(response):
     """ Get all the tool calls indicated by the LLM in the response """
