@@ -403,8 +403,7 @@ class GenerateEndpointHandler(EndpointHandler):
                         logger.debug(f"Adding format instruction to prompt: {format_instruction}")
                     messages[0]["content"] += format_instruction
             
-            enable_thinking = options["enable_thinking"] if options else None
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, enable_thinking)
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system, enable_thinking=enable_thinking)
             
             if stream:
                 return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
