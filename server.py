@@ -59,7 +59,7 @@ current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
 
-def create_modelfile(huggingface_path, From, system="", temperature=1.0):
+def create_modelfile(huggingface_path, From, system="", temperature=1.0, model_name=None):
     struct_modelfile = f"""
 FROM="{From}"
 
@@ -71,7 +71,8 @@ TEMPERATURE={temperature}
 """
 
     # Use config for models path
-    path = os.path.join(config.get_path("models"), From.replace('.rkllm', ''))
+    #path = os.path.join(config.get_path("models"), From.replace('.rkllm', ''))
+    path = os.path.join(config.get_path("models"), model_name)
 
     # Create the directory if it doesn't exist
     if not os.path.exists(path):
@@ -92,7 +93,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
         return None, f"Modelfile not found in '{model_name}' directory."
     elif huggingface_path is not None and From is not None:
-        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature)
+        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature, model_name=model_name)
         time.sleep(0.1)
     
     # Load modelfile
@@ -194,6 +195,7 @@ def pull_model():
             return
 
         splitted = data["model"].split('/')
+        model_name = splitted[1] if "model_name" not in data else data["model_name"]
         if len(splitted) < 3:
             yield f"Error: Invalid path '{data['model']}'\n"
             return
@@ -212,14 +214,15 @@ def pull_model():
                 return
 
             # Use config to get models path
-            model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
+            #model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
+            model_dir = os.path.join(config.get_path("models"), model_name)
             os.makedirs(model_dir, exist_ok=True)
 
             # Define a file to download
             local_filename = os.path.join(model_dir, file)
 
             # Create fonfiguration file for model
-            create_modelfile(huggingface_path=repo, From=file)
+            create_modelfile(huggingface_path=repo, From=file, model_name=model_name)
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
@@ -339,11 +342,11 @@ def list_ollama_models():
                     simple_name = get_simplified_model_name(subdir)
                     
                     # Extract parameter size and quantization details if available
-                    model_details = extract_model_details(subdir)
+                    model_details = extract_model_details(file)
                     
                     models.append({
-                        "name": simple_name,        # Use simplified name like qwen:3b
-                        "model": simple_name,       # Match Ollama's format
+                        "name": subdir,        # Use simplified name like qwen:3b
+                        "model": subdir,       # Match Ollama's format
                         "modified_at": datetime.datetime.fromtimestamp(
                             os.path.getmtime(os.path.join(subdir_path, file))
                         ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
