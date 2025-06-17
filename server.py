@@ -864,7 +864,7 @@ def generate_ollama():
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
             model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
-            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else True # Enabled by default
+            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
         # Improved model resolution
         full_model_name = find_model_by_name(model_name)
@@ -937,7 +937,7 @@ def chat_ollama():
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
             model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
-            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else True # Enabled by default
+            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
         
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages

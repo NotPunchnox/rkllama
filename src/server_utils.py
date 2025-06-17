@@ -39,7 +39,7 @@ class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
     
     @staticmethod
-    def prepare_prompt(messages, system="", tools=None, enable_thinking=True):
+    def prepare_prompt(messages, system="", tools=None, enable_thinking=False):
         """Prepare prompt with proper system handling"""
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
@@ -136,7 +136,7 @@ class ChatEndpointHandler(EndpointHandler):
         return response
         
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=True):
+    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False):
         """Process a chat request with proper format handling"""
         simplified_model_name = get_simplified_model_name(model_name)
         
@@ -381,7 +381,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None, enable_thinking=True):
+    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None, enable_thinking=False):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
