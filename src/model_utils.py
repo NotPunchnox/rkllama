@@ -580,3 +580,25 @@ def get_context_length(model_name: str, models_path: str = "models") -> Union[in
         text = model_name
     family = detect_family(text)
     return MODEL_SPECS[family][0]
+
+def get_property_modelfile(model_name: str, property: str, models_path: str = "models"):
+    modelfile = os.path.join(models_path, model_name, "Modelfile")
+
+    # Initialize an empty dictionary to store key-value pairs
+    modelfile_dict = {}
+
+    # Open and read the file
+    try:
+        with open(modelfile, 'r') as file:
+            for line in file:
+                line = line.strip()
+                if '=' in line:
+                    # Split the line into key and value (split on first '=')
+                    key, value = line.split('=', 1)
+                    modelfile_dict[key] = value
+    except FileNotFoundError:
+        logger.error(f"Error: File '{modelfile}' not found.")
+
+    # Retrieve the value of the property
+    return modelfile_dict.get(property, None)
+

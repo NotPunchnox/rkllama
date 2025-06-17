@@ -159,15 +159,15 @@ class ChatEndpointHandler(EndpointHandler):
             
             if stream:
                 return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
-                                          prompt_token_count, format_spec)
+                                          prompt_token_count, format_spec, tools, enable_thinking)
             else:
                 return cls.handle_complete(modele_rkllm, simplified_model_name, prompt_tokens, 
-                                         prompt_token_count, format_spec)
+                                         prompt_token_count, format_spec, tools, enable_thinking)
         finally:
             variables.system = original_system
             
     @classmethod
-    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle streaming chat response"""
         def generate():
             thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
@@ -182,10 +182,10 @@ class ChatEndpointHandler(EndpointHandler):
             thread_finished = False
 
             # Tool calls detection
-            max_token_to_wait_for_tool_call = 100 # Maximum tokens to wait for tool call
+            max_token_to_wait_for_tool_call = 50 if tools else 1 # Max tokens to wait for tool call definition
             tool_calls = False
             first_tokens = []
-            thinking = False
+            thinking = enable_thinking
             final_response_tokens = []
             
             while not thread_finished or not final_sent:
@@ -198,13 +198,12 @@ class ChatEndpointHandler(EndpointHandler):
                     
                     if count == 1:
                         prompt_eval_time = time.time()
-                        thinking = "think" in token.lower() or "reason" in token.lower()
-                        if thinking:
-                            token = "<think>" # Ensure correct initial format
+                        
+                        if thinking and "<think>" not in token.lower():
+                            token = "<think>" + token # Ensure correct initial format token <think>
                     else:
-                        if thinking and ("</think" in token.lower() or "</reason" in token.lower()):
+                        if thinking and "</think>" in token.lower():
                             thinking = False
-                            token = "</think>" # Ensure correct end format
                     
                     complete_text += token
                     first_tokens.append(token)
@@ -276,7 +275,7 @@ class ChatEndpointHandler(EndpointHandler):
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle complete non-streaming chat response"""
         start_time = time.time()
         prompt_eval_time = None
@@ -294,6 +293,9 @@ class ChatEndpointHandler(EndpointHandler):
                 
                 if count == 1:
                     prompt_eval_time = time.time()
+
+                    if enable_thinking and "<think>" not in token.lower():
+                        token = "<think>" + token # Ensure correct initial format
                 
                 complete_text += token
             
@@ -304,7 +306,7 @@ class ChatEndpointHandler(EndpointHandler):
         metrics["token_count"] = count
         
         format_data = None
-        tool_calls = get_tool_calls(complete_text)
+        tool_calls = get_tool_calls(complete_text) if tools else None
         if format_spec and complete_text and not tool_calls:
             success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
             if success and parsed_data:

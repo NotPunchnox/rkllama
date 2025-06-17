@@ -14,10 +14,11 @@ from src.process import Request
 import src.variables as variables
 from src.server_utils import process_ollama_chat_request, process_ollama_generate_request
 from src.debug_utils import StreamDebugger, check_response_format
+from src.format_utils import strtobool
 from src.model_utils import (
     get_simplified_model_name, get_original_model_path, extract_model_details, 
     initialize_model_mappings, find_model_by_name, get_huggingface_model_info,
-    get_context_length
+    get_context_length, get_property_modelfile
 )
 
 # Import the config module
@@ -367,6 +368,9 @@ def list_ollama_models():
 def show_model_info():
     data = request.get_json(force=True)
     model_name = data.get('name')
+
+    if DEBUG_MODE:
+        logger.debug(f"API show request data: {data}")
     
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
@@ -746,6 +750,9 @@ def create_model():
     model_name = data.get('name')
     modelfile = data.get('modelfile', '')
     
+    if DEBUG_MODE:
+        logger.debug(f"API create request data: {data}")
+
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
     
@@ -776,6 +783,9 @@ def pull_model_ollama():
     data = request.get_json(force=True)
     model = data.get('name')
     
+    if DEBUG_MODE:
+        logger.debug(f"API pull request data: {data}")
+
     if not model:
         return jsonify({"error": "Missing model name"}), 400
 
@@ -789,6 +799,9 @@ def delete_model_ollama():
     data = request.get_json(force=True)
     model_name = data.get('name')
     
+    if DEBUG_MODE:
+        logger.debug(f"API delete request data: {data}")
+
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
 
@@ -833,20 +846,25 @@ def generate_ollama():
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
-        enable_thinking = data.get('enable_thinking', True)
+        enable_thinking = data.get('enable_thinking', None)
         
         # Support format options for structured JSON output
         format_spec = data.get('format')
         options = data.get('options', {})
         
         if DEBUG_MODE:
-            logger.debug(f"API generate request: model={model_name}, stream={stream}, format={format_spec}")
+            logger.debug(f"API generate request data: {data}")
 
         if not model_name:
             return jsonify({"error": "Missing model name"}), 400
 
         if not prompt:
             return jsonify({"error": "Missing prompt"}), 400
+
+        # Get Thinking setting from modelfile if not provided
+        if enable_thinking is None:
+            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
+            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else True # Enabled by default
 
         # Improved model resolution
         full_model_name = find_model_by_name(model_name)
@@ -907,14 +925,19 @@ def chat_ollama():
         system = data.get('system', '')
         stream = data.get('stream', True)
         tools = data.get('tools', None)
-        enable_thinking = data.get('enable_thinking', True)
+        enable_thinking = data.get('enable_thinking', None)
         
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
         options = data.get('options', {})
-        
+
         if DEBUG_MODE:
-            logger.debug(f"API chat request: model={model_name}, format={format_spec}")
+            logger.debug(f"API chat request data: {data}")
+        
+        # Get Thinking setting from modelfile if not provided
+        if enable_thinking is None:
+            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
+            enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else True # Enabled by default
         
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
