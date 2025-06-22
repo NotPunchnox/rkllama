@@ -38,6 +38,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 ## Main Features
 - **Running models on NPU.**
 - **Partial Ollama API compatibility** - Primary support for `/api/chat` and `/api/generate` endpoints.
+- **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
 - **Listing available models.**
@@ -57,6 +58,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - API REST : [French documentation](./documentation/api/french.md)
 - Ollama API: [Compatibility guide](./documentation/api/ollama-compatibility.md)
 - Model Naming: [Naming convention](./documentation/api/model_naming.md)
+- Tool Calling: [Tool/Function calling guide](./documentation/api/tools.md)
 
 ## Installation
 
@@ -150,6 +152,43 @@ rkllama run <model_name>
 
 Then start chatting *( **verbose mode**: display formatted history and statistics )*
 ![Image](./documentation/ressources/chat.gif)
+
+## Tool Calling Quick Start
+
+RKLLama supports advanced tool/function calling for enhanced AI interactions:
+
+```bash
+# Example: Weather tool call
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5:3b",
+    "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string", "description": "City name"}
+          },
+          "required": ["location"]
+        }
+      }
+    }]
+  }'
+```
+
+**Features:**
+- 🔧 **Multiple model support** (Qwen, Llama 3.2+, others)
+- 🌊 **Streaming & non-streaming** modes
+- 🎯 **Robust JSON parsing** with fallback methods
+- 🔄 **Auto format normalization**
+- 📋 **Multiple tools** in single request
+
+For complete documentation: [Tool Calling Guide](./documentation/api/tools.md)
 
 ## Adding a Model (`file.rkllm`)
 
