@@ -300,6 +300,99 @@ curl -X DELETE http://localhost:8080/rm \
 
 ---
 
+## **Tool/Function Calling**
+
+RKLLama supports comprehensive tool calling functionality with full Ollama API compatibility. Tools allow models to call external functions with structured parameters.
+
+### **Supported Endpoints**
+- **`/api/chat`** - Full tool calling support  
+- **`/api/generate`** - Tool detection in generated text
+
+### **Basic Tool Call Request**
+
+```bash
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5:3b",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Paris?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_current_weather",
+          "description": "Get the current weather in a given location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA"
+              },
+              "format": {
+                "type": "string",
+                "enum": ["celsius", "fahrenheit"],
+                "description": "Temperature unit to use"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+### **Tool Call Response Format**
+
+When a model calls a tool, the response includes `tool_calls`:
+
+```json
+{
+  "model": "qwen2.5:3b",
+  "created_at": "2024-12-21T10:30:00.000Z",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "function": {
+          "name": "get_current_weather",
+          "arguments": {
+            "location": "Paris, FR",
+            "format": "celsius"
+          }
+        }
+      }
+    ]
+  },
+  "done_reason": "tool_calls",
+  "done": true
+}
+```
+
+### **Model Compatibility**
+
+| Model Type | Format | Support Level |
+|------------|--------|---------------|
+| **Qwen 2.5+** | `<tool_call></tool_call>` tags | ✅ Native |
+| **Llama 3.2+** | Generic JSON detection | ✅ Full |
+| **Other LLMs** | Fallback JSON parsing | ✅ Compatible |
+
+### **Features**
+
+- **Multiple detection methods** for different model formats
+- **Streaming support** - tool calls work in both streaming and non-streaming modes
+- **Format normalization** - automatically handles `parameters` vs `arguments`
+- **Robust JSON parsing** with fallback methods
+- **Multiple tool calls** in a single response
+
+For complete documentation, see the [Tool Calling Guide](./tools.md).
+
+---
+
 ### **8. GET /**
 #### **Description**
 Displays a welcome message and a link to the GitHub project.

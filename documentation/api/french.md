@@ -300,6 +300,99 @@ curl -X DELETE http://localhost:8080/rm \
 
 ---
 
+## **Appel d'Outils/Fonctions**
+
+RKLLama prend en charge une fonctionnalité complète d'appel d'outils avec une compatibilité totale avec l'API Ollama. Les outils permettent aux modèles d'appeler des fonctions externes avec des paramètres structurés.
+
+### **Endpoints Supportés**
+- **`/api/chat`** - Support complet des appels d'outils  
+- **`/api/generate`** - Détection d'outils dans le texte généré
+
+### **Requête Basique d'Appel d'Outil**
+
+```bash
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5:3b",
+    "messages": [
+      {"role": "user", "content": "Quel temps fait-il à Paris ?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "obtenir_meteo_actuelle",
+          "description": "Obtenir la météo actuelle dans un lieu donné",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "lieu": {
+                "type": "string",
+                "description": "La ville et le département, ex: Paris, Ile-de-France"
+              },
+              "format": {
+                "type": "string",
+                "enum": ["celsius", "fahrenheit"],
+                "description": "Unité de température à utiliser"
+              }
+            },
+            "required": ["lieu"]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+### **Format de Réponse des Appels d'Outils**
+
+Quand un modèle appelle un outil, la réponse inclut `tool_calls` :
+
+```json
+{
+  "model": "qwen2.5:3b",
+  "created_at": "2024-12-21T10:30:00.000Z",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "function": {
+          "name": "obtenir_meteo_actuelle",
+          "arguments": {
+            "lieu": "Paris, FR",
+            "format": "celsius"
+          }
+        }
+      }
+    ]
+  },
+  "done_reason": "tool_calls",
+  "done": true
+}
+```
+
+### **Compatibilité des Modèles**
+
+| Type de Modèle | Format | Niveau de Support |
+|-----------------|--------|-------------------|
+| **Qwen 2.5+** | Balises `<tool_call></tool_call>` | ✅ Natif |
+| **Llama 3.2+** | Détection JSON générique | ✅ Complet |
+| **Autres LLMs** | Analyse JSON de fallback | ✅ Compatible |
+
+### **Fonctionnalités**
+
+- **Méthodes de détection multiples** pour différents formats de modèles
+- **Support du streaming** - les appels d'outils fonctionnent en mode streaming et non-streaming
+- **Normalisation des formats** - gère automatiquement `parameters` vs `arguments`
+- **Analyse JSON robuste** avec méthodes de fallback
+- **Appels d'outils multiples** dans une seule réponse
+
+Pour la documentation complète, des exemples et le dépannage, voir le [Guide d'Appel d'Outils](./tools.md).
+
+---
+
 ### **8. GET /**
 #### **Description**
 Affiche un message de bienvenue et un lien vers le projet GitHub.
