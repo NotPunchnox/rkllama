@@ -6,7 +6,6 @@ import datetime
 import logging
 from config import is_debug_mode  # Import the config module
 from .format_utils import create_format_instruction, validate_format_response
-from src.model_utils import get_simplified_model_name  # Import at the top level
 
 logger = logging.getLogger("rkllama.process")
 
@@ -180,13 +179,11 @@ def Request(modele_rkllm, modelfile, custom_request=None):
 
                             # Prepare response based on request type
                             if is_ollama_request:
-                                # Get simplified model name for consistency
-                                simplified_model_name = get_simplified_model_name(variables.model_id)
                                 
                                 if variables.global_status != 1:
                                     # Intermediate chunks - minimal fields only
                                     ollama_chunk = {
-                                        "model": simplified_model_name,
+                                        "model": variables.model_id,
                                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                                         "message": {
                                             "role": "assistant",
@@ -221,7 +218,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                                     
                                     # Final message with metrics
                                     ollama_chunk = {
-                                        "model": simplified_model_name,
+                                        "model": variables.model_id,
                                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                                         "message": {
                                             "role": "assistant",
@@ -290,7 +287,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                             if is_ollama_request:
                                 # Create final message for Ollama API
                                 ollama_final = {
-                                    "model": get_simplified_model_name(variables.model_id),
+                                    "model": variables.model_id,
                                     "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                                     "message": {
                                         "role": "assistant",
@@ -390,11 +387,9 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                 
                 # Prepare appropriate response based on request type
                 if is_ollama_request:
-                    # Get simplified model name for consistency
-                    simplified_model_name = get_simplified_model_name(variables.model_id)
                     
                     ollama_response = {
-                        "model": simplified_model_name,
+                        "model": variables.model_id,
                         "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         "message": {
                             "role": "assistant", 

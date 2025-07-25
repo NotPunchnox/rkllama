@@ -5,11 +5,10 @@ import datetime
 import logging
 import os
 import re  # Add import for regex used in JSON extraction
-from transformers import AutoTokenizer
-from flask import jsonify, Response
 import src.variables as variables
-from src.model_utils import get_simplified_model_name
-from .format_utils import create_format_instruction, validate_format_response, get_tool_calls
+from transformers import AutoTokenizer
+from flask import jsonify, Response, stream_with_context
+from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response
 
 import config
 
@@ -28,6 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("rkllama.server_utils")
 
+
 class RequestWrapper:
     """A class that mimics Flask's request object for custom request handling"""
     def __init__(self, json_data, path="/"):
@@ -38,18 +38,39 @@ class RequestWrapper:
 class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
     
+    
     @staticmethod
     def prepare_prompt(messages, system="", tools=None, enable_thinking=False):
         """Prepare prompt with proper system handling"""
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
+        
+        #print(messages)
+        #print("-" * 50)
+        #prepared_messages = []
+        #for message in messages:
+        #    all_contents = ""
+        #    for content in message.get("content", []):
+        #        if isinstance(content, str):
+        #            content = content.strip()
+        #            if content:
+        #                all_contents = all_contents + "\n" +message["content"]
+        #        elif isinstance(content, dict):
+        #                if "text" in content:
+        #                    content["text"] = content["text"].strip()
+        #                    if content["text"]:
+        #                        all_contents = all_contents + "\n" + content["text"]
+        #    prepared_messages.append({"role": message["role"], "content": all_contents})
+        
         if system and supports_system_role:
+            #prompt_messages = [{"role": "system", "content": system}] + prepared_messages #messages
             prompt_messages = [{"role": "system", "content": system}] + messages
         else:
             prompt_messages = messages
         
         prompt_tokens = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=True, add_generation_prompt=True, enable_thinking=enable_thinking)
+        
         return tokenizer, prompt_tokens, len(prompt_tokens)
     
     @staticmethod
@@ -136,9 +157,8 @@ class ChatEndpointHandler(EndpointHandler):
         return response
         
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False):
+    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False):
         """Process a chat request with proper format handling"""
-        simplified_model_name = get_simplified_model_name(model_name)
         
         original_system = variables.system
         if system:
@@ -157,12 +177,31 @@ class ChatEndpointHandler(EndpointHandler):
             
             tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, tools, enable_thinking)
             
+            # Ollama request handling 
             if stream:
-                return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
+                ollama_chunk = cls.handle_streaming(modele_rkllm, model_name, prompt_tokens, 
                                           prompt_token_count, format_spec, tools, enable_thinking)
+                if is_openai_request:
+
+                    # Use unified handler
+                    result = handle_ollama_response(ollama_chunk, stream=stream)
+
+                    # Convert Ollama streaming response to OpenAI format
+                    ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
+                
+                # Return Ollama streaming response
+                return ollama_chunk
             else:
-                return cls.handle_complete(modele_rkllm, simplified_model_name, prompt_tokens, 
+                ollama_response, code =  cls.handle_complete(modele_rkllm, model_name, prompt_tokens, 
                                          prompt_token_count, format_spec, tools, enable_thinking)
+                
+                if is_openai_request:
+                    # Convert Ollama streaming response to OpenAI format
+                    ollama_response = handle_ollama_response(ollama_response, stream=stream)
+
+                # Return Ollama streaming response
+                return ollama_response, code
+
         finally:
             variables.system = original_system
             
@@ -182,7 +221,7 @@ class ChatEndpointHandler(EndpointHandler):
             thread_finished = False
 
             # Tool calls detection
-            max_token_to_wait_for_tool_call = 50 if tools else 1 # Max tokens to wait for tool call definition
+            max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
             tool_calls = False
             first_tokens = []
             thinking = enable_thinking
@@ -229,7 +268,7 @@ class ChatEndpointHandler(EndpointHandler):
                         elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
                             if variables.global_status != 1:
                                 # Check if tool call founded in th first tokens in the response
-                                tool_calls = "<tool_call>" == token
+                                tool_calls = "<tool_call>" in token
                             else:
                                 pass 
                 
@@ -274,6 +313,7 @@ class ChatEndpointHandler(EndpointHandler):
                     
         return Response(generate(), content_type='application/x-ndjson')
     
+
     @classmethod
     def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle complete non-streaming chat response"""
@@ -285,11 +325,13 @@ class ChatEndpointHandler(EndpointHandler):
         
         count = 0
         complete_text = ""
+    
         
         while thread_model.is_alive() or len(variables.global_text) > 0:
             while len(variables.global_text) > 0:
                 count += 1
                 token = variables.global_text.pop(0)
+                time.sleep(0.005)
                 
                 if count == 1:
                     prompt_eval_time = time.time()
@@ -385,14 +427,12 @@ class GenerateEndpointHandler(EndpointHandler):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
-        simplified_model_name = get_simplified_model_name(model_name)
-        
         original_system = variables.system
         if system:
             variables.system = system
         
         if DEBUG_MODE:
-            logger.debug(f"GenerateEndpointHandler: processing request for {simplified_model_name}")
+            logger.debug(f"GenerateEndpointHandler: processing request for {model_name}")
             logger.debug(f"Format spec: {format_spec}")
         
         try:
@@ -408,10 +448,10 @@ class GenerateEndpointHandler(EndpointHandler):
             tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system, enable_thinking=enable_thinking)
             
             if stream:
-                return cls.handle_streaming(modele_rkllm, simplified_model_name, prompt_tokens, 
+                return cls.handle_streaming(modele_rkllm, model_name, prompt_tokens, 
                                           prompt_token_count, format_spec)
             else:
-                return cls.handle_complete(modele_rkllm, simplified_model_name, prompt_tokens, 
+                return cls.handle_complete(modele_rkllm, model_name, prompt_tokens, 
                                          prompt_token_count, format_spec)
         finally:
             variables.system = original_system

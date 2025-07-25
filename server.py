@@ -3,7 +3,7 @@ import sys, os, subprocess, resource, argparse, shutil, time, requests, configpa
 import re
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, redirect , url_for
 from flask_cors import CORS
 from transformers import AutoTokenizer
 
@@ -12,13 +12,12 @@ from src.classes import *
 from src.rkllm import *
 from src.process import Request
 import src.variables as variables
-from src.server_utils import process_ollama_chat_request, process_ollama_generate_request
 from src.debug_utils import StreamDebugger, check_response_format
-from src.format_utils import strtobool
+from src.format_utils import strtobool, openai_to_ollama_request
 from src.model_utils import (
-    get_simplified_model_name, get_original_model_path, extract_model_details, 
-    initialize_model_mappings, find_model_by_name, get_huggingface_model_info,
-    get_context_length, get_property_modelfile
+    extract_model_details, 
+    get_huggingface_model_info,
+    get_property_modelfile, get_model_full_options, find_rkllm_model_name
 )
 
 # Import the config module
@@ -60,7 +59,7 @@ current_model = None  # Global variable for storing the loaded model
 modele_rkllm = None  # Model instance
 
 
-def create_modelfile(huggingface_path, From, system="", temperature=1.0, model_name=None):
+def create_modelfile(huggingface_path, From, system="", model_name=None):
     struct_modelfile = f"""
 FROM="{From}"
 
@@ -68,7 +67,31 @@ HUGGINGFACE_PATH="{huggingface_path}"
 
 SYSTEM="{system}"
 
-TEMPERATURE={temperature}
+TEMPERATURE={config.get("model", "default_temperature")}
+
+ENABLE_THINKING={config.get("model", "default_enable_thinking")}
+
+NUM_CTX={config.get("model", "default_num_ctx")}
+
+MAX_NEW_TOKENS={config.get("model", "default_max_new_tokens")}
+
+TOP_K={config.get("model", "default_top_k")}
+
+TOP_P={config.get("model", "default_top_p")}
+
+REPEAT_PENALTY={config.get("model", "default_repeat_penalty")}
+
+FREQUENCY_PENALTY={config.get("model", "default_frequency_penalty")}
+
+PRESENCE_PENALTY={config.get("model", "default_presence_penalty")}
+
+MIROSTAT={config.get("model", "default_mirostat")}
+
+MIROSTAT_TAU={config.get("model", "default_mirostat_tau")}
+
+MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
+
+
 """
 
     # Use config for models path
@@ -84,7 +107,7 @@ TEMPERATURE={temperature}
         f.write(struct_modelfile)
 
 
-def load_model(model_name, huggingface_path=None, system="", temperature=1.0, From=None):
+def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None):
     # Use config for models path
     model_dir = os.path.join(config.get_path("models"), model_name)
     
@@ -94,7 +117,7 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
     if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
         return None, f"Modelfile not found in '{model_name}' directory."
     elif huggingface_path is not None and From is not None:
-        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, temperature=temperature, model_name=model_name)
+        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, model_name=model_name)
         time.sleep(0.1)
     
     # Load modelfile
@@ -111,10 +134,13 @@ def load_model(model_name, huggingface_path=None, system="", temperature=1.0, Fr
 
     # Change value of model_id with huggingface_path
     variables.model_id = huggingface_path
-    context_length = int(os.getenv("CONTEXT_LENGTH", get_context_length(model_name, config.get_path("models"))))
+
+    # Get model parameters if not provided
+    if not request_options:
+        request_options = get_model_full_options(model_name, config.get_path("models"), request_options)
 
     try:
-        modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, temperature=float(temperature), context_length=context_length)
+        modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, options=request_options)
     except RuntimeError as e:
         return None, str(e)
 
@@ -180,8 +206,6 @@ def Rm_model():
         return jsonify({"error": f"The model: {data['model']} cannot be found."}), 404
 
     os.remove(model_path)
-
-    initialize_model_mappings()
 
     return jsonify({"message": f"The model has been successfully deleted!"}), 200
 
@@ -339,9 +363,6 @@ def list_ollama_models():
                 if file.endswith(".rkllm"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
                     
-                    # Generate a simplified model name in Ollama style
-                    simple_name = get_simplified_model_name(subdir)
-                    
                     # Extract parameter size and quantization details if available
                     model_details = extract_model_details(file)
                     
@@ -366,8 +387,13 @@ def list_ollama_models():
 
 @app.route('/api/show', methods=['POST'])
 def show_model_info():
-    data = request.get_json(force=True)
-    model_name = data.get('name')
+
+    ##### Github Copilot Start Workaround
+    request_data = request.get_data().decode('UTF-8')
+    request_data = request_data.replace("\'", "\"")  
+    data = json.loads(request_data) if request_data else {}
+    model_name = data.get('name') if "name" in data else data.get('model')
+    ##### # Github Copilot End
 
     if DEBUG_MODE:
         logger.debug(f"API show request data: {data}")
@@ -375,13 +401,9 @@ def show_model_info():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
     
-    # Handle simplified model names
-    original_model_path = get_original_model_path(model_name)
-    if original_model_path:
-        model_name = original_model_path
-        
     model_dir = os.path.join(config.get_path("models"), model_name)
-    
+    model_rkllm = find_rkllm_model_name(model_dir)
+
     if not os.path.exists(model_dir):
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
 
@@ -392,7 +414,6 @@ def show_model_info():
     template = "{{ .Prompt }}"
     license_text = ""
     huggingface_path = None
-    temperature = 0.8  # Default temperature
     
     if os.path.exists(modelfile_path):
         with open(modelfile_path, "r") as f:
@@ -440,7 +461,7 @@ def show_model_info():
     size = os.path.getsize(file_path)
     
     # Extract model details
-    model_details = extract_model_details(model_name)
+    model_details = extract_model_details(model_rkllm)
     parameter_size = model_details.get("parameter_size", "Unknown")
     quantization_level = model_details.get("quantization_level", "Unknown")
     
@@ -486,6 +507,7 @@ def show_model_info():
         model_card = hf_metadata.get('cardData', {})
         
         # Better parameter size from HF metadata
+        parameter_count = None
         if 'params' in model_card:
             try:
                 params = int(model_card['params'])
@@ -537,12 +559,11 @@ def show_model_info():
     # Convert modelfile to Ollama-compatible format
     ollama_modelfile = f"# Modelfile generated by \"ollama show\"\n"
     ollama_modelfile += f"# To build a new Modelfile based on this, replace FROM with:\n"
-    ollama_modelfile += f"# FROM {get_simplified_model_name(model_name)}\n\n"
+    ollama_modelfile += f"# FROM {model_name}\n\n"
     
     # Change this section to use a more compatible FROM format
     # Instead of absolute paths, use the model file name which is more compatible with Ollama
     # Original: model_blob_path = f"{model_dir}/{model_file}"
-    simple_name = get_simplified_model_name(model_name)
     
     if DEBUG_MODE:
         # In debug mode, use absolute paths to help with troubleshooting
@@ -550,7 +571,7 @@ def show_model_info():
         ollama_modelfile += f"FROM {model_blob_path}\n"
     else:
         # In normal mode, use the simplified name format that Ollama clients expect
-        ollama_modelfile += f"FROM {simple_name}\n"
+        ollama_modelfile += f"FROM {model_name}\n"
     
     if template != "{{ .Prompt }}":
         ollama_modelfile += f'TEMPLATE """{template}"""\n'
@@ -711,6 +732,11 @@ def show_model_info():
         else:
             parameters_str = f"{parameter_count/1_000_000:.1f}M".replace('.0M', 'M')
     
+    # Capabilities based on model family. ### Github Copilot requires this
+    capabilities = ["completion"]
+    if family in ["qwen2", "phi", "llama3", "mistral"]:
+        capabilities.append("tools")
+	
     # Prepare response with enhanced metadata
     response = {
         "license": license_text or "Unknown",
@@ -729,6 +755,7 @@ def show_model_info():
         },
         "model_info": model_info,
         "size": size,
+        "capabilities": capabilities,
         "modified_at": modified_at
     }
     
@@ -805,21 +832,19 @@ def delete_model_ollama():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
 
-    # Resolve simplified name to full model name
-    full_model_name = find_model_by_name(model_name)
-    if not full_model_name:
+    if not model_name:
         if DEBUG_MODE:
             logger.error(f"Model '{model_name}' not found for deletion")
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
     
-    model_path = os.path.join(config.get_path("models"), full_model_name)
+    model_path = os.path.join(config.get_path("models"), model_name)
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
     # Check if model is currently loaded
-    if current_model == full_model_name:
+    if current_model == model_name:
         if DEBUG_MODE:
-            logger.debug(f"Unloading model '{full_model_name}' before deletion")
+            logger.debug(f"Unloading model '{model_name}' before deletion")
         unload_model()
     
     try:
@@ -827,11 +852,9 @@ def delete_model_ollama():
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
         
-        initialize_model_mappings()
-        
         return jsonify({}), 200
     except Exception as e:
-        logger.error(f"Failed to delete model '{full_model_name}': {str(e)}")
+        logger.error(f"Failed to delete model '{model_name}': {str(e)}")
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
 @app.route('/api/generate', methods=['POST'])
@@ -866,21 +889,14 @@ def generate_ollama():
             model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
-        # Improved model resolution
-        full_model_name = find_model_by_name(model_name)
-        if not full_model_name:
-            if DEBUG_MODE:
-                logger.error(f"Model '{model_name}' not found")
-            return jsonify({"error": f"Model '{model_name}' not found"}), 404
-        
-        # Use the full model name for loading
-        model_name = full_model_name
+        # Get all model options
+        options = get_model_full_options(model_name, config.get_path("models"), options) 
 
         # Load model if needed
         if current_model != model_name:
             if current_model:
                 unload_model()
-            modele_instance, error = load_model(model_name)
+            modele_instance, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             modele_rkllm = modele_instance
@@ -911,15 +927,24 @@ def generate_ollama():
         if lock_acquired and variables.verrou.locked():
             variables.verrou.release()
 
+
 # Also update the chat endpoint for consistency
 @app.route('/api/chat', methods=['POST'])
+@app.route('/v1/chat/completions', methods=['POST'])
 def chat_ollama():
     global modele_rkllm, current_model
     
     lock_acquired = False  # Track lock status
-
+    is_openai_request = request.path.startswith('/v1/chat/completions')
+        
     try:
         data = request.get_json(force=True)
+        
+        if is_openai_request:
+           if DEBUG_MODE:
+              logger.debug(f"API OpenAI chat request data: {data}")
+           data = openai_to_ollama_request(data)
+        
         model_name = data.get('model')
         messages = data.get('messages', [])
         system = data.get('system', '')
@@ -932,13 +957,16 @@ def chat_ollama():
         options = data.get('options', {})
 
         if DEBUG_MODE:
-            logger.debug(f"API chat request data: {data}")
+            logger.debug(f"API Ollama chat request data: {data}")
         
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
             model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
-        
+
+        # Get all model options
+        options = get_model_full_options(model_name, config.get_path("models"), options) 
+
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
         is_new_conversation = not any(msg.get('role') == 'assistant' for msg in messages)
@@ -968,16 +996,6 @@ def chat_ollama():
             if DEBUG_MODE:
                 logger.debug(f"Using system message: {system}")
         
-        # Improved model resolution
-        full_model_name = find_model_by_name(model_name)
-        if not full_model_name:
-            if DEBUG_MODE:
-                logger.error(f"Model '{model_name}' not found")
-            return jsonify({"error": f"Model '{model_name}' not found"}), 404
-        
-        # Use the full model name for loading
-        model_name = full_model_name
-
         # Load model if needed
         if current_model != model_name:
             if current_model:
@@ -987,7 +1005,7 @@ def chat_ollama():
             
             if DEBUG_MODE:
                 logger.debug(f"Loading model: {model_name}")
-            modele_instance, error = load_model(model_name)
+            modele_instance, error = load_model(model_name, request_options=options)
             if error:
                 if DEBUG_MODE:
                     logger.error(f"Failed to load model {model_name}: {error}")
@@ -996,16 +1014,41 @@ def chat_ollama():
             current_model = model_name
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
-
-        # Apply options to model parameters if provided
-        if options and isinstance(options, dict):
-            if "temperature" in options:
-                try:
-                    temperature = float(options["temperature"])
-                    # Set temperature for model if supported
-                except (ValueError, TypeError):
-                    pass
-        
+        else:
+            # If model is already loaded, check its options are the same for the current request
+            if modele_rkllm.rkllm_param.max_context_len != int(options.get("num_ctx")) \
+                or modele_rkllm.rkllm_param.max_new_tokens != int(options.get("max_new_tokens")) \
+                or modele_rkllm.rkllm_param.top_k != int(options.get("top_k")) \
+                or round(modele_rkllm.rkllm_param.top_p,2) != round(float(options.get("top_p")),2) \
+                or round(modele_rkllm.rkllm_param.temperature,2) != round(float(options.get("temperature")),2) \
+                or round(modele_rkllm.rkllm_param.repeat_penalty,2) != round(float(options.get("repeat_penalty")),2) \
+                or round(modele_rkllm.rkllm_param.frequency_penalty,2) != round(float(options.get("frequency_penalty")),2) \
+                or round(modele_rkllm.rkllm_param.presence_penalty,2) != round(float(options.get("presence_penalty")),2) \
+                or modele_rkllm.rkllm_param.mirostat != int(options.get("mirostat")) \
+                or round(modele_rkllm.rkllm_param.mirostat_tau,2) != round(float(options.get("mirostat_tau")),2) \
+                or round(modele_rkllm.rkllm_param.mirostat_eta,2) != round(float(options.get("mirostat_eta")),2):
+            
+                # Update model parameters if they differ
+                if DEBUG_MODE:
+                    logger.debug(f"Updating model parameters for {model_name} with options: {options}")
+                
+                if current_model:
+                    if DEBUG_MODE:
+                        logger.debug(f"Unloading current model: {current_model}")
+                    unload_model()
+                
+                if DEBUG_MODE:
+                    logger.debug(f"Reoading model: {model_name}")
+                modele_instance, error = load_model(model_name, request_options=options)
+                if error:
+                    if DEBUG_MODE:
+                        logger.error(f"Failed to reload model {model_name}: {error}")
+                    return jsonify({"error": f"Failed to reload model '{model_name}': {error}"}), 500
+                modele_rkllm = modele_instance
+                current_model = model_name
+                if DEBUG_MODE:
+                    logger.debug(f"Model {model_name} reloaded successfully")
+                
         # Store format settings in model instance
         if modele_rkllm:
             modele_rkllm.format_schema = format_spec
@@ -1037,17 +1080,17 @@ def chat_ollama():
         # Process the request - this won't release the lock
         from src.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
-            modele_rkllm=modele_rkllm,
-            model_name=model_name,
-            messages=messages,
-            system=system,
-            stream=stream,
-            format_spec=format_spec,
-            options=options,
-            tools=tools,
-            enable_thinking=enable_thinking
-        )
-    
+              modele_rkllm=modele_rkllm,
+              model_name=model_name,
+              messages=messages,
+              system=system,
+              stream=stream,
+              format_spec=format_spec,
+              options=options,
+              tools=tools,
+              enable_thinking=enable_thinking,
+              is_openai_request=is_openai_request)
+
     except Exception as e:
         logger.exception("Error in chat_ollama")
         return jsonify({"error": str(e)}), 500
@@ -1058,6 +1101,7 @@ def chat_ollama():
             if DEBUG_MODE:
                 logger.debug("Releasing lock in chat_ollama")
             variables.verrou.release()
+
 
 # Only include debug endpoint if in debug mode
 if DEBUG_MODE:
@@ -1147,10 +1191,6 @@ def main():
 
     # Set the resource limits
     resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
-
-    # Initialize model mappings at server startup
-    print_color("Initializing model mappings...", "cyan")
-    initialize_model_mappings()
 
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")

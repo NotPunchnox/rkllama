@@ -257,6 +257,18 @@ def create_rkllama_schema() -> ConfigSchema:
     # Model section
     model = schema.add_section("model", description="Model configuration")
     model.string("default", "", "Default model to use")
+    model.string("default_temperature", 0.5, "Default temperature for the model to use")
+    model.string("default_enable_thinking", False, "Default Enable Thinking for the model to use")
+    model.string("default_num_ctx", 16384, "Default Context Length for the model to use")
+    model.string("default_max_new_tokens", 16384, "Default Max New Tokens for the model to use")
+    model.string("default_top_k", 7, "Default Top K for the model to use")
+    model.string("default_top_p", 0.5, "Default Top P for the model to use")
+    model.string("default_repeat_penalty", 1.1, "Default Repeat Penalty for the model to use")
+    model.string("default_frequency_penalty", 0.0, "Default Frequency Penalty for the model to use")
+    model.string("default_presence_penalty", 0.0, "Default Presence Penalty for the model to use")
+    model.string("default_mirostat", 0, "Default Mirostat for the model to use")
+    model.string("default_mirostat_tau", 3, "Default Mirostat Tau for the model to use")
+    model.string("default_mirostat_eta", 0.1, "Default Mirostat Eta for the model to use")
     
     # Platform section
     platform = schema.add_section("platform", description="Platform configuration")
