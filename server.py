@@ -265,9 +265,6 @@ def pull_model():
                             progress = int((downloaded_size / total_size) * 100)
                             yield f"{progress}%\n"
 
-                    # Download completed successfully, update model mappings
-                    initialize_model_mappings()
-
             except Exception as download_error:
                 # Remove the file if an error occurs during download
                 if os.path.exists(local_filename):
