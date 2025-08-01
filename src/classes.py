@@ -1,6 +1,5 @@
 import ctypes
 import os
-
 import config
 
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
@@ -10,34 +9,35 @@ PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
 library_path = os.path.join(config.get_path("lib"), "librkllmrt.so")
 rkllm_lib = ctypes.CDLL(library_path)
 
-# Define library structures
+# Define the structures from the library
 RKLLM_Handle_t = ctypes.c_void_p
 userdata = ctypes.c_void_p(None)
 
 LLMCallState = ctypes.c_int
-LLMCallState.RKLLM_RUN_NORMAL   = 0
+LLMCallState.RKLLM_RUN_NORMAL  = 0
 LLMCallState.RKLLM_RUN_WAITING  = 1
-LLMCallState.RKLLM_RUN_FINISH   = 2
-LLMCallState.RKLLM_RUN_ERROR    = 3
-LLMCallState.RKLLM_RUN_GET_LAST_HIDDEN_LAYER = 4
+LLMCallState.RKLLM_RUN_FINISH  = 2
+LLMCallState.RKLLM_RUN_ERROR   = 3
 
-RKLLMInputMode = ctypes.c_int
-RKLLMInputMode.RKLLM_INPUT_PROMPT      = 0
-RKLLMInputMode.RKLLM_INPUT_TOKEN       = 1
-RKLLMInputMode.RKLLM_INPUT_EMBED       = 2
-RKLLMInputMode.RKLLM_INPUT_MULTIMODAL  = 3
+RKLLMInputType = ctypes.c_int
+RKLLMInputType.RKLLM_INPUT_PROMPT      = 0
+RKLLMInputType.RKLLM_INPUT_TOKEN       = 1
+RKLLMInputType.RKLLM_INPUT_EMBED       = 2
+RKLLMInputType.RKLLM_INPUT_MULTIMODAL  = 3
 
 RKLLMInferMode = ctypes.c_int
 RKLLMInferMode.RKLLM_INFER_GENERATE = 0
 RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER = 1
-
+RKLLMInferMode.RKLLM_INFER_GET_LOGITS = 2
 class RKLLMExtendParam(ctypes.Structure):
     _fields_ = [
         ("base_domain_id", ctypes.c_int32),
         ("embed_flash", ctypes.c_int8),
         ("enabled_cpus_num", ctypes.c_int8),
-        ("enabled_cpus_mask", ctypes.c_int32),
-        ("reserved", ctypes.c_uint8 * 106)
+        ("enabled_cpus_mask", ctypes.c_uint32),
+        ("n_batch", ctypes.c_uint8),
+        ("use_cross_attn", ctypes.c_int8),
+        ("reserved", ctypes.c_uint8 * 104)
     ]
 
 class RKLLMParam(ctypes.Structure):
@@ -102,7 +102,9 @@ class RKLLMInputUnion(ctypes.Union):
 
 class RKLLMInput(ctypes.Structure):
     _fields_ = [
-        ("input_mode", ctypes.c_int),
+        ("role", ctypes.c_char_p),
+        ("enable_thinking", ctypes.c_bool),
+        ("input_type", RKLLMInputType),
         ("input_data", RKLLMInputUnion)
     ]
 
@@ -121,7 +123,8 @@ class RKLLMInferParam(ctypes.Structure):
     _fields_ = [
         ("mode", RKLLMInferMode),
         ("lora_params", ctypes.POINTER(RKLLMLoraParam)),
-        ("prompt_cache_params", ctypes.POINTER(RKLLMPromptCacheParam))
+        ("prompt_cache_params", ctypes.POINTER(RKLLMPromptCacheParam)),
+        ("keep_history", ctypes.c_int)
     ]
 
 class RKLLMResultLastHiddenLayer(ctypes.Structure):
@@ -138,10 +141,20 @@ class RKLLMResultLogits(ctypes.Structure):
         ("num_tokens", ctypes.c_int)
     ]
 
+class RKLLMPerfStat(ctypes.Structure):
+    _fields_ = [
+        ("prefill_time_ms", ctypes.c_float),
+        ("prefill_tokens", ctypes.c_int),
+        ("generate_time_ms", ctypes.c_float),
+        ("generate_tokens", ctypes.c_int),
+        ("memory_usage_mb", ctypes.c_float)
+    ]
+
 class RKLLMResult(ctypes.Structure):
     _fields_ = [
         ("text", ctypes.c_char_p),
-        ("size", ctypes.c_int),
+        ("token_id", ctypes.c_int),
         ("last_hidden_layer", RKLLMResultLastHiddenLayer),
-        ("logits", RKLLMResultLogits)
+        ("logits", RKLLMResultLogits),
+        ("perf", RKLLMPerfStat)
     ]

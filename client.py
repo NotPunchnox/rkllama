@@ -221,11 +221,12 @@ def pull_model(model):
     if model is None or model == "":
         repo = input(f"{CYAN}Repo ID{RESET} ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4 ): ")
         filename = input(f"{CYAN}File{RESET} ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm ): ")
+        model_name = input(f"{CYAN}Custom Model Name{RESET} ( example: tinyllama-chat:1.1b ): ")
 
         model = repo + "/" + filename
 
     try:
-        response = requests.post(API_URL + "pull", json={"model": model}, stream=True)
+        response = requests.post(API_URL + "pull", json={"model": model, "model_name": model_name}, stream=True)
 
         if response.status_code != 200:
             print(f"{RED}Error: Received status code {response.status_code}.{RESET}")

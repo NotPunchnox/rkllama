@@ -2,6 +2,9 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple, Union, List
 import re
+import uuid
+import time
+from flask import jsonify
 
 try:
     from pydantic import BaseModel, ValidationError, create_model
@@ -271,6 +274,244 @@ def validate_format_response(text, format_spec):
     
     return True, parsed_data, None, json_text
 
+
+def openai_to_ollama_request(openai_payload: dict) -> dict:
+    """
+    Translate an OpenAI /v1/chat/completions request payload to Ollama /api/chat format.
+
+    Args:
+        openai_payload (dict): OpenAI request payload.
+
+    Returns:
+        dict: Ollama-compatible request payload.
+    """
+    messages = openai_payload.get("messages", [])
+    model = openai_payload.get("model", "llama3")
+    stream = openai_payload.get("stream", False)
+
+    # Base Ollama payload
+    ollama_payload = {
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+    }
+
+    # Supported Ollama options from OpenAI fields
+    supported_option_mappings = {
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "top_k": "top_k",
+        "presence_penalty": "presence_penalty",
+        "frequency_penalty": "frequency_penalty",
+        "stop": "stop",
+        "max_tokens": "max_new_tokens",
+        "max_completion_tokens": "max_new_tokens",
+        "seed": "seed",
+        "logit_bias": "logit_bias",  # If supported
+    }
+
+    for openai_key, ollama_key in supported_option_mappings.items():
+        if openai_key in openai_payload:
+            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
+
+    # Handle tool_choice, tools, functions
+    # Ollama currently has no native tool/function support (like OpenAI tool-calling)
+    # But we include them for forward compatibility if needed by custom handler
+    for passthrough_key in ["tools", "tool_choice", "functions", "function_call", "response_format", "n"]:
+        if passthrough_key in openai_payload:
+            ollama_payload[passthrough_key] = openai_payload[passthrough_key]
+
+    return ollama_payload
+
+
+def ollama_to_openai_response(ollama_response: dict) -> dict:
+    """
+    Convert Ollama's chat response to a fully OpenAI-compatible /v1/chat/completions response.
+    
+    Args:
+        ollama_response (dict): Response from Ollama's /api/chat endpoint.
+    
+    Returns:
+        dict: OpenAI-compatible response.
+    """
+    
+    # Generate metadata
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    model = ollama_response.get("model", "unknown-model")
+
+    # Extract message
+    message = ollama_response.get("message", {})
+    role = message.get("role", "assistant")
+    content = message.get("content", "")
+    tool_calls = message.get("tool_calls", None)
+
+    # Handle finish_reason
+    finish_reason = "stop" if ollama_response.get("done", True) else None
+
+    # Build the choice message
+    choice_message = {
+        "role": role,
+        "content": content
+    }
+
+    if tool_calls:
+        # OpenAI v1 supports `tool_calls`
+        for tool in tool_calls:
+            tool["id"] = f"call_{uuid.uuid4().hex}"
+            tool["type"] = "function"
+        choice_message["tool_calls"] = tool_calls
+        finish_reason = ollama_response.get("done_reason")
+
+
+    choice = {
+        "index": 0,
+        "message": choice_message,
+        "finish_reason": finish_reason
+    }
+
+    # Handle token usage if present
+    usage = {}
+    if "prompt_eval_count" in ollama_response:
+        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
+    if "eval_count" in ollama_response:
+        usage["completion_tokens"] = ollama_response["eval_count"]
+    if usage:
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+
+    # Build full response
+    openai_response = {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": model,
+        "choices": [choice],
+    }
+
+    if usage:
+        openai_response["usage"] = usage
+
+    return openai_response
+
+def ollama_stream_to_openai_chunks(ollama_stream_lines):
+    """
+    Converts an iterable of Ollama stream JSON lines to OpenAI SSE streaming chunks.
+
+    Args:
+        ollama_stream_lines (iterable[str]): Streamed JSON lines from Ollama.
+
+    Yields:
+        str: OpenAI-compatible `data: ...\n\n` formatted SSE chunks.
+    """
+
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    for line in ollama_stream_lines:
+        line = str(line).strip()
+        if not line or line.startswith("data:"):
+            continue
+
+        try:
+            #print(line)
+            ollama_chunk = json.loads(line)
+            #print
+        except json.JSONDecodeError:
+            continue
+
+        content_piece = ollama_chunk.get("message", {}).get("content", "")
+        role = ollama_chunk.get("message", {}).get("role")
+        tool_calls = ollama_chunk.get("message", {}).get("tool_calls")
+        model = ollama_chunk.get("model", "unknown-model")
+        finish_reason = ollama_chunk.get("done_reason", None)
+
+        delta = {}
+        if content_piece:
+            delta["content"] = content_piece
+        if role:
+            delta["role"] = role
+        if tool_calls:
+            for tool in tool_calls:
+                tool["id"] = f"call_{uuid.uuid4().hex}"
+                tool["type"] = "function"
+            delta["tool_calls"] = tool_calls
+        
+        chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": delta,
+                "finish_reason": finish_reason
+            }]
+        }
+
+        yield f"{json.dumps(chunk)}\n\n"
+
+        if ollama_chunk.get("done") is True:
+            # Final chunk — stop streaming
+            final_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": finish_reason #"stop"
+                }]
+            }
+            yield f"{json.dumps(final_chunk)}\n\n"
+            yield "[DONE]\n\n"
+            break
+
+def handle_ollama_response(response, stream=False):
+    """
+    Handles an Ollama response and converts it into either:
+    - a single OpenAI-compatible JSON object (non-streaming), or
+    - an iterable of SSE chunks (streaming).
+
+    Args:
+        response: `requests.Response` object from Ollama.
+        stream (bool): Whether streaming was requested.
+
+    Returns:
+        dict | generator[str]: OpenAI-compatible response (full or streaming).
+    """
+    if stream:
+        # Generator that yields OpenAI-style SSE chunks
+        def stream_chunks():
+            # Read the Flask Response iterable (bytes or str)
+            for raw in response.response:
+                # Ensure bytes are decoded
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                raw = raw.strip()
+                if raw:
+                    yield from ollama_stream_to_openai_chunks([raw])
+        return stream_chunks()
+    else:
+        # Full JSON response
+        #ollama_response = response.json()
+        ollama_response = json.loads(response.get_data().decode("utf-8"))
+        return jsonify(ollama_to_openai_response(ollama_response))
+
+
+def strtobool (val):
+    """Convert a string representation of truth to true (1) or false (0).
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = val.lower()
+    if val in ('y', 'yes', 't', 'true', 'on', '1'):
+        return True
+    elif val in ('n', 'no', 'f', 'false', 'off', '0'):
+        return False
+    else:
+        raise ValueError("invalid truth value %r" % (val,))
+    
 ################################## Tool Calls #####################################
 def RawJSONDecoder(index):
     class _RawJSONDecoder(json.JSONDecoder):
