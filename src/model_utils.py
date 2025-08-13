@@ -441,13 +441,16 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
                 line = line.strip()
                 if '=' in line:
                     key, value = line.split('=', 1)
-                    default_options[key.lower().strip()] = str(value).strip()
+                    if value is not None and str(value).strip() != "":
+                        default_options[key.lower().strip()] = str(value).strip()
     
     # Override with request options if provided
     if request_options and isinstance(request_options, dict):
         for option, value in request_options.items():
-            # Override modelfile options with request options
-            default_options[option.lower().strip()] = str(value).strip()
+            # Override modelfile options with request options if not empty
+            if value is not None and str(value).strip() != "":
+                # Update the default options
+                default_options[option.lower().strip()] = str(value).strip()
 
     # Return the options dictionary
     return default_options

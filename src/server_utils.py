@@ -45,24 +45,6 @@ class EndpointHandler:
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
-        
-        #print(messages)
-        #print("-" * 50)
-        #prepared_messages = []
-        #for message in messages:
-        #    all_contents = ""
-        #    for content in message.get("content", []):
-        #        if isinstance(content, str):
-        #            content = content.strip()
-        #            if content:
-        #                all_contents = all_contents + "\n" +message["content"]
-        #        elif isinstance(content, dict):
-        #                if "text" in content:
-        #                    content["text"] = content["text"].strip()
-        #                    if content["text"]:
-        #                        all_contents = all_contents + "\n" + content["text"]
-        #    prepared_messages.append({"role": message["role"], "content": all_contents})
-        
         if system and supports_system_role:
             #prompt_messages = [{"role": "system", "content": system}] + prepared_messages #messages
             prompt_messages = [{"role": "system", "content": system}] + messages
