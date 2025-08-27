@@ -275,7 +275,7 @@ def validate_format_response(text, format_spec):
     return True, parsed_data, None, json_text
 
 
-def openai_to_ollama_request(openai_payload: dict) -> dict:
+def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
     """
     Translate an OpenAI /v1/chat/completions request payload to Ollama /api/chat format.
 
@@ -324,7 +324,56 @@ def openai_to_ollama_request(openai_payload: dict) -> dict:
     return ollama_payload
 
 
-def ollama_to_openai_response(ollama_response: dict) -> dict:
+def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
+    """
+    Translate an OpenAI /v1/completions request payload to Ollama /api/generate format.
+    Args:
+        openai_payload (dict): OpenAI request payload for /v1/completions.
+    Returns:
+        dict: Ollama-compatible /api/generate request payload.
+    """
+    # Handle "prompt": could be a string or an array
+    prompt = openai_payload.get("prompt", "")
+    if isinstance(prompt, list):
+        # Join multi-part array into a single string
+        prompt = "\n".join([str(part) for part in prompt])
+    
+    model = openai_payload.get("model", "llama3")
+    stream = openai_payload.get("stream", False)
+
+    # Base Ollama payload
+    ollama_payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": stream,
+    }
+
+    # Supported Ollama option mappings
+    supported_option_mappings = {
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "top_k": "top_k",
+        "presence_penalty": "presence_penalty",
+        "frequency_penalty": "frequency_penalty",
+        "stop": "stop",
+        "max_tokens": "max_new_tokens",  # OpenAI max_tokens => Ollama max_new_tokens
+        "seed": "seed",
+        "logit_bias": "logit_bias",  # If supported by your Ollama deployment
+    }
+
+    for openai_key, ollama_key in supported_option_mappings.items():
+        if openai_key in openai_payload:
+            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
+
+    # Pass through extra non-standard fields for forward compatibility (optional)
+    for passthrough_key in ["n", "best_of", "logprobs", "echo", "user"]:
+        if passthrough_key in openai_payload:
+            ollama_payload[passthrough_key] = openai_payload[passthrough_key]
+
+    return ollama_payload
+
+
+def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     """
     Convert Ollama's chat response to a fully OpenAI-compatible /v1/chat/completions response.
     
@@ -392,6 +441,62 @@ def ollama_to_openai_response(ollama_response: dict) -> dict:
         openai_response["usage"] = usage
 
     return openai_response
+
+
+
+def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
+    """
+    Convert Ollama's /api/generate response to a fully OpenAI-compatible /v1/completions response.
+
+    Args:
+        ollama_response (dict): Response from Ollama's /api/generate endpoint.
+
+    Returns:
+        dict: OpenAI-compatible /v1/completions response.
+    """
+
+    # Metadata
+    completion_id = f"cmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    model = ollama_response.get("model", "unknown-model")
+
+    # Generated text
+    content = ollama_response.get("response", "")
+
+    # Finish reason
+    finish_reason = ollama_response.get("done_reason", "stop" if ollama_response.get("done", True) else None)
+
+    # Build choice
+    choice = {
+        "text": content,
+        "index": 0,
+        "logprobs": None,
+        "finish_reason": finish_reason
+    }
+
+    # Usage
+    usage = {}
+    if "prompt_eval_count" in ollama_response:
+        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
+    if "eval_count" in ollama_response:
+        usage["completion_tokens"] = ollama_response["eval_count"]
+    if usage:
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+
+    # Assemble OpenAI-style response
+    openai_completion_response = {
+        "id": completion_id,
+        "object": "text_completion",
+        "created": created,
+        "model": model,
+        "choices": [choice]
+    }
+    if usage:
+        openai_completion_response["usage"] = usage
+
+    return openai_completion_response
+
+
 
 def ollama_stream_to_openai_chunks(ollama_stream_lines):
     """
@@ -461,7 +566,7 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
             yield "data: [DONE]\n\n"
             break
 
-def handle_ollama_response(response, stream=False):
+def handle_ollama_response(response, stream=False, is_chat=True):
     """
     Handles an Ollama response and converts it into either:
     - a single OpenAI-compatible JSON object (non-streaming), or
@@ -489,7 +594,12 @@ def handle_ollama_response(response, stream=False):
     else:
         # Full JSON response
         ollama_response = json.loads(response.get_data().decode("utf-8"))
-        return jsonify(ollama_to_openai_response(ollama_response))
+
+        # CHeck if cht or generate response
+        if is_chat:
+            return jsonify(ollama_chat_to_openai_v1_chat_completion(ollama_response))
+        else:
+            return jsonify(ollama_generate_to_openai_v1_completion(ollama_response))
 
 
 def strtobool (val):

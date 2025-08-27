@@ -13,7 +13,7 @@ from src.rkllm import *
 from src.process import Request
 import src.variables as variables
 from src.debug_utils import StreamDebugger, check_response_format
-from src.format_utils import strtobool, openai_to_ollama_request
+from src.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
 from src.model_utils import (
     extract_model_details, 
     get_huggingface_model_info,
@@ -857,19 +857,27 @@ def delete_model_ollama():
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
+
 @app.route('/api/generate', methods=['POST'])
+@app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
     global modele_rkllm, current_model
     
     lock_acquired = False  # Track lock status
+    is_openai_request = request.path.startswith('/v1/completions')
 
     try:
         data = request.get_json(force=True)
+
+        if is_openai_request:
+           if DEBUG_MODE:
+              logger.debug(f"API OpenAI completions request data: {data}")
+           data = openai_to_ollama_generate_request(data)
+
         model_name = data.get('model')
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
-        tools = data.get('tools', None)
         enable_thinking = data.get('enable_thinking', None)
         
         # Support format options for structured JSON output
@@ -917,8 +925,8 @@ def generate_ollama():
             stream=stream,
             format_spec=format_spec,
             options=options,
-            tools=tools,
-            enable_thinking=enable_thinking
+            enable_thinking=enable_thinking,
+            is_openai_request=is_openai_request
         )
     except Exception as e:
         if DEBUG_MODE:
@@ -945,7 +953,7 @@ def chat_ollama():
         if is_openai_request:
            if DEBUG_MODE:
               logger.debug(f"API OpenAI chat request data: {data}")
-           data = openai_to_ollama_request(data)
+           data = openai_to_ollama_chat_request(data)
         
         model_name = data.get('model')
         messages = data.get('messages', [])
