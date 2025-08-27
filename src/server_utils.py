@@ -205,9 +205,12 @@ class ChatEndpointHandler(EndpointHandler):
             # Tool calls detection
             max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
             tool_calls = False
-            first_tokens = []
+            
+            # Thinking variables
             thinking = enable_thinking
-            final_response_tokens = []
+            response_tokens = [] # All tokens from response
+            thinking_response_tokens = [] # Thinking tokens from response
+            final_response_tokens = [] # Final answer tokens from response
             
             while not thread_finished or not final_sent:
                 tokens_processed = False
@@ -221,19 +224,23 @@ class ChatEndpointHandler(EndpointHandler):
                         prompt_eval_time = time.time()
                         
                         if thinking and "<think>" not in token.lower():
+                            thinking_response_tokens.append(token)
                             token = "<think>" + token # Ensure correct initial format token <think>
                     else:
-                        if thinking and "</think>" in token.lower():
-                            thinking = False
+                        if thinking:
+                            if "</think>" in token.lower():
+                                thinking = False
+                            else:
+                                thinking_response_tokens.append(token)        
                     
                     complete_text += token
-                    first_tokens.append(token)
+                    response_tokens.append(token)
 
                     if not thinking and token != "</think>": 
                         final_response_tokens.append(token)
                     
                     if not tool_calls:
-                        if len(final_response_tokens) > max_token_to_wait_for_tool_call:
+                        if len(final_response_tokens) > max_token_to_wait_for_tool_call or not tools:
                             if variables.global_status != 1:
                                 chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
                                 yield f"{json.dumps(chunk)}\n"
@@ -242,7 +249,7 @@ class ChatEndpointHandler(EndpointHandler):
                         elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
                             if variables.global_status != 1:
                                 
-                                for temp_token in first_tokens:
+                                for temp_token in response_tokens:
                                     time.sleep(0.1) # Simulate delay to stream previos tokens
                                     chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
                                     yield f"{json.dumps(chunk)}\n"
@@ -272,7 +279,7 @@ class ChatEndpointHandler(EndpointHandler):
                         chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
                         yield f"{json.dumps(chunk_tool_call)}\n"
                     elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
-                        for temp_token in first_tokens:
+                        for temp_token in response_tokens:
                               time.sleep(0.1) # Simulate delay to stream previos tokens
                               chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
                               yield f"{json.dumps(chunk)}\n"
