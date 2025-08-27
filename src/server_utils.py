@@ -241,6 +241,7 @@ class ChatEndpointHandler(EndpointHandler):
                                 pass
                         elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
                             if variables.global_status != 1:
+                                
                                 for temp_token in first_tokens:
                                     time.sleep(0.1) # Simulate delay to stream previos tokens
                                     chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
@@ -251,6 +252,7 @@ class ChatEndpointHandler(EndpointHandler):
                             if variables.global_status != 1:
                                 # Check if tool call founded in th first tokens in the response
                                 tool_calls = "<tool_call>" in token
+                                
                             else:
                                 pass 
                 
@@ -260,15 +262,20 @@ class ChatEndpointHandler(EndpointHandler):
                 if thread_finished and not final_sent:
                     final_sent = True
 
+                    # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
+                    if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                        json_tool_calls = get_tool_calls("".join(final_response_tokens))
+                        if not tool_calls and json_tool_calls:
+                            tool_calls = True
+
                     if tool_calls:
-                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=get_tool_calls(complete_text), tool_calls=tool_calls)
+                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
                         yield f"{json.dumps(chunk_tool_call)}\n"
-                    elif count < max_token_to_wait_for_tool_call: 
+                    elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
                         for temp_token in first_tokens:
                               time.sleep(0.1) # Simulate delay to stream previos tokens
                               chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
                               yield f"{json.dumps(chunk)}\n"
-
 
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
                     metrics["prompt_tokens"] = prompt_token_count
@@ -360,7 +367,7 @@ class GenerateEndpointHandler(EndpointHandler):
     """Handler for /api/generate endpoint requests"""
     
     @staticmethod
-    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None):
+    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None, tool_calls=None):
         """Format a streaming chunk for generate endpoint"""
         chunk = {
             "model": model_name,
@@ -369,8 +376,13 @@ class GenerateEndpointHandler(EndpointHandler):
             "done": is_final
         }
         
+        if tool_calls:
+            chunk["message"]["content"] = ""
+            if not is_final:
+               chunk["message"]["tool_calls"] = token
+
         if is_final:
-            chunk["done_reason"] = "stop"
+            chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
                     "total_duration": metrics["total"],
@@ -380,7 +392,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     "eval_count": metrics.get("token_count", 0),
                     "eval_duration": metrics["eval"]
                 })
-                
+
         return chunk
     
     @staticmethod
@@ -405,7 +417,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None, enable_thinking=False):
+    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
@@ -427,19 +439,19 @@ class GenerateEndpointHandler(EndpointHandler):
                         logger.debug(f"Adding format instruction to prompt: {format_instruction}")
                     messages[0]["content"] += format_instruction
             
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system, enable_thinking=enable_thinking)
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system, tools=tools, enable_thinking=enable_thinking)
             
             if stream:
                 return cls.handle_streaming(modele_rkllm, model_name, prompt_tokens, 
-                                          prompt_token_count, format_spec)
+                                          prompt_token_count, format_spec, tools, enable_thinking)
             else:
                 return cls.handle_complete(modele_rkllm, model_name, prompt_tokens, 
-                                         prompt_token_count, format_spec)
+                                         prompt_token_count, format_spec, tools, enable_thinking)
         finally:
             variables.system = original_system
     
     @classmethod
-    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle streaming generate response"""
         def generate():
             thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
@@ -450,8 +462,15 @@ class GenerateEndpointHandler(EndpointHandler):
             prompt_eval_time = None
             complete_text = ""
             final_sent = False
-            
+
             thread_finished = False
+
+            # Tool calls detection
+            max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
+            tool_calls = False
+            first_tokens = []
+            thinking = enable_thinking
+            final_response_tokens = []
             
             while not thread_finished or not final_sent:
                 tokens_processed = False
@@ -463,21 +482,64 @@ class GenerateEndpointHandler(EndpointHandler):
                     
                     if count == 1:
                         prompt_eval_time = time.time()
+                        
+                        if thinking and "<think>" not in token.lower():
+                            token = "<think>" + token # Ensure correct initial format token <think>
+                    else:
+                        if thinking and "</think>" in token.lower():
+                            thinking = False
                     
                     complete_text += token
+                    first_tokens.append(token)
+
+                    if not thinking and token != "</think>": 
+                        final_response_tokens.append(token)
                     
-                    if variables.global_status != 1:
-                        chunk = cls.format_streaming_chunk(model_name, token)
-                        yield f"{json.dumps(chunk)}\n"
-                    else:
-                        pass
+                    if not tool_calls:
+                        if len(final_response_tokens) > max_token_to_wait_for_tool_call:
+                            if variables.global_status != 1:
+                                chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
+                                yield f"{json.dumps(chunk)}\n"
+                            else:
+                                pass
+                        elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
+                            if variables.global_status != 1:
+                                
+                                for temp_token in first_tokens:
+                                    time.sleep(0.1) # Simulate delay to stream previos tokens
+                                    chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
+                                    yield f"{json.dumps(chunk)}\n"
+                            else:
+                                pass 
+                        elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
+                            if variables.global_status != 1:
+                                # Check if tool call founded in th first tokens in the response
+                                tool_calls = "<tool_call>" in token
+                                
+                            else:
+                                pass 
                 
                 thread_model.join(timeout=0.005)
                 thread_finished = not thread_model.is_alive()
                 
                 if thread_finished and not final_sent:
                     final_sent = True
-                    
+
+                    # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
+                    if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                        json_tool_calls = get_tool_calls("".join(final_response_tokens))
+                        if not tool_calls and json_tool_calls:
+                            tool_calls = True
+
+                    if tool_calls:
+                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
+                        yield f"{json.dumps(chunk_tool_call)}\n"
+                    elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
+                        for temp_token in first_tokens:
+                              time.sleep(0.1) # Simulate delay to stream previos tokens
+                              chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
+                              yield f"{json.dumps(chunk)}\n"
+
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
                     metrics["prompt_tokens"] = prompt_token_count
                     metrics["token_count"] = count
@@ -495,8 +557,7 @@ class GenerateEndpointHandler(EndpointHandler):
                                 "parsed": parsed_data,
                                 "cleaned_json": cleaned_json
                             }
-                    
-                    final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
+                    final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
                     yield f"{json.dumps(final_chunk)}\n"
                 
                 if not tokens_processed:
@@ -505,7 +566,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle complete generate response"""
         start_time = time.time()
         prompt_eval_time = None
@@ -523,6 +584,9 @@ class GenerateEndpointHandler(EndpointHandler):
                 
                 if count == 1:
                     prompt_eval_time = time.time()
+
+                    if enable_thinking and "<think>" not in token.lower():
+                        token = "<think>" + token # Ensure correct initial format
                 
                 complete_text += token
             
@@ -533,7 +597,8 @@ class GenerateEndpointHandler(EndpointHandler):
         metrics["token_count"] = count
         
         format_data = None
-        if format_spec and complete_text:
+        tool_calls = get_tool_calls(complete_text) if tools else None
+        if format_spec and complete_text and not tool_calls:
             if DEBUG_MODE:
                 logger.debug(f"Validating format for complete text: {complete_text[:300]}...")
                 if isinstance(format_spec, str):
@@ -603,7 +668,19 @@ class GenerateEndpointHandler(EndpointHandler):
                     "parsed": parsed_data,
                     "cleaned_json": cleaned_json
                 }
-        
+      
+
+        if tool_calls:
+           format_data = {
+                   "format_type" : "json",
+                   "parsed": "",
+                   "cleaned_json": "",
+                   "tool_call": tool_calls
+           }
+
+
+
+
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
         
         if DEBUG_MODE and format_data:

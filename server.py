@@ -869,6 +869,7 @@ def generate_ollama():
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
+        tools = data.get('tools', None)
         enable_thinking = data.get('enable_thinking', None)
         
         # Support format options for structured JSON output
@@ -916,6 +917,7 @@ def generate_ollama():
             stream=stream,
             format_spec=format_spec,
             options=options,
+            tools=tools,
             enable_thinking=enable_thinking
         )
     except Exception as e:

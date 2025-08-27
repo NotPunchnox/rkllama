@@ -412,9 +412,7 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
             continue
 
         try:
-            #print(line)
             ollama_chunk = json.loads(line)
-            #print
         except json.JSONDecodeError:
             continue
 
@@ -425,14 +423,15 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
         finish_reason = ollama_chunk.get("done_reason", None)
 
         delta = {}
-        if content_piece:
-            delta["content"] = content_piece
+        delta["content"] = content_piece
         if role:
             delta["role"] = role
         if tool_calls:
-            for tool in tool_calls:
+            for idx,tool in enumerate(tool_calls):
                 tool["id"] = f"call_{uuid.uuid4().hex}"
                 tool["type"] = "function"
+                tool["index"] = idx
+                tool["function"]["arguments"] = f"{str(tool["function"]["arguments"]).replace("'",'\"')}"
             delta["tool_calls"] = tool_calls
         
         chunk = {
@@ -447,7 +446,7 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
             }]
         }
 
-        yield f"{json.dumps(chunk)}\n\n"
+        yield f"data: {json.dumps(chunk)}\n\n"
 
         if ollama_chunk.get("done") is True:
             # Final chunk — stop streaming
@@ -456,14 +455,10 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": finish_reason #"stop"
-                }]
+                "choices": []
             }
-            yield f"{json.dumps(final_chunk)}\n\n"
-            yield "[DONE]\n\n"
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
             break
 
 def handle_ollama_response(response, stream=False):
@@ -493,7 +488,6 @@ def handle_ollama_response(response, stream=False):
         return stream_chunks()
     else:
         # Full JSON response
-        #ollama_response = response.json()
         ollama_response = json.loads(response.get_data().decode("utf-8"))
         return jsonify(ollama_to_openai_response(ollama_response))
 
