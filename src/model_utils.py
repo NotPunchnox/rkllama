@@ -456,3 +456,20 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
     return default_options
             
     
+def get_model_size(model_name) -> int:
+        """
+        Get the size of a model
+        """
+
+        # Get the models directory
+        models_dir = config.get_path("models")
+        model_path = os.path.join(models_dir, model_name)
+        
+        # check for the RKLLM file to get his size
+        if os.path.isdir(model_path):
+            for file in os.listdir(model_path):
+                if file.endswith(".rkllm"):
+                    size = os.path.getsize(os.path.join(model_path, file))
+                    return size
+        
+        return None

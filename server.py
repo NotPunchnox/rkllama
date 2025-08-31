@@ -1,24 +1,24 @@
 # Import libs
-import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser, json, threading, datetime, logging
+import sys, os, subprocess, resource, argparse, shutil, time, requests, json, datetime, logging
 import re
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
-from flask import Flask, request, jsonify, Response, stream_with_context, redirect , url_for
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
-from transformers import AutoTokenizer
 
 # Local file
 from src.classes import *
 from src.rkllm import *
 from src.process import Request
 import src.variables as variables
-from src.debug_utils import StreamDebugger, check_response_format
+from src.debug_utils import check_response_format
 from src.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
 from src.model_utils import (
     extract_model_details, 
     get_huggingface_model_info,
     get_property_modelfile, get_model_full_options, find_rkllm_model_name
 )
+from src.worker import WorkerManager
 
 # Import the config module
 import config
@@ -55,8 +55,9 @@ def print_color(message, color):
     }
     print(f"{colors.get(color, colors['reset'])}{message}{colors['reset']}")
 
-current_model = None  # Global variable for storing the loaded model
-modele_rkllm = None  # Model instance
+
+# loaded_models = [] # Global variable to store the models loaded into memory
+variables.worker_manager_rkllm = WorkerManager()
 
 
 def create_modelfile(huggingface_path, From, system="", model_name=None):
@@ -95,7 +96,6 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 """
 
     # Use config for models path
-    #path = os.path.join(config.get_path("models"), From.replace('.rkllm', ''))
     path = os.path.join(config.get_path("models"), model_name)
 
     # Create the directory if it doesn't exist
@@ -108,6 +108,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 
 
 def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None):
+    
     # Use config for models path
     model_dir = os.path.join(config.get_path("models"), model_name)
     
@@ -139,18 +140,17 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     if not request_options:
         request_options = get_model_full_options(model_name, config.get_path("models"), request_options)
 
-    try:
-        modele_rkllm = RKLLM(os.path.join(model_dir, from_value), model_dir, options=request_options)
-    except RuntimeError as e:
-        return None, str(e)
+    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, os.path.join(model_dir, from_value), model_dir, options=request_options)
+    
+    if not model_loaded:
+        return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
+    else:
+        return None, None
 
-    return modele_rkllm, None
+def unload_model(model_name):
+    # Relese the model from memory
+    variables.worker_manager_rkllm.stop_worker(model_name)
 
-def unload_model():
-    global modele_rkllm
-    if modele_rkllm:
-        modele_rkllm.release()
-        modele_rkllm = None
 
 app = Flask(__name__)
 # Enable CORS for all routes
@@ -196,18 +196,34 @@ def list_models():
 
 # Delete a model
 @app.route('/rm', methods=['DELETE'])
-def Rm_model():
+def rm_model():
     data = request.get_json(force=True)
     if "model" not in data:
         return jsonify({"error": "Please specify a model."}), 400
 
-    model_path = os.path.join(config.get_path("models"), data['model'])
+    model_name = data['model']
+
+    model_path = os.path.join(config.get_path("models"), model_name)
     if not os.path.exists(model_path):
-        return jsonify({"error": f"The model: {data['model']} cannot be found."}), 404
+        return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
-    os.remove(model_path)
+    # Check if model is currently loaded
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):   
+        if DEBUG_MODE:
+            logger.debug(f"Unloading model '{model_name}' before deletion")
+        unload_model(model_name)
+    
+    try:
+        if DEBUG_MODE:
+            logger.debug(f"Deleting model directory: {model_path}")
+        shutil.rmtree(model_path)
+        
+        return jsonify({"message": f"The model has been successfully deleted!"}), 200
+    except Exception as e:
+        logger.error(f"Failed to delete model '{model_name}': {str(e)}")
+        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
-    return jsonify({"message": f"The model has been successfully deleted!"}), 200
+    # os.remove(model_path)
 
 # route to pull a model
 @app.route('/pull', methods=['POST'])
@@ -220,13 +236,14 @@ def pull_model():
             return
 
         splitted = data["model"].split('/')
-        model_name = splitted[1] if "model_name" not in data else data["model_name"]
         if len(splitted) < 3:
             yield f"Error: Invalid path '{data['model']}'\n"
             return
 
+        # Check if custom name provided:
+        model_name = splitted[len(splitted)-1] if "model_name" not in data else data["model_name"]
         file = splitted[2]
-        repo = data["model"].replace(f"/{file}", "")
+        repo = f"{splitted[0]}/{splitted[1]}"
 
         try:
             # Use Hugging Face HfFileSystem to get the file metadata
@@ -239,7 +256,6 @@ def pull_model():
                 return
 
             # Use config to get models path
-            #model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
             model_dir = os.path.join(config.get_path("models"), model_name)
             os.makedirs(model_dir, exist_ok=True)
 
@@ -283,53 +299,113 @@ def pull_model():
 # Route for loading a model into the NPU
 @app.route('/load_model', methods=['POST'])
 def load_model_route():
-    global current_model, modele_rkllm
-
-    # Check if a model is currently loaded
-    if modele_rkllm:
-        return jsonify({"error": "A model is already loaded. Please unload it first."}), 400
-
+    
     data = request.get_json(force=True)
-    if "model_name" not in data:
+    model_name = data.get('model_name', None)
+    if model_name is None:
         return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
-
-    model_name = data["model_name"]
-
-    #print(data)
+    
+    # Check if a model is currently loaded
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+        return jsonify({"error": "A model is already loaded. Nothing to do."}), 200
 
     # Check if other params like "from" or "huggingface_path" for create modelfile
     if "from" in data or "huggingface_path" in data:
-        modele_rkllm, error = load_model(model_name, From=data["from"], huggingface_path=data["huggingface_path"])
+        _, error = load_model(model_name, From=data["from"], huggingface_path=data["huggingface_path"])
     else:
-        modele_rkllm, error = load_model(model_name)
+        _, error = load_model(model_name)
 
     if error:
         return jsonify({"error": error}), 400
 
-    current_model = model_name
     return jsonify({"message": f"Model {model_name} loaded successfully."}), 200
 
 # Route to unload a model from the NPU
 @app.route('/unload_model', methods=['POST'])
 def unload_model_route():
-    global current_model, modele_rkllm
+    
+    data = request.get_json(force=True)
+    model_name = data.get('model_name', None)
+    if model_name is None:
+        return jsonify({"error": "Please enter the name of the model to be unloaded."}), 400
+    
+    if not variables.worker_manager_rkllm.exists_model_loaded(model_name):   
+        return jsonify({"error": f"No model {model_name} are currently loaded."}), 400
 
-    if not modele_rkllm:
-        return jsonify({"error": "No models are currently loaded."}), 400
+    unload_model(model_name)
+    return jsonify({"message": f"Model {model_name} successfully unloaded!"}), 200
 
-    unload_model()
-    current_model = None
-    return jsonify({"message": "Model successfully unloaded!"}), 200
 
-# Route to retrieve the current model
-@app.route('/current_model', methods=['GET'])
-def get_current_model():
-    global current_model, modele_rkllm
+# Route to unload a model from the NPU
+@app.route('/unload_models', methods=['POST'])
+def unload_models_route():
+    variables.worker_manager_rkllm.stop_all
+    return jsonify({"message": "Models successfully unloaded!"}), 200
 
-    if current_model and modele_rkllm:
-        return jsonify({"model_name": current_model}), 200
-    else:
-        return jsonify({"error": "No models are currently loaded."}), 404
+# Route to retrieve the current models
+@app.route('/current_models', methods=['GET'])
+@app.route('/api/ps', methods=['GET'])
+def get_current_models():
+    
+    # Get the models info from Modelfile and HF
+    models_dir = config.get_path("models")
+    models_info = {}
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm"):
+                    size = os.path.getsize(os.path.join(subdir_path, file))
+                    
+                    # Extract parameter size and quantization details if available
+                    model_details = extract_model_details(file)
+                    
+                    models_info[subdir] = {
+                        "name": subdir,        # Use simplified name like qwen:3b
+                        "model": subdir,       # Match Ollama's format
+                        "modified_at": datetime.datetime.fromtimestamp(
+                            os.path.getmtime(os.path.join(subdir_path, file))
+                        ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "size": size,
+                        "digest": "",               # Ollama field (not used but included for compatibility)
+                        "details": {
+                            "format": "rkllm",
+                            "family": "llama",      # Default family
+                            "parameter_size": model_details.get("parameter_size", "Unknown"),
+                            "quantization_level": model_details.get("quantization_level", "Unknown")
+                        }
+                    }
+                    break
+
+    # Loop over the models currently running
+    models_running = []
+    for model in variables.worker_manager_rkllm.workers.keys():
+        worker_model_info = variables.worker_manager_rkllm.workers[model].worker_model_info
+        model_info = {
+                    "name": model,
+                    "model": model,
+                    "size": worker_model_info.size,
+                    "digest": models_info[model]["digest"],
+                    "details": {
+                        "parent_model": "",
+                        "format": models_info[model]["details"]["format"],
+                        "family": models_info[model]["details"]["family"],
+                        "families": [
+                            models_info[model]["details"]["family"]
+                        ],
+                        "parameter_size": models_info[model]["details"]["parameter_size"],
+                        "quantization_level": models_info[model]["details"]["quantization_level"]
+                    },
+                    "expires_at": worker_model_info.expires_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    "loaded_at": worker_model_info.loaded_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    "base_domain_id": worker_model_info.base_domain_id,
+                    "last_call": worker_model_info.last_call.strftime('%Y-%m-%d %H:%M:%S.%f')
+                    }
+        models_running.append(model_info)
+
+    return jsonify({ "models" : models_running}), 200
+    
+    
 
 # Route to make a request to the model
 @app.route('/generate', methods=['POST'])
@@ -344,6 +420,8 @@ def recevoir_message():
 
     variables.verrou.acquire()
     return Request(modele_rkllm, modelfile)
+
+
 
 # Ollama API compatibility routes
 
@@ -808,7 +886,7 @@ def create_model():
 def pull_model_ollama():
     # TODO: Implement the pull model
     data = request.get_json(force=True)
-    model = data.get('name')
+    model = data.get('name',data.get('model'))
     
     if DEBUG_MODE:
         logger.debug(f"API pull request data: {data}")
@@ -825,34 +903,29 @@ def pull_model_ollama():
 def delete_model_ollama():
     data = request.get_json(force=True)
     model_name = data.get('name')
-    
+
     if DEBUG_MODE:
         logger.debug(f"API delete request data: {data}")
 
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
 
-    if not model_name:
-        if DEBUG_MODE:
-            logger.error(f"Model '{model_name}' not found for deletion")
-        return jsonify({"error": f"Model '{model_name}' not found"}), 404
-    
     model_path = os.path.join(config.get_path("models"), model_name)
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
     # Check if model is currently loaded
-    if current_model == model_name:
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):   
         if DEBUG_MODE:
             logger.debug(f"Unloading model '{model_name}' before deletion")
-        unload_model()
+        unload_model(model_name)
     
     try:
         if DEBUG_MODE:
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
         
-        return jsonify({}), 200
+        return jsonify({"message": f"The model has been successfully deleted!"}), 200
     except Exception as e:
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
@@ -861,7 +934,6 @@ def delete_model_ollama():
 @app.route('/api/generate', methods=['POST'])
 @app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
-    global modele_rkllm, current_model
     
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
@@ -902,15 +974,11 @@ def generate_ollama():
         options = get_model_full_options(model_name, config.get_path("models"), options) 
 
         # Load model if needed
-        if current_model != model_name:
-            if current_model:
-                unload_model()
-            modele_instance, error = load_model(model_name, request_options=options)
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+            _, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-            modele_rkllm = modele_instance
-            current_model = model_name
-
+        
         # Acquire lock before processing
         variables.verrou.acquire()
         lock_acquired = True
@@ -918,7 +986,6 @@ def generate_ollama():
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
         from src.server_utils import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
-            modele_rkllm=modele_rkllm,
             model_name=model_name,
             prompt=prompt,
             system=system,
@@ -942,7 +1009,6 @@ def generate_ollama():
 @app.route('/api/chat', methods=['POST'])
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_ollama():
-    global modele_rkllm, current_model
     
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/chat/completions')
@@ -1007,62 +1073,55 @@ def chat_ollama():
                 logger.debug(f"Using system message: {system}")
         
         # Load model if needed
-        if current_model != model_name:
-            if current_model:
-                if DEBUG_MODE:
-                    logger.debug(f"Unloading current model: {current_model}")
-                unload_model()
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
             
             if DEBUG_MODE:
                 logger.debug(f"Loading model: {model_name}")
-            modele_instance, error = load_model(model_name, request_options=options)
+            _, error = load_model(model_name, request_options=options)
             if error:
                 if DEBUG_MODE:
                     logger.error(f"Failed to load model {model_name}: {error}")
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-            modele_rkllm = modele_instance
-            current_model = model_name
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
-        else:
-            # If model is already loaded, check its options are the same for the current request
-            if modele_rkllm.rkllm_param.max_context_len != int(options.get("num_ctx")) \
-                or modele_rkllm.rkllm_param.max_new_tokens != int(options.get("max_new_tokens")) \
-                or modele_rkllm.rkllm_param.top_k != int(options.get("top_k")) \
-                or round(modele_rkllm.rkllm_param.top_p,2) != round(float(options.get("top_p")),2) \
-                or round(modele_rkllm.rkllm_param.temperature,2) != round(float(options.get("temperature")),2) \
-                or round(modele_rkllm.rkllm_param.repeat_penalty,2) != round(float(options.get("repeat_penalty")),2) \
-                or round(modele_rkllm.rkllm_param.frequency_penalty,2) != round(float(options.get("frequency_penalty")),2) \
-                or round(modele_rkllm.rkllm_param.presence_penalty,2) != round(float(options.get("presence_penalty")),2) \
-                or modele_rkllm.rkllm_param.mirostat != int(options.get("mirostat")) \
-                or round(modele_rkllm.rkllm_param.mirostat_tau,2) != round(float(options.get("mirostat_tau")),2) \
-                or round(modele_rkllm.rkllm_param.mirostat_eta,2) != round(float(options.get("mirostat_eta")),2):
-            
-                # Update model parameters if they differ
-                if DEBUG_MODE:
-                    logger.debug(f"Updating model parameters for {model_name} with options: {options}")
-                
-                if current_model:
-                    if DEBUG_MODE:
-                        logger.debug(f"Unloading current model: {current_model}")
-                    unload_model()
-                
-                if DEBUG_MODE:
-                    logger.debug(f"Reoading model: {model_name}")
-                modele_instance, error = load_model(model_name, request_options=options)
-                if error:
-                    if DEBUG_MODE:
-                        logger.error(f"Failed to reload model {model_name}: {error}")
-                    return jsonify({"error": f"Failed to reload model '{model_name}': {error}"}), 500
-                modele_rkllm = modele_instance
-                current_model = model_name
-                if DEBUG_MODE:
-                    logger.debug(f"Model {model_name} reloaded successfully")
+        #else:
+        #    
+        #    rkllm_loaded = get_model_loaded_by_name(loaded_models,model_name)
+        #    rkllm_model_request = rkllm_loaded.model_rkllm
+        #    # If model is already loaded, check its options are the same for the current request
+        #    if rkllm_model_request.rkllm_param.max_context_len != int(options.get("num_ctx")) \
+        #        or rkllm_model_request.rkllm_param.max_new_tokens != int(options.get("max_new_tokens")) \
+        #        or rkllm_model_request.rkllm_param.top_k != int(options.get("top_k")) \
+        #        or round(rkllm_model_request.rkllm_param.top_p,2) != round(float(options.get("top_p")),2) \
+        #        or round(rkllm_model_request.rkllm_param.temperature,2) != round(float(options.get("temperature")),2) \
+        #        or round(rkllm_model_request.rkllm_param.repeat_penalty,2) != round(float(options.get("repeat_penalty")),2) \
+        #        or round(rkllm_model_request.rkllm_param.frequency_penalty,2) != round(float(options.get("frequency_penalty")),2) \
+        #        or round(rkllm_model_request.rkllm_param.presence_penalty,2) != round(float(options.get("presence_penalty")),2) \
+        #        or rkllm_model_request.rkllm_param.mirostat != int(options.get("mirostat")) \
+        #        or round(rkllm_model_request.rkllm_param.mirostat_tau,2) != round(float(options.get("mirostat_tau")),2) \
+        #        or round(rkllm_model_request.rkllm_param.mirostat_eta,2) != round(float(options.get("mirostat_eta")),2):
+        #    
+        #        # Update model parameters if they differ
+        #        if DEBUG_MODE:
+        #            logger.debug(f"Updating model parameters for {model_name} with options: {options}")
+        #        
+        #        unload_model(model_name)
+        #        
+        #        if DEBUG_MODE:
+        #            logger.debug(f"Reoading model: {model_name}")
+        #        modele_instance, error = load_model(model_name, request_options=options)
+        #        if error:
+        #            if DEBUG_MODE:
+        #                logger.error(f"Failed to reload model {model_name}: {error}")
+        #            return jsonify({"error": f"Failed to reload model '{model_name}': {error}"}), 500
+        #        rkllm_model_request = modele_instance
+        #        if DEBUG_MODE:
+        #            logger.debug(f"Model {model_name} reloaded successfully")
                 
         # Store format settings in model instance
-        if modele_rkllm:
-            modele_rkllm.format_schema = format_spec
-            modele_rkllm.format_options = options
+        #if rkllm_model_request:
+        #    rkllm_model_request.format_schema = format_spec
+        #    rkllm_model_request.format_options = options
         
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -1090,7 +1149,6 @@ def chat_ollama():
         # Process the request - this won't release the lock
         from src.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
-              modele_rkllm=modele_rkllm,
               model_name=model_name,
               messages=messages,
               system=system,
@@ -1136,18 +1194,73 @@ if DEBUG_MODE:
             }), 200
 
 @app.route('/api/embeddings', methods=['POST'])
+@app.route('/api/embed', methods=['POST'])
+@app.route('/v1/embeddings', methods=['POST'])
 def embeddings_ollama():
-    # This is a placeholder as embeddings aren't implemented in RKLLAMA
-    return jsonify({
-        "error": "Embeddings not supported in RKLLAMA"
-    }), 501
+    
+    lock_acquired = False  # Track lock status
+    is_openai_request = request.path.startswith('/v1/embeddings')
+
+    try:
+        data = request.get_json(force=True)
+        
+        if is_openai_request:
+           if DEBUG_MODE:
+              logger.debug(f"API OpenAI embedding request data: {data}")
+              # Parameter from OpenAI "encoding_format" not supported in Ollama
+        
+        model_name = data.get('model')
+        input_text = data.get('input', data.get('prompt', None)) # Include legacy deprecated api/embedding with prompt
+        truncate = data.get('truncate', True)
+        keep_alive = data.get('keep_alive', False)
+        options = data.get('options', {})
+        
+        if DEBUG_MODE:
+            logger.debug(f"API embedding request data: {data}")
+
+        if not model_name:
+            return jsonify({"error": "Missing model name"}), 400
+
+        if not input_text:
+            return jsonify({"error": "Missing input"}), 400
+
+        # Get all model options
+        options = get_model_full_options(model_name, config.get_path("models"), options) 
+
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+            _, error = load_model(model_name, request_options=options)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+        variables.verrou.acquire()
+        lock_acquired = True
+        
+        # DIRECTLY use the EmbedEndpointHandler instead of the process_ollama_generate_request wrapper
+        from src.server_utils import EmbedEndpointHandler
+        return EmbedEndpointHandler.handle_request(
+            model_name=model_name,
+            input_text=input_text,
+            truncate=truncate,
+            keep_alive=keep_alive,
+            options=options,
+            is_openai_request=is_openai_request
+        )
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error in embeddings_ollama: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            variables.verrou.release()
+
 
 # Version endpoint for Ollama API compatibility
 @app.route('/api/version', methods=['GET'])
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.5.1"
+        "version": "0.0.43"
     }), 200
 
 # Default route

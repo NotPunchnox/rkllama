@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.42](#New-Version)
+### [Version: 0.0.43](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -17,7 +17,7 @@ Video demo ( version 0.0.1 ):
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
-* Version `Lib rkllm-runtime`: V 1.2.1b1.
+* Version `Lib rkllm-runtime`: V 1.2.1.
 
 ## File Structure
 - **`./models`**: contains your rkllm models.
@@ -26,7 +26,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **`./client.py`**: Client to interact with the server.
 
 ## Supported Python Versions:
-- Python 3.8 to 3.12
+- Python 3.9 to 3.12
 
 ## Tested Hardware and Environment
 - **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
@@ -37,15 +37,32 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 
 ## Main Features
 - **Running models on NPU.**
-- **Partial Ollama API compatibility** - Primary support for `/api/chat` and `/api/generate` endpoints.
+- **Ollama API compatibility** - Support for:
+   * `/api/chat`
+   * `/api/generate`
+   * `/api/ps`
+   * `/api/tags`
+   * `/api/embed` (and legacy `/api/embeddings`)
+   * `/api/version` 
+   * `/api/pull` 
+- **Partial OpenAI API compatibility** - Support for:
+   * `/v1/completions`
+   * `/v1/chat/completions`
+   * `/v1/embeddings`
+ 
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
 - **Listing available models.**
-- **Dynamic loading and unloading of models.**
+- **Multiples RKLLM models running in memory simultaniusly (parallels executions between distintct models in stream mode, FIFO if non stream)**
+- **Dynamic loading and unloading of models:**
+    * Load the model after new request (if not in memory already)
+    * Unload when model expires after inactivity (default 30 min)
+    * Unload the oldest model in memory if new model is required to be loaded and there is not memory available in the server
+    * 
 - **Inference requests with streaming and non-streaming modes.**
 - **Message history.**
-- **Simplified model naming** - Use models with familiar names like "qwen2.5:3b".
+- **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
 
@@ -196,7 +213,7 @@ For complete documentation: [Tool Calling Guide](./documentation/api/tools.md)
 You can download and install a model from the Hugging Face platform with the following command:
 
 ```bash
-rkllama pull username/repo_id/model_file.rkllm
+rkllama pull username/repo_id/model_file.rkllm/custom_model_name
 ```
 
 Alternatively, you can run the command interactively:
@@ -205,6 +222,7 @@ Alternatively, you can run the command interactively:
 rkllama pull
 Repo ID ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4): <your response>
 File ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm): <your response>
+Custom Model Name ( example: tinyllama-chat:1.1b ): <your response>
 ```
 
 This will automatically download the specified model file and prepare it for use with RKLLAMA.
@@ -298,10 +316,7 @@ If you have already downloaded models and do not wish to reinstall everything, p
 ---
 
 ## Upcoming Features
-- OpenAI API compatible.
-- Ollama API improvements
 - Add multimodal models
-- Add embedding models
 - Add RKNN for onnx models (TTS, image classification/segmentation...)
 - `GGUF/HF to RKLLM` conversion software
 
@@ -326,3 +341,4 @@ System Monitor:
 *  [**ichlaffterlalu**](https://github.com/ichlaffterlalu): Contributed with a pull request for [Docker-Rkllama](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker) and fixed multiple errors.
 *  [**TomJacobsUK**](https://github.com/TomJacobsUK): Contributed with pull requests for Ollama API compatibility and model naming improvements, and fixed CPU detection errors.
 *  [**Yoann Vanitou**](https://github.com/yvanitou): Contributed with Docker implementation improvements and fixed merge conflicts.
+*  [**Daniel Ferreira**](https://github.com/danielferr85): Contributed with Tools Support, OpenAI API compatibility and multiload RKLLM models in memory. Also improvements and fixes.

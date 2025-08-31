@@ -497,6 +497,50 @@ def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
     return openai_completion_response
 
 
+def ollama_embedding_to_openai_v1_embeddingns(ollama_response: dict) -> dict:
+    """
+    Convert Ollama's /api/embed response to a fully OpenAI-compatible /v1/embedding response.
+
+    Args:
+        ollama_response (dict): Response from Ollama's /api/embed endpoint.
+
+    Returns:
+        dict: OpenAI-compatible /v1/embedding response.
+    """
+  
+    # Metadata
+    model = ollama_response.get("model", "unknown-model")
+
+    # Generated text
+    embeddings = ollama_response.get("embeddings", "")
+
+    # Build choice
+    data = {
+        "object": "embedding",
+        "embedding": [item for embedding in embeddings for item in embedding],
+        "index": 0
+    }
+
+    # Usage
+    usage = {}
+    if "prompt_eval_count" in ollama_response:
+        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
+    if usage:
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+
+    # Assemble OpenAI-style response
+    openai_completion_response = {
+        "object": "list",
+        "data": [data],
+        "model": model
+    }
+
+    if usage:
+        openai_completion_response["usage"] = usage
+
+    return openai_completion_response
+
+
 
 def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
     """
@@ -661,6 +705,24 @@ def handle_ollama_response(response, stream=False, is_chat=True):
             return jsonify(ollama_chat_to_openai_v1_chat_completion(ollama_response))
         else:
             return jsonify(ollama_generate_to_openai_v1_completion(ollama_response))
+
+
+
+def handle_ollama_embedding_response(response):
+    """
+    Handles an Ollama response and converts it into a single OpenAI-compatible JSON object 
+
+    Args:
+        response: `requests.Response` object from Ollama.
+
+    Returns:
+        dict | generator[str]: OpenAI-compatible embedding esponse.
+    """
+    # Full JSON response
+    ollama_response = json.loads(response.get_data().decode("utf-8"))
+
+    # CHeck if cht or generate response
+    return jsonify(ollama_embedding_to_openai_v1_embeddingns(ollama_response))
 
 
 def strtobool (val):

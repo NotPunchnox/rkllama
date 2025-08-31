@@ -61,6 +61,7 @@ class RKLLMParam(ctypes.Structure):
         ("img_end", ctypes.c_char_p),
         ("img_content", ctypes.c_char_p),
         ("extend_param", RKLLMExtendParam),
+        ("use_gpu", ctypes.c_bool),
     ]
 
 class RKLLMLoraAdapter(ctypes.Structure):
@@ -158,3 +159,6 @@ class RKLLMResult(ctypes.Structure):
         ("logits", RKLLMResultLogits),
         ("perf", RKLLMPerfStat)
     ]
+
+callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
+   

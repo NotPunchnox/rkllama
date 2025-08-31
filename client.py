@@ -34,7 +34,8 @@ def print_help():
     print(f"{YELLOW}pull hf/model/file.rkllm{RESET} : Downloads a model via a file from Hugging Face.")
     print(f"{YELLOW}rm model.rkllm{RESET}           : Remove the model.")
     print(f"{YELLOW}load model.rkllm{RESET}         : Loads a specific model.")
-    print(f"{YELLOW}unload{RESET}                   : Unloads the currently loaded model.")
+    print(f"{YELLOW}unload model.rkllm{RESET}       : Unloads a specific model.")
+    print(f"{YELLOW}ps{RESET}                       : List running models in the server.")
     print(f"{YELLOW}run{RESET}                      : Enters conversation mode with the model.")
     print(f"{YELLOW}exit{RESET}                     : Exits the program.")
 
@@ -73,6 +74,20 @@ def list_models():
     except requests.RequestException as e:
         print(f"{RED}Query error: {e}{RESET}")
 
+# Retrieves the list of running models in the server.
+def list_running_models():
+    try:
+        response = requests.get(API_URL + "api/ps")
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            print(f"{GREEN}{BOLD}Running models:{RESET}")
+            for model in models:
+                print(f"- {model}")
+        else:
+            print(f"{RED}Error retrieving running models: {response.status_code} - {response.text}{RESET}")
+    except requests.RequestException as e:
+        print(f"{RED}Query error: {e}{RESET}")
+
 
 # Loads a specific template on the server.
 def load_model(model_name, From=None, huggingface_path=None):
@@ -96,9 +111,9 @@ def load_model(model_name, From=None, huggingface_path=None):
 
 
 # Unloads the currently loaded model.
-def unload_model():
+def unload_model(model_name):
     try:
-        response = requests.post(API_URL + "unload_model")
+        response = requests.post(API_URL + "unload_model", json={"model_name": model_name})
         if response.status_code == 200:
             print(f"{GREEN}{BOLD}Model successfully unloaded.{RESET}")
         else:
@@ -108,7 +123,7 @@ def unload_model():
 
 
 # Sends a message to the loaded model and displays the response.
-def send_message(message):
+def send_message(model, message):
     global HISTORY
 
     HISTORY.append({"role": "user", "content": message})
@@ -117,6 +132,7 @@ def send_message(message):
     #     print(HISTORY)
 
     payload = {
+        "model" : model,
         "messages": HISTORY,
         "stream": STREAM_MODE
     }
@@ -124,7 +140,7 @@ def send_message(message):
 
     try:
         if STREAM_MODE:
-            with requests.post(API_URL + "generate", json=payload, stream=True) as response:
+            with requests.post(API_URL + "v1/chat/completions", json=payload, stream=True) as response:
                 
                 if response.status_code == 200:
                     print(f"{CYAN}{BOLD}Assistant:{RESET} ", end="")
@@ -139,13 +155,17 @@ def send_message(message):
                     for line in response.iter_lines(decode_unicode=True):
                         if line:
                             try:
-                                response_json = json.loads(line)
-                                final_json = response_json
+                                json_line_striped = line.removeprefix("data: ").strip()
+                                if json_line_striped != "[DONE]":
+                                    response_json = json.loads(json_line_striped) 
+                                    
+                                    final_json = response_json
 
-                                content_chunk = response_json["choices"][0]["content"]
-                                sys.stdout.write(content_chunk)
-                                sys.stdout.flush()
-                                assistant_message += content_chunk
+                                    if len(response_json["choices"]) > 0 and "delta" in response_json["choices"][0].keys():
+                                        content_chunk = response_json["choices"][0]["delta"]["content"]
+                                        sys.stdout.write(content_chunk)
+                                        sys.stdout.flush()
+                                        assistant_message += content_chunk
                             except json.JSONDecodeError:
                                 print(f"{RED}Error detecting JSON response.{RESET}")
 
@@ -164,11 +184,11 @@ def send_message(message):
                     print(f"{RED}Streaming error: {response.status_code} - {response.text}{RESET}")
 
         else:
-            response = requests.post(API_URL + "generate", json=payload)
+            response = requests.post(API_URL + "v1/chat/completions", json=payload)
             if response.status_code == 200:
+                
                 response_json = response.json()
-                assistant_message = response_json["choices"][0]["content"]
-
+                assistant_message = response_json["choices"][0]["message"]["content"]
                 print(f"{CYAN}{BOLD}Assistant:{RESET} {assistant_message}")
 
                 if VERBOSE == True:
@@ -184,32 +204,9 @@ def send_message(message):
     except requests.RequestException as e:
         print(f"{RED}Query error: {e}{RESET}")
 
-# Function to change model if the old model loaded is not the same one to execute
-def switch_model(new_model):
-    response = requests.get(API_URL + "current_model")
-    if response.status_code == 200:
-        current_model = response.json().get("model_name")
-
-        if current_model:
-            print(f"{YELLOW}Unloading the current model: {current_model}{RESET}")
-            unload_model()
-
-    if not load_model(new_model):
-        print(f"{RED}Unable to load model {new_model}.{RESET}")
-        return False
-
-    return True
-
 # Function for remove model
 def remove_model(model):
-    response = requests.get(API_URL + "current_model")
-    if response.status_code == 200:
-        current_model = response.json().get("model_name")
-        if current_model == model:
-            print(f"{YELLOW}Unloading the current model before deletion: {current_model}{RESET}")
-            unload_model()
-
-    response_rm = requests.delete(API_URL + "remove", json={"model": model})
+    response_rm = requests.delete(API_URL + "rm", json={"model": model})
 
     if response_rm.status_code == 200:
         print(f"{GREEN}The model has been successfully deleted!{RESET}")
@@ -222,8 +219,11 @@ def pull_model(model):
         repo = input(f"{CYAN}Repo ID{RESET} ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4 ): ")
         filename = input(f"{CYAN}File{RESET} ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm ): ")
         model_name = input(f"{CYAN}Custom Model Name{RESET} ( example: tinyllama-chat:1.1b ): ")
-
-        model = repo + "/" + filename
+        # Construct the repo and filename of the model choosed
+        model = repo.strip() + "/" + filename.strip()
+    else:
+        # Received format: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4/TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm/tinyllama-chat:1.1b
+        model, model_name = model.rsplit("/", 1)
 
     try:
         response = requests.post(API_URL + "pull", json={"model": model, "model_name": model_name}, stream=True)
@@ -259,7 +259,7 @@ def pull_model(model):
 
 
 # Interactive function for chatting with the model.
-def chat():
+def chat(model):
     global VERBOSE, STREAM_MODE, HISTORY, PREFIX_MESSAGE
     os.system("clear")
     print_help_chat()
@@ -295,7 +295,7 @@ def chat():
             print(f"{GREEN}System message successfully modified!")
         else:
             # If content is not a command, then send content to template
-            send_message(user_input)
+            send_message(model, user_input)
 
 def update():
     setup_path = os.path.join(config.get_path(), 'setup.sh')
@@ -425,16 +425,20 @@ def main():
             load_model(sys.argv[2])
 
     elif command == "unload":
-        unload_model()
+        if len(sys.argv) < 3:
+            print(f"{RED}Error: You must specify the model name.{RESET}")
+        else:
+            unload_model(sys.argv[2])
+    elif command == "ps":
+        list_running_models()
 
     elif command == "run":
-        if len(sys.argv) == 3:
-            if not switch_model(sys.argv[2]):
-                return
-        elif len(sys.argv) >= 4:
-            load_model(sys.argv[2], sys.argv[3], sys.argv[4])
-
-        chat()
+        if len(sys.argv) < 3:
+            print(f"{RED}Error: You must specify the model name to chat.{RESET}")
+            return
+        elif len(sys.argv) == 3:
+            if load_model(sys.argv[2]):
+                chat(sys.argv[2])
             
     elif command == "rm":
         if len(sys.argv) < 3:
