@@ -1,10 +1,12 @@
 import threading
 from config import is_debug_mode
+from src.worker import WorkerManager
 
 isLocked = False
-global_status = -1
-global_text = []
-split_byte_data = bytes(b"")
+
+# Worker variables
+worker_manager_rkllm = WorkerManager()
+
 
 verrou = threading.Lock()
 

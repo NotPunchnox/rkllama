@@ -275,7 +275,7 @@ def validate_format_response(text, format_spec):
     return True, parsed_data, None, json_text
 
 
-def openai_to_ollama_request(openai_payload: dict) -> dict:
+def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
     """
     Translate an OpenAI /v1/chat/completions request payload to Ollama /api/chat format.
 
@@ -324,7 +324,56 @@ def openai_to_ollama_request(openai_payload: dict) -> dict:
     return ollama_payload
 
 
-def ollama_to_openai_response(ollama_response: dict) -> dict:
+def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
+    """
+    Translate an OpenAI /v1/completions request payload to Ollama /api/generate format.
+    Args:
+        openai_payload (dict): OpenAI request payload for /v1/completions.
+    Returns:
+        dict: Ollama-compatible /api/generate request payload.
+    """
+    # Handle "prompt": could be a string or an array
+    prompt = openai_payload.get("prompt", "")
+    if isinstance(prompt, list):
+        # Join multi-part array into a single string
+        prompt = "\n".join([str(part) for part in prompt])
+    
+    model = openai_payload.get("model", "llama3")
+    stream = openai_payload.get("stream", False)
+
+    # Base Ollama payload
+    ollama_payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": stream,
+    }
+
+    # Supported Ollama option mappings
+    supported_option_mappings = {
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "top_k": "top_k",
+        "presence_penalty": "presence_penalty",
+        "frequency_penalty": "frequency_penalty",
+        "stop": "stop",
+        "max_tokens": "max_new_tokens",  # OpenAI max_tokens => Ollama max_new_tokens
+        "seed": "seed",
+        "logit_bias": "logit_bias",  # If supported by your Ollama deployment
+    }
+
+    for openai_key, ollama_key in supported_option_mappings.items():
+        if openai_key in openai_payload:
+            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
+
+    # Pass through extra non-standard fields for forward compatibility (optional)
+    for passthrough_key in ["n", "best_of", "logprobs", "echo", "user"]:
+        if passthrough_key in openai_payload:
+            ollama_payload[passthrough_key] = openai_payload[passthrough_key]
+
+    return ollama_payload
+
+
+def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     """
     Convert Ollama's chat response to a fully OpenAI-compatible /v1/chat/completions response.
     
@@ -393,7 +442,107 @@ def ollama_to_openai_response(ollama_response: dict) -> dict:
 
     return openai_response
 
-def ollama_stream_to_openai_chunks(ollama_stream_lines):
+
+
+def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
+    """
+    Convert Ollama's /api/generate response to a fully OpenAI-compatible /v1/completions response.
+
+    Args:
+        ollama_response (dict): Response from Ollama's /api/generate endpoint.
+
+    Returns:
+        dict: OpenAI-compatible /v1/completions response.
+    """
+
+    # Metadata
+    completion_id = f"cmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    model = ollama_response.get("model", "unknown-model")
+
+    # Generated text
+    content = ollama_response.get("response", "")
+
+    # Finish reason
+    finish_reason = ollama_response.get("done_reason", "stop" if ollama_response.get("done", True) else None)
+
+    # Build choice
+    choice = {
+        "text": content,
+        "index": 0,
+        "logprobs": None,
+        "finish_reason": finish_reason
+    }
+
+    # Usage
+    usage = {}
+    if "prompt_eval_count" in ollama_response:
+        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
+    if "eval_count" in ollama_response:
+        usage["completion_tokens"] = ollama_response["eval_count"]
+    if usage:
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+
+    # Assemble OpenAI-style response
+    openai_completion_response = {
+        "id": completion_id,
+        "object": "text_completion",
+        "created": created,
+        "model": model,
+        "choices": [choice]
+    }
+    if usage:
+        openai_completion_response["usage"] = usage
+
+    return openai_completion_response
+
+
+def ollama_embedding_to_openai_v1_embeddingns(ollama_response: dict) -> dict:
+    """
+    Convert Ollama's /api/embed response to a fully OpenAI-compatible /v1/embedding response.
+
+    Args:
+        ollama_response (dict): Response from Ollama's /api/embed endpoint.
+
+    Returns:
+        dict: OpenAI-compatible /v1/embedding response.
+    """
+  
+    # Metadata
+    model = ollama_response.get("model", "unknown-model")
+
+    # Generated text
+    embeddings = ollama_response.get("embeddings", "")
+
+    # Build choice
+    data = {
+        "object": "embedding",
+        "embedding": [item for embedding in embeddings for item in embedding],
+        "index": 0
+    }
+
+    # Usage
+    usage = {}
+    if "prompt_eval_count" in ollama_response:
+        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
+    if usage:
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+
+    # Assemble OpenAI-style response
+    openai_completion_response = {
+        "object": "list",
+        "data": [data],
+        "model": model
+    }
+
+    if usage:
+        openai_completion_response["usage"] = usage
+
+    return openai_completion_response
+
+
+
+def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
     """
     Converts an iterable of Ollama stream JSON lines to OpenAI SSE streaming chunks.
 
@@ -412,9 +561,7 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
             continue
 
         try:
-            #print(line)
             ollama_chunk = json.loads(line)
-            #print
         except json.JSONDecodeError:
             continue
 
@@ -425,14 +572,15 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
         finish_reason = ollama_chunk.get("done_reason", None)
 
         delta = {}
-        if content_piece:
-            delta["content"] = content_piece
+        delta["content"] = content_piece
         if role:
             delta["role"] = role
         if tool_calls:
-            for tool in tool_calls:
+            for idx,tool in enumerate(tool_calls):
                 tool["id"] = f"call_{uuid.uuid4().hex}"
                 tool["type"] = "function"
+                tool["index"] = idx
+                tool["function"]["arguments"] = f"{str(tool["function"]["arguments"]).replace("'",'\"')}"
             delta["tool_calls"] = tool_calls
         
         chunk = {
@@ -447,7 +595,7 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
             }]
         }
 
-        yield f"{json.dumps(chunk)}\n\n"
+        yield f"data: {json.dumps(chunk)}\n\n"
 
         if ollama_chunk.get("done") is True:
             # Final chunk — stop streaming
@@ -456,17 +604,69 @@ def ollama_stream_to_openai_chunks(ollama_stream_lines):
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": finish_reason #"stop"
-                }]
+                "choices": []
             }
-            yield f"{json.dumps(final_chunk)}\n\n"
-            yield "[DONE]\n\n"
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
             break
 
-def handle_ollama_response(response, stream=False):
+
+def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
+    """
+    Converts an iterable of Ollama stream JSON lines to OpenAI SSE streaming chunks.
+
+    Args:
+        ollama_stream_lines (iterable[str]): Streamed JSON lines from Ollama.
+
+    Yields:
+        str: OpenAI-compatible `data: ...\n\n` formatted SSE chunks.
+    """
+
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    for line in ollama_stream_lines:
+        line = str(line).strip()
+        if not line or line.startswith("data:"):
+            continue
+
+        try:
+            ollama_chunk = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        content_piece = ollama_chunk.get("response", "")
+        model = ollama_chunk.get("model", "unknown-model")
+        finish_reason = ollama_chunk.get("done_reason", None)
+
+        chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "text": content_piece,
+                "finish_reason": finish_reason
+            }]
+        }
+
+        yield f"data: {json.dumps(chunk)}\n\n"
+
+        if ollama_chunk.get("done") is True:
+            # Final chunk — stop streaming
+            final_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": []
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+            break
+
+
+def handle_ollama_response(response, stream=False, is_chat=True):
     """
     Handles an Ollama response and converts it into either:
     - a single OpenAI-compatible JSON object (non-streaming), or
@@ -489,13 +689,40 @@ def handle_ollama_response(response, stream=False):
                     raw = raw.decode("utf-8")
                 raw = raw.strip()
                 if raw:
-                    yield from ollama_stream_to_openai_chunks([raw])
+                    # CHeck if cht or generate response
+                    if is_chat:
+                        yield from ollama_chat_stream_to_openai_chat_completions_chunks([raw])
+                    else:
+                        yield from ollama_generate_stream_to_openai_completions_chunks([raw])
+                        
         return stream_chunks()
     else:
         # Full JSON response
-        #ollama_response = response.json()
         ollama_response = json.loads(response.get_data().decode("utf-8"))
-        return jsonify(ollama_to_openai_response(ollama_response))
+
+        # CHeck if cht or generate response
+        if is_chat:
+            return jsonify(ollama_chat_to_openai_v1_chat_completion(ollama_response))
+        else:
+            return jsonify(ollama_generate_to_openai_v1_completion(ollama_response))
+
+
+
+def handle_ollama_embedding_response(response):
+    """
+    Handles an Ollama response and converts it into a single OpenAI-compatible JSON object 
+
+    Args:
+        response: `requests.Response` object from Ollama.
+
+    Returns:
+        dict | generator[str]: OpenAI-compatible embedding esponse.
+    """
+    # Full JSON response
+    ollama_response = json.loads(response.get_data().decode("utf-8"))
+
+    # CHeck if cht or generate response
+    return jsonify(ollama_embedding_to_openai_v1_embeddingns(ollama_response))
 
 
 def strtobool (val):

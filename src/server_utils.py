@@ -1,4 +1,3 @@
-import threading
 import json
 import time
 import datetime
@@ -8,7 +7,7 @@ import re  # Add import for regex used in JSON extraction
 import src.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
-from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response
+from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response
 
 import config
 
@@ -45,34 +44,16 @@ class EndpointHandler:
         tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
-        
-        #print(messages)
-        #print("-" * 50)
-        #prepared_messages = []
-        #for message in messages:
-        #    all_contents = ""
-        #    for content in message.get("content", []):
-        #        if isinstance(content, str):
-        #            content = content.strip()
-        #            if content:
-        #                all_contents = all_contents + "\n" +message["content"]
-        #        elif isinstance(content, dict):
-        #                if "text" in content:
-        #                    content["text"] = content["text"].strip()
-        #                    if content["text"]:
-        #                        all_contents = all_contents + "\n" + content["text"]
-        #    prepared_messages.append({"role": message["role"], "content": all_contents})
-        
         if system and supports_system_role:
-            #prompt_messages = [{"role": "system", "content": system}] + prepared_messages #messages
             prompt_messages = [{"role": "system", "content": system}] + messages
         else:
             prompt_messages = messages
         
         prompt_tokens = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=True, add_generation_prompt=True, enable_thinking=enable_thinking)
-        
+
         return tokenizer, prompt_tokens, len(prompt_tokens)
     
+
     @staticmethod
     def calculate_durations(start_time, prompt_eval_time, current_time=None):
         """Calculate duration metrics for responses"""
@@ -157,7 +138,7 @@ class ChatEndpointHandler(EndpointHandler):
         return response
         
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False):
+    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False):
         """Process a chat request with proper format handling"""
         
         original_system = variables.system
@@ -179,12 +160,12 @@ class ChatEndpointHandler(EndpointHandler):
             
             # Ollama request handling 
             if stream:
-                ollama_chunk = cls.handle_streaming(modele_rkllm, model_name, prompt_tokens, 
+                ollama_chunk = cls.handle_streaming(model_name, prompt_tokens, 
                                           prompt_token_count, format_spec, tools, enable_thinking)
                 if is_openai_request:
 
                     # Use unified handler
-                    result = handle_ollama_response(ollama_chunk, stream=stream)
+                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=True)
 
                     # Convert Ollama streaming response to OpenAI format
                     ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
@@ -192,25 +173,29 @@ class ChatEndpointHandler(EndpointHandler):
                 # Return Ollama streaming response
                 return ollama_chunk
             else:
-                ollama_response, code =  cls.handle_complete(modele_rkllm, model_name, prompt_tokens, 
+                ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, 
                                          prompt_token_count, format_spec, tools, enable_thinking)
                 
                 if is_openai_request:
-                    # Convert Ollama streaming response to OpenAI format
-                    ollama_response = handle_ollama_response(ollama_response, stream=stream)
+                    # Convert Ollama response to OpenAI format
+                    ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=True)
 
-                # Return Ollama streaming response
+                # Return Ollama response
                 return ollama_response, code
 
         finally:
             variables.system = original_system
             
     @classmethod
-    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
+    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle streaming chat response"""
+
+        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+
+
         def generate():
-            thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-            thread_model.start()
             
             count = 0
             start_time = time.time()
@@ -223,35 +208,43 @@ class ChatEndpointHandler(EndpointHandler):
             # Tool calls detection
             max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
             tool_calls = False
-            first_tokens = []
-            thinking = enable_thinking
-            final_response_tokens = []
             
+            # Thinking variables
+            thinking = enable_thinking
+            response_tokens = [] # All tokens from response
+            thinking_response_tokens = [] # Thinking tokens from response
+            final_response_tokens = [] # Final answer tokens from response
+            
+
             while not thread_finished or not final_sent:
-                tokens_processed = False
-                
-                while len(variables.global_text) > 0:
-                    tokens_processed = True
+                token = result_q.get()  # Block until receive any token
+                if token == finished_inference_token:
+                    thread_finished = True
+            
+                if not thread_finished:
                     count += 1
-                    token = variables.global_text.pop(0)
                     
                     if count == 1:
                         prompt_eval_time = time.time()
                         
                         if thinking and "<think>" not in token.lower():
+                            thinking_response_tokens.append(token)
                             token = "<think>" + token # Ensure correct initial format token <think>
                     else:
-                        if thinking and "</think>" in token.lower():
-                            thinking = False
+                        if thinking:
+                            if "</think>" in token.lower():
+                                thinking = False
+                            else:
+                                thinking_response_tokens.append(token)        
                     
                     complete_text += token
-                    first_tokens.append(token)
+                    response_tokens.append(token)
 
                     if not thinking and token != "</think>": 
                         final_response_tokens.append(token)
                     
                     if not tool_calls:
-                        if len(final_response_tokens) > max_token_to_wait_for_tool_call:
+                        if len(final_response_tokens) > max_token_to_wait_for_tool_call or not tools:
                             if variables.global_status != 1:
                                 chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
                                 yield f"{json.dumps(chunk)}\n"
@@ -259,7 +252,8 @@ class ChatEndpointHandler(EndpointHandler):
                                 pass
                         elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
                             if variables.global_status != 1:
-                                for temp_token in first_tokens:
+                                
+                                for temp_token in response_tokens:
                                     time.sleep(0.1) # Simulate delay to stream previos tokens
                                     chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
                                     yield f"{json.dumps(chunk)}\n"
@@ -269,24 +263,27 @@ class ChatEndpointHandler(EndpointHandler):
                             if variables.global_status != 1:
                                 # Check if tool call founded in th first tokens in the response
                                 tool_calls = "<tool_call>" in token
+                                
                             else:
                                 pass 
-                
-                thread_model.join(timeout=0.005)
-                thread_finished = not thread_model.is_alive()
-                
+            
                 if thread_finished and not final_sent:
                     final_sent = True
 
+                    # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
+                    if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                        json_tool_calls = get_tool_calls("".join(final_response_tokens))
+                        if not tool_calls and json_tool_calls:
+                            tool_calls = True
+
                     if tool_calls:
-                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=get_tool_calls(complete_text), tool_calls=tool_calls)
+                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
                         yield f"{json.dumps(chunk_tool_call)}\n"
-                    elif count < max_token_to_wait_for_tool_call: 
-                        for temp_token in first_tokens:
+                    elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
+                        for temp_token in response_tokens:
                               time.sleep(0.1) # Simulate delay to stream previos tokens
                               chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
                               yield f"{json.dumps(chunk)}\n"
-
 
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
                     metrics["prompt_tokens"] = prompt_token_count
@@ -307,41 +304,40 @@ class ChatEndpointHandler(EndpointHandler):
                             }
                     final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
                     yield f"{json.dumps(final_chunk)}\n"
-                
-                if not tokens_processed:
-                    time.sleep(0.01)
                     
         return Response(generate(), content_type='application/x-ndjson')
     
 
     @classmethod
-    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
+    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
         """Handle complete non-streaming chat response"""
+        
         start_time = time.time()
         prompt_eval_time = None
-        
-        thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-        thread_model.start()
+        thread_finished = False
         
         count = 0
         complete_text = ""
     
-        
-        while thread_model.is_alive() or len(variables.global_text) > 0:
-            while len(variables.global_text) > 0:
-                count += 1
-                token = variables.global_text.pop(0)
-                time.sleep(0.005)
-                
-                if count == 1:
-                    prompt_eval_time = time.time()
+        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
-                    if enable_thinking and "<think>" not in token.lower():
-                        token = "<think>" + token # Ensure correct initial format
-                
-                complete_text += token
+
+        while not thread_finished:
+            token = result_q.get()  # Block until receive any token
+            if token == finished_inference_token:
+                thread_finished = True
+                continue
             
-            thread_model.join(timeout=0.005)
+            count += 1
+            if count == 1:
+                prompt_eval_time = time.time()
+
+                if enable_thinking and "<think>" not in token.lower():
+                    token = "<think>" + token # Ensure correct initial format
+            
+            complete_text += token
         
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
         metrics["prompt_tokens"] = prompt_token_count
@@ -378,7 +374,7 @@ class GenerateEndpointHandler(EndpointHandler):
     """Handler for /api/generate endpoint requests"""
     
     @staticmethod
-    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None):
+    def format_streaming_chunk(model_name, token, is_final=False, metrics=None, format_data=None, tool_calls=None):
         """Format a streaming chunk for generate endpoint"""
         chunk = {
             "model": model_name,
@@ -387,8 +383,13 @@ class GenerateEndpointHandler(EndpointHandler):
             "done": is_final
         }
         
+        if tool_calls:
+            chunk["message"]["content"] = ""
+            if not is_final:
+               chunk["message"]["tool_calls"] = token
+
         if is_final:
-            chunk["done_reason"] = "stop"
+            chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
                     "total_duration": metrics["total"],
@@ -398,7 +399,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     "eval_count": metrics.get("token_count", 0),
                     "eval_duration": metrics["eval"]
                 })
-                
+
         return chunk
     
     @staticmethod
@@ -423,7 +424,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None, enable_thinking=False):
+    def handle_request(cls, model_name, prompt, system="", stream=True, format_spec=None, options=None,enable_thinking=False, is_openai_request=False):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
@@ -445,42 +446,69 @@ class GenerateEndpointHandler(EndpointHandler):
                         logger.debug(f"Adding format instruction to prompt: {format_instruction}")
                     messages[0]["content"] += format_instruction
             
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system, enable_thinking=enable_thinking)
+            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system,enable_thinking=enable_thinking)
             
+            
+            # Ollama request handling 
             if stream:
-                return cls.handle_streaming(modele_rkllm, model_name, prompt_tokens, 
-                                          prompt_token_count, format_spec)
+                ollama_chunk = cls.handle_streaming(model_name, prompt_tokens, 
+                                          prompt_token_count, format_spec, enable_thinking)
+                if is_openai_request:
+
+                    # Use unified handler
+                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=False)
+
+                    # Convert Ollama streaming response to OpenAI format
+                    ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
+                
+                # Return Ollama streaming response
+                return ollama_chunk
             else:
-                return cls.handle_complete(modele_rkllm, model_name, prompt_tokens, 
-                                         prompt_token_count, format_spec)
+                ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, 
+                                         prompt_token_count, format_spec, enable_thinking)
+                
+                if is_openai_request:
+                    # Convert Ollama response to OpenAI format
+                    ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=False)
+
+                # Return Ollama response
+                return ollama_response, code
+            
         finally:
             variables.system = original_system
     
     @classmethod
-    def handle_streaming(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking):
         """Handle streaming generate response"""
+
+        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+
+
         def generate():
-            thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-            thread_model.start()
             
             count = 0
             start_time = time.time()
             prompt_eval_time = None
             complete_text = ""
             final_sent = False
-            
+
             thread_finished = False
-            
+ 
             while not thread_finished or not final_sent:
-                tokens_processed = False
-                
-                while len(variables.global_text) > 0:
-                    tokens_processed = True
+                token = result_q.get()  # Block until receive any token
+                if token == finished_inference_token:
+                    thread_finished = True
+            
+                if not thread_finished:
                     count += 1
-                    token = variables.global_text.pop(0)
-                    
+
+
                     if count == 1:
                         prompt_eval_time = time.time()
+                        if enable_thinking and "<think>" not in token.lower():
+                            token = "<think>" + token # Ensure correct initial format token <think>
                     
                     complete_text += token
                     
@@ -489,9 +517,6 @@ class GenerateEndpointHandler(EndpointHandler):
                         yield f"{json.dumps(chunk)}\n"
                     else:
                         pass
-                
-                thread_model.join(timeout=0.005)
-                thread_finished = not thread_model.is_alive()
                 
                 if thread_finished and not final_sent:
                     final_sent = True
@@ -517,34 +542,38 @@ class GenerateEndpointHandler(EndpointHandler):
                     final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
                     yield f"{json.dumps(final_chunk)}\n"
                 
-                if not tokens_processed:
-                    time.sleep(0.01)
                     
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, modele_rkllm, model_name, prompt_tokens, prompt_token_count, format_spec):
+    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking):
         """Handle complete generate response"""
+
         start_time = time.time()
         prompt_eval_time = None
-        
-        thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-        thread_model.start()
+        thread_finished = False
         
         count = 0
         complete_text = ""
         
-        while thread_model.is_alive() or len(variables.global_text) > 0:
-            while len(variables.global_text) > 0:
-                count += 1
-                token = variables.global_text.pop(0)
-                
-                if count == 1:
-                    prompt_eval_time = time.time()
-                
-                complete_text += token
+        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+
+        while not thread_finished:
+            token = result_q.get()  # Block until receive any token
+            if token == finished_inference_token:
+                thread_finished = True
+                continue
             
-            thread_model.join(timeout=0.005)
+            count += 1
+            if count == 1:
+                prompt_eval_time = time.time()
+
+                if enable_thinking and "<think>" not in token.lower():
+                    token = "<think>" + token # Ensure correct initial format
+            
+            complete_text += token
         
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
         metrics["prompt_tokens"] = prompt_token_count
@@ -621,7 +650,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     "parsed": parsed_data,
                     "cleaned_json": cleaned_json
                 }
-        
+
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
         
         if DEBUG_MODE and format_data:
@@ -630,26 +659,67 @@ class GenerateEndpointHandler(EndpointHandler):
         return jsonify(response), 200
 
 
-def process_ollama_chat_request(modele_rkllm, model_name, messages, system="", stream=True, format_spec=None, options=None):
-    """Process /api/chat request with correct format"""
-    return ChatEndpointHandler.handle_request(
-        modele_rkllm=modele_rkllm,
-        model_name=model_name,
-        messages=messages,
-        system=system,
-        stream=stream,
-        format_spec=format_spec,
-        options=options
-    )
 
-def process_ollama_generate_request(modele_rkllm, model_name, prompt, system="", stream=True, format_spec=None, options=None):
-    """Process /api/generate request with correct format"""
-    return GenerateEndpointHandler.handle_request(
-        modele_rkllm=modele_rkllm,
-        model_name=model_name,
-        prompt=prompt,
-        system=system,
-        stream=stream,
-        format_spec=format_spec,
-        options=options
-    )
+class EmbedEndpointHandler(EndpointHandler):
+    """Handler for /api/embed endpoint requests"""
+    
+    @staticmethod
+    def format_complete_response(model_name, complete_embedding, metrics, format_data=None):
+        """Format a complete non-streaming response for generate endpoint"""
+        response = {
+            "model": model_name,
+            "embeddings": complete_embedding,
+            "total_duration": metrics["total"],
+            "load_duration": metrics["load"],
+            "prompt_eval_count": metrics.get("prompt_tokens", 0)
+        }
+        
+        return response
+    
+    @classmethod
+    def handle_request(cls, model_name, input_text, truncate=True, keep_alive=None, options=None, is_openai_request=False):
+        """Process a generate request with proper format handling"""
+
+        if DEBUG_MODE:
+            logger.debug(f"EmbedEndpointHandler: processing request for {model_name}")
+        
+        variables.global_status = -1
+
+        # Create the prompts
+        _, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=input_text)
+
+        # Ollama request handling 
+        ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, prompt_token_count)
+        
+        if is_openai_request:
+            # Convert Ollama response to OpenAI format
+            ollama_response = handle_ollama_embedding_response(ollama_response)
+
+        # Return Ollama response
+        return ollama_response, code
+    
+    
+    @classmethod
+    def handle_complete(cls, model_name, input_tokens, prompt_token_count):
+        """Handle complete embedding response"""
+
+        start_time = time.time()
+        prompt_eval_time = None
+        
+        # Send the task of embedding to the model
+        variables.worker_manager_rkllm.embedding(model_name, input_tokens)
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+
+        # Wait for the last_embedding hidden layer return
+        embeddings = result_q.get()  
+        
+        # Calculate metrics
+        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+        metrics["prompt_tokens"] = prompt_token_count
+        
+        # Format response
+        response = cls.format_complete_response(model_name, embeddings.tolist(), metrics, None)
+        
+        # Return response
+        return jsonify(response), 200
+    

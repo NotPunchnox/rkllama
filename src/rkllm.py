@@ -1,17 +1,13 @@
 import ctypes
 from .classes import *
-from .callback import *
 import logging, multiprocessing
+import numpy as np
 
 logger = logging.getLogger("rkllama.rkllm")
 
-# Connect the callback function between Python and C++
-callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
-callback = callback_type(callback_impl)
-
 # Define the RKLLM class, which includes initialization, inference, and release operations for the RKLLM model in the dynamic library
 class RKLLM(object):
-    def __init__(self, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None):
+    def __init__(self, callback, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 1):
         
         logger.debug(f"Initializing RKLLM model from {model_path} with options: {options}")
 
@@ -20,6 +16,9 @@ class RKLLM(object):
         self.format_type = None
         self.format_options = {}
         self.model_dir = model_dir
+        
+        # Multi Load model attributes
+        self.base_domain_id = base_domain_id
         
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
@@ -40,6 +39,8 @@ class RKLLM(object):
         self.rkllm_param.skip_special_token = True
         self.rkllm_param.n_keep = 0
         self.rkllm_param.is_async = False
+        self.rkllm_param.use_gpu = True
+
 
         # For Image MultiModal Models
         self.rkllm_param.img_start = "".encode('utf-8')
@@ -47,14 +48,14 @@ class RKLLM(object):
         self.rkllm_param.img_content = "".encode('utf-8')
 
         # Extend parameters for RKLLM
-        self.rkllm_param.extend_param.base_domain_id = 0
+        self.rkllm_param.extend_param.base_domain_id = self.base_domain_id
         self.rkllm_param.extend_param.embed_flash = 1
         self.rkllm_param.extend_param.n_batch = 1
         self.rkllm_param.extend_param.use_cross_attn = 0
-        self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
-        self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
-        #self.rkllm_param.extend_param.enabled_cpus_num = 4                                     # Better for RK3588
-        #self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)  # Better for RK3588
+        #self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
+        #self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
+        self.rkllm_param.extend_param.enabled_cpus_num = 4                                     # Better for RK3588
+        self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)  # Better for RK3588
         
         
         # Initialization of the RKLLM model
@@ -82,6 +83,10 @@ class RKLLM(object):
         self.rkllm_destroy = rkllm_lib.rkllm_destroy
         self.rkllm_destroy.argtypes = [RKLLM_Handle_t]
         self.rkllm_destroy.restype = ctypes.c_int
+
+        self.rkllm_clear_kv_cache = rkllm_lib.rkllm_clear_kv_cache
+        self.rkllm_clear_kv_cache.argtypes = [RKLLM_Handle_t, ctypes.c_int , ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int) ]
+        self.rkllm_clear_kv_cache.restype = ctypes.c_int
 
         self.rkllm_abort = rkllm_lib.rkllm_abort
 
@@ -113,9 +118,9 @@ class RKLLM(object):
 
         self.rkllm_infer_params = RKLLMInferParam()
         ctypes.memset(ctypes.byref(self.rkllm_infer_params), 0, ctypes.sizeof(RKLLMInferParam))
-        self.rkllm_infer_params.mode = RKLLMInferMode.RKLLM_INFER_GENERATE
         self.rkllm_infer_params.lora_params = ctypes.pointer(self.rkllm_lora_params) if self.rkllm_lora_params else None
         self.rkllm_infer_params.keep_history = 0
+
 
         self.prompt_cache_path = None
         if prompt_cache_path:
@@ -131,21 +136,42 @@ class RKLLM(object):
     def tokens_to_ctypes_array(self, tokens, ctype):
         return (ctype * len(tokens))(*tokens)
 
-
     def set_function_tools(self, system_prompt, tools, tool_response_str):
         if self.tools is None or not self.tools == tools:
             self.tools = tools
             self.set_function_tools_(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(tools.encode('utf-8')),  ctypes.c_char_p(tool_response_str.encode('utf-8')))
 
-    def run(self, prompt_tokens):
-        if prompt_tokens[-1] != 2:  
-            prompt_tokens.append(2)
-        token_array = (ctypes.c_int * len(prompt_tokens))(*prompt_tokens)
+    def run(self, *param):
         
+        # Get the arguments
+        inference_mode, model_input_type, input = param
+
+        # Define the input object
         rkllm_input = RKLLMInput()
-        rkllm_input.input_type = RKLLMInputType.RKLLM_INPUT_TOKEN
-        rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))
-        rkllm_input.input_data.token_input.n_tokens = ctypes.c_size_t(len(prompt_tokens))
+        rkllm_input.input_type = model_input_type
+
+        # Set the inference mode
+        self.rkllm_infer_params.mode = inference_mode
+        
+        # CHeck the model type to construct parameters
+        if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
+            token_input = input
+            if token_input[-1] != 2:  
+                token_input.append(2)
+            token_array = (ctypes.c_int * len(token_input))(*token_input)
+            
+            rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))
+            rkllm_input.input_data.token_input.n_tokens = ctypes.c_size_t(len(token_input))
+            
+        elif model_input_type == RKLLMInputType.RKLLM_INPUT_EMBED:
+            embed_input = input
+            num_tokens, embd_size = embed_input.shape
+
+            flat = embed_input.ravel().astype(np.float32)
+            embed_array = (ctypes.c_float * flat.size)(*flat)
+ 
+            rkllm_input.input_data.embed_input.embed = ctypes.cast(embed_array, ctypes.POINTER(ctypes.c_float))
+            rkllm_input.input_data.embed_input.n_tokens = ctypes.c_size_t(num_tokens)
         
         # Run the RKLLM model with the input
         self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
@@ -156,5 +182,3 @@ class RKLLM(object):
     
     def release(self):
         self.rkllm_destroy(self.handle)
-
-        
