@@ -861,6 +861,13 @@ def get_tool_calls(response):
 
 
 def expand_to_square(img, background_color=(127.5, 127.5, 127.5)):
+    """Expand an image to a square by adding borders with the specified background color.
+    Args:
+        img: Input image as a numpy array (HWC).
+        background_color: Tuple of 3 values for BGR background color.
+    Returns:
+        Squared image as a numpy array (HWC).
+    """
     h, w = img.shape[:2]
     if h == w:
         return img.copy()
@@ -880,20 +887,28 @@ def expand_to_square(img, background_color=(127.5, 127.5, 127.5)):
 
 
 def prepare_image(image_path, width, height) -> np.ndarray:
+    """ Load and preprocess an image for model input.
+        Args:
+            image_path: Path, URL, or Base64 string of the image.
+            width: Target width.
+            height: Target height.
+        Returns:
+            Preprocessed image as a numpy array (HWC, uint8).
+    """
     # Read image
-        img = load_image(image_path)  # BGR
-        if img is None:
-            raise FileNotFoundError(image_path)
+    img = load_image(image_path)  # BGR
+    if img is None:
+        raise FileNotFoundError(image_path)
+    
+    # Preprocess Image 
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    square = expand_to_square(img, background_color=(127.5,127.5,127.5))
+    resized = cv2.resize(square, (width, height), interpolation=cv2.INTER_LINEAR)
+    if resized.dtype != np.uint8:
+        resized = resized.astype(np.uint8)
         
-        # Preprocess Image 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        square = expand_to_square(img, background_color=(127.5,127.5,127.5))
-        resized = cv2.resize(square, (width, height), interpolation=cv2.INTER_LINEAR)
-        if resized.dtype != np.uint8:
-            resized = resized.astype(np.uint8)
-            
-        resized = np.ascontiguousarray(resized, dtype=np.uint8)
-        return resized
+    resized = np.ascontiguousarray(resized, dtype=np.uint8)
+    return resized
 
 
 def load_image(source: str):
@@ -919,7 +934,7 @@ def load_image(source: str):
             img_array = np.frombuffer(response.content, np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
-            print("Error loading from URL:", e)
+            logger.error("Error loading from URL:", e)
     
     # Case 3: Base64
     else:
@@ -931,6 +946,6 @@ def load_image(source: str):
             img_array = np.frombuffer(img_data, np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
-            print("Error loading from Base64:", e)
+            logger.error("Error loading from Base64:", e)
     
     return img

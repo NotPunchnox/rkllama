@@ -459,6 +459,10 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
 def get_model_size(model_name) -> int:
     """
     Get the size of a model
+    Args:
+        model_name: The name of the model directory
+    Returns:
+        The size of the model in bytes or None if not found
     """
 
     # Get the models directory
@@ -476,8 +480,20 @@ def get_model_size(model_name) -> int:
 
 
 def read_data_from_file(path: str) -> bytes:
-        with open(path, "rb") as f:
-            return f.read()
+    """
+    Read binary data from a file.
+    Args:
+       path: The path to the file
+    Returns:
+       The binary data read from the file 
+    """
+    # Ensure the file exists
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"File not found: {path}")
+    
+    # Read and return the binary data
+    with open(path, "rb") as f:
+        return f.read()
 
 
 
@@ -504,6 +520,7 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
                 encoder_filename = file
                 break
     
+    # Return the full path if found
     if encoder_filename:
         return os.path.join(model_path, encoder_filename)
     else:

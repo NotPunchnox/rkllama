@@ -41,6 +41,7 @@ class RKLLM(object):
         self.rkllm_param.is_async = False
         self.rkllm_param.use_gpu = True
 
+
         # For Image MultiModal Models
         self.rkllm_param.img_start = "<|vision_start|>".encode('utf-8');
         self.rkllm_param.img_end = "<|vision_end|>".encode('utf-8');

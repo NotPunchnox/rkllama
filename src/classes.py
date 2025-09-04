@@ -1,8 +1,6 @@
 import ctypes
 import os
 import config
-import enum
-
 
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
@@ -194,11 +192,6 @@ RKNN_QUERY_CURRENT_OUTPUT_ATTR = 15                    # query the current shape
 RKNN_QUERY_CURRENT_NATIVE_INPUT_ATTR = 16              # query the current native shape of rknn input tensor only valid for dynamic rknn model
 RKNN_QUERY_CURRENT_NATIVE_OUTPUT_ATTR = 17             # query the current native shape of rknn output tensor only valid for dynamic rknn model
 
-
-
-RKNN_NPU_CORE_AUTO = 0
-RKNN_NPU_CORE_0_1 = 3
-RKNN_NPU_CORE_0_1_2 = 7
 
 RKNN_NPU_CORE_AUTO = 0                                       # default, run on NPU core randomly. 
 RKNN_NPU_CORE_0 = 1                                          # run on NPU core 0. 

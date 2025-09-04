@@ -938,22 +938,6 @@ def delete_model_ollama():
 @app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
     
-    """from src.rknn import RKNN
-    try:
-        prompt = "What is in this image?"
-        model_dir2 = "/home/orangepi/qwen2VL/Qwen2-VL-Streamlit-App-with-RKLLM/models/Qwen2-VL-2B-RKLLM"
-        rknn_model = RKNN(model_path = os.path.join(model_dir2, "Qwen2-VL-2B-Instruct.rknn"), core_num=3, base_domain_id = 0)
-        
-        try:
-            rknn_model.run("/home/orangepi/qwen2VL/Qwen2-VL-Streamlit-App-with-RKLLM/data/demo.jpg")
-        finally:
-            rknn_model.stop()
-        return jsonify({"message": f"success"}), 200
-    except Exception as e:
-        logger.error(f"Failed to delete model : {str(e)}")
-        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
-    """
-
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
 

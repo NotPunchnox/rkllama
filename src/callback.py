@@ -21,7 +21,6 @@ def callback_impl(result, userdata, status):
         print("Execution Error")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
-
         # Sauvegarder le texte du token de sortie et l'status d'execution de RKLLM
         global_status = status
         # Check if result or result.contents or result.contents.text is None
@@ -80,5 +79,4 @@ def callback_impl(result, userdata, status):
         except Exception as e:
             print(f"\nError processing callback: {str(e)}", end='')
             
-        sys.stdout.flush()
-        
+        sys.stdout.flush()    
