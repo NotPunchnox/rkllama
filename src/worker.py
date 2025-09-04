@@ -449,6 +449,11 @@ class WorkerManager:
             # Prepare the image input embed for multimodal
             image_embed  =  self.get_image_embed(model_name, images)
 
+            # Check if the image was encoded correctly
+            if image_embed is None:
+                # Error encoding the image. Return
+                raise RuntimeError(f"Unexpected error encoding image for model : {model_name}")
+            
             # Prepare all the inputs for the multimodal inference
             model_input = (prompt_input, image_embed, IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT)
 
@@ -474,8 +479,12 @@ class WorkerManager:
             base_domain_id = self.get_available_base_domain_id(reverse_order=True)
             
             # Get the path of the vision encoder model
-            #model_encoder_path = "/home/orangepi/github/danielferr85/rkllama/models/qwen2-vision:2b/Qwen2-VL-2B-Instruct.rknn"
             model_encoder_path = get_encoder_model_path(model_name)
+
+            # Check if the encoder model is available
+            if model_encoder_path is None:
+                # No vision encoder model available for this RKLLM model
+                raise RuntimeError(f"No encoder model (.rknn) found for : {model_name}")
 
             # Get the image path/base64/url from the request
             image_path = images[0]  # For now, only one image supported
