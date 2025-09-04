@@ -457,19 +457,54 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
             
     
 def get_model_size(model_name) -> int:
-        """
-        Get the size of a model
-        """
+    """
+    Get the size of a model
+    """
 
-        # Get the models directory
-        models_dir = config.get_path("models")
-        model_path = os.path.join(models_dir, model_name)
-        
-        # check for the RKLLM file to get his size
-        if os.path.isdir(model_path):
-            for file in os.listdir(model_path):
-                if file.endswith(".rkllm"):
-                    size = os.path.getsize(os.path.join(model_path, file))
-                    return size
-        
+    # Get the models directory
+    models_dir = config.get_path("models")
+    model_path = os.path.join(models_dir, model_name)
+    
+    # check for the RKLLM file to get his size
+    if os.path.isdir(model_path):
+        for file in os.listdir(model_path):
+            if file.endswith(".rkllm"):
+                size = os.path.getsize(os.path.join(model_path, file))
+                return size
+    
+    return None
+
+
+def read_data_from_file(path: str) -> bytes:
+        with open(path, "rb") as f:
+            return f.read()
+
+
+
+def get_encoder_model_path(model_name: str) -> Union[str, None]:
+    """
+    Get the path of the vision encoder model if exists.
+    
+    Args:
+        model_name: The name of the model directory
+    
+    Returns:
+        The path to the vision encoder model or None if not found
+    """
+    # Get the models directory
+    models_dir = config.get_path("models")
+    model_path = os.path.join(models_dir, model_name)
+    
+    # check for the RKNN file
+    encoder_filename = None
+    if os.path.isdir(model_path):
+        for file in os.listdir(model_path):
+            if file.endswith(".rknn"):
+                size = os.path.getsize(os.path.join(model_path, file))
+                encoder_filename = file
+                break
+    
+    if encoder_filename:
+        return os.path.join(model_path, encoder_filename)
+    else:
         return None

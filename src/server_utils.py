@@ -138,7 +138,7 @@ class ChatEndpointHandler(EndpointHandler):
         return response
         
     @classmethod
-    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False):
+    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False, images=None):
         """Process a chat request with proper format handling"""
         
         original_system = variables.system
@@ -156,12 +156,28 @@ class ChatEndpointHandler(EndpointHandler):
                             messages[i]["content"] += format_instruction
                             break
             
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, tools, enable_thinking)
             
+            # If Multimodal request, do not use tokenizer
+            prompt_tokens = None
+            prompt_token_count = None
+            if not images:    
+                # Create the prompts tokens for text only requests
+                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, tools, enable_thinking)
+            
+            else:
+                if DEBUG_MODE:
+                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+                
+                for message in messages:
+                    if "images" in message:
+                        message.pop("images")  # Remove images from messages to avoid context length reach with base64 images
+                prompt_tokens = f"<image>{str(messages)}"
+                prompt_token_count = 0
+
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, prompt_tokens, 
-                                          prompt_token_count, format_spec, tools, enable_thinking)
+                                          prompt_token_count, format_spec, tools, enable_thinking, images)
                 if is_openai_request:
 
                     # Use unified handler
@@ -174,7 +190,7 @@ class ChatEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, 
-                                         prompt_token_count, format_spec, tools, enable_thinking)
+                                         prompt_token_count, format_spec, tools, enable_thinking,images)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -187,10 +203,21 @@ class ChatEndpointHandler(EndpointHandler):
             variables.system = original_system
             
     @classmethod
-    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
+    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking, images=None):
         """Handle streaming chat response"""
 
-        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+
+            # Clear the cache of the model to avoid issues with multimodal
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+        
+        # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
@@ -309,7 +336,7 @@ class ChatEndpointHandler(EndpointHandler):
     
 
     @classmethod
-    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking):
+    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking, images=None):
         """Handle complete non-streaming chat response"""
         
         start_time = time.time()
@@ -319,7 +346,15 @@ class ChatEndpointHandler(EndpointHandler):
         count = 0
         complete_text = ""
     
-        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+        
+        # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
@@ -424,7 +459,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, model_name, prompt, system="", stream=True, format_spec=None, options=None,enable_thinking=False, is_openai_request=False):
+    def handle_request(cls, model_name, prompt, system="", stream=True, format_spec=None, options=None,enable_thinking=False, is_openai_request=False, images=None):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
@@ -445,14 +480,24 @@ class GenerateEndpointHandler(EndpointHandler):
                     if DEBUG_MODE:
                         logger.debug(f"Adding format instruction to prompt: {format_instruction}")
                     messages[0]["content"] += format_instruction
+
             
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system,enable_thinking=enable_thinking)
-            
-            
+            # If Multimodal request, do not use tokenizer
+            prompt_tokens = None
+            prompt_token_count = None
+            if not images:    
+                # Create the prompts tokens for text only requests
+                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system,enable_thinking=enable_thinking)
+            else:
+                if DEBUG_MODE:
+                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+                prompt_tokens = f"<image>{prompt}"
+                prompt_token_count = 0
+
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, prompt_tokens, 
-                                          prompt_token_count, format_spec, enable_thinking)
+                                          prompt_token_count, format_spec, enable_thinking, images)
                 if is_openai_request:
 
                     # Use unified handler
@@ -465,7 +510,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, 
-                                         prompt_token_count, format_spec, enable_thinking)
+                                         prompt_token_count, format_spec, enable_thinking, images)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -478,10 +523,17 @@ class GenerateEndpointHandler(EndpointHandler):
             variables.system = original_system
     
     @classmethod
-    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking):
+    def handle_streaming(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking, images=None):
         """Handle streaming generate response"""
 
-        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+        # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
@@ -546,7 +598,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking):
+    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking, images=None):
         """Handle complete generate response"""
 
         start_time = time.time()
@@ -556,7 +608,14 @@ class GenerateEndpointHandler(EndpointHandler):
         count = 0
         complete_text = ""
         
-        variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+        # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 

@@ -6,7 +6,7 @@ from multiprocessing import Process, Queue
 import time
 import threading
 from datetime import datetime, timedelta
-from.model_utils import get_model_size
+from.model_utils import get_model_size, get_encoder_model_path
 import psutil
 import config
 from operator import attrgetter
@@ -18,9 +18,39 @@ logger = logging.getLogger("rkllama.worker")
 WORKER_TASK_UNLOAD_MODEL = "UNLOAD"
 WORKER_TASK_EMBEDDING = "EMBEDDING"
 WORKER_TASK_INFERENCE = "INFERENCE"
+WORKER_TASK_VISION_ENCODER = "VISION_ENCODER"
 WORKER_TASK_FINISHED = "<RKLLM_TASK_FINISHED>"
 WORKER_TASK_ERROR = "<RKLLM_TASK_ERROR>"
 WORKER_TASK_ABORT_INFERENCE = "ABORT"
+WORKER_TASK_CLEAR_CACHE = "CLEAR_CACHE"
+
+def run_encoder(model_input, rknn_queue):
+    """
+    Run the vision encoder to get the image embedding
+    Args:
+        model_input (tuple): (model_encoder_path, core_mask, base_domain_id, image_path)
+        rknn_queue (Queue): Queue to return the image embedding
+    Returns:
+        np.ndarray: Image embedding
+    """
+
+    from .rknn import RKNN
+                
+    # Get the image path/base64/URL
+    model_encoder_path, core_mask, base_domain_id, image = model_input
+
+    # Init encoder
+    rknn_model = RKNN(model_encoder_path, core_mask, base_domain_id)
+    
+    # Encode the images
+    img_encoded = rknn_model.run(image)
+
+    # Stop the encoder    
+    rknn_model.stop()
+
+    # Send the encoded image to the main process
+    rknn_queue.put(img_encoded)
+
 
 
 # Worker 
@@ -43,7 +73,7 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
         while True:
             
             # Get the instruction to the worker
-            task ,inference_mode, model_input_type, model_input = task_queue.get()
+            task,inference_mode, model_input_type, model_input = task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -57,6 +87,11 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
 
                 # Abort the inference of the model
                 model_rkllm.abort()
+
+            elif task == WORKER_TASK_CLEAR_CACHE:
+
+                # CLear the cache of the model
+                model_rkllm.clear_cache()
 
             elif task == WORKER_TASK_INFERENCE:
 
@@ -101,6 +136,26 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
                     # Send the embedding shapes of the input
                     result_queue.put(last_embeddings[0])
             
+            elif task == WORKER_TASK_VISION_ENCODER:
+
+                # Run the vision encoder to get the image embedding
+                rknn_queue = Queue()
+
+                # Define the process for the encoder
+                rknn_process = Process(target=run_encoder, args=(model_input,rknn_queue,))
+
+                # Start the encoder worker
+                rknn_process.start() 
+
+                # Get the encoded image from the queue
+                img_encoded = rknn_queue.get()
+
+                # Terminate the process encoder after use
+                rknn_process.terminate()
+
+                # Send the encoded image 
+                result_queue.put(img_encoded)
+
             else:
                 result_queue.put(f"Unknown task: {task}")
                 # Send final signal of the inference
@@ -156,17 +211,33 @@ class WorkerManager:
             self.stop_worker(model_name)
 
 
-    def get_available_base_domain_id(self) -> int | None:
+    def get_available_base_domain_id(self, reverse_order=False) -> int | None:
         """
         Returns the smallest available integer between 1 and 10
         that is not already used as 'base_domain_id' in the current list of worker process.
         If all numbers from 1 to 10 are taken, returns None.
+
+        Args:
+            reverse_order (bool): If true, search from the highest to the lowest.
+        
+        Returns:
+            int | None: The available base_domain_id or None if all are taken.
         """
         # Get all used base domain ids
         used_base_domain_ids = [self.workers[model].worker_model_info.base_domain_id for model in self.workers.keys()]
 
+        # Get the max id of a domain base:
+        max_domain_id = config.get("model", "max_number_models_loaded_in_memory")
+
+        if reverse_order:
+            # CHeck fir available from the highest to the lowest
+            candidates_range = range(max_domain_id, 0, -1)
+        else:
+            # CHeck first available from the lowest to the highest  
+            candidates_range = range(1, max_domain_id)
+        
         # CHeck fir available
-        for candidate in range(1, config.get("model", "max_number_models_loaded_in_memory")):
+        for candidate in candidates_range:
             if candidate not in used_base_domain_ids:
                 return candidate
         return None
@@ -315,6 +386,21 @@ class WorkerManager:
             self.stop_worker(model_name)
 
 
+    def clear_cache_worker(self, model_name):
+        """
+        Clear the KV chache of a model worker
+        
+        Args:
+            model_name (str): Workers to clear cache.
+
+        """
+        if model_name in self.workers.keys():
+            # Get the queue of tasks of the worker
+
+            # Send the abort task of the model if currently is running some inference
+            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE,None,None))
+
+
     def inference(self, model_name, model_input):
         """
         Send a inference task to the corresponding model worker
@@ -343,6 +429,73 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))        
             
     
+    def multimodal(self, model_name, prompt_input, images):
+        """
+        Send a inference task to the corresponding model worker for multimodal input
+        
+        Args:
+            model_name (str): Model name to invoke
+            prompt_input (str): Input of the model
+            image_embed (np.ndarray): Image embedding
+            n_image_tokens (int): Number of image tokens
+            image_width (int): Width of the image
+            image_height (int): Height of the image
+
+        """
+
+        from .rknn import IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT
+        if model_name in self.workers.keys():
+
+            # Prepare the image input embed for multimodal
+            image_embed  =  self.get_image_embed(model_name, images)
+
+            # Prepare all the inputs for the multimodal inference
+            model_input = prompt_input, image_embed, IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT
+
+            # Send the inference task
+            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+
+
+    def get_image_embed(self, model_name, images) -> None:
+        """
+        Send a vision encoder task to the corresponding model worker
+        
+        Args:
+            model_name (str): Model name to invoke
+            image_path (str): Path of the image to encode
+
+        """
+        if model_name in self.workers.keys():
+
+            # Specify the RKNN core to use to encode the image
+            core_mask = RKNN_NPU_CORE_ALL # All cores available
+            
+            # Find a temporally base domain id to load the encoder Model
+            base_domain_id = self.get_available_base_domain_id(reverse_order=True)
+            
+            # Get the path of the vision encoder model
+            #model_encoder_path = "/home/orangepi/github/danielferr85/rkllama/models/qwen2-vision:2b/Qwen2-VL-2B-Instruct.rknn"
+            model_encoder_path = get_encoder_model_path(model_name)
+
+            # Get the image path/base64/url from the request
+            image_path = images[0]  # For now, only one image supported
+            
+            # Prepare the input for the vision encoder
+            model_input = (model_encoder_path, core_mask, base_domain_id, image_path)
+
+            # Send the Encoder task of the image
+            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
+
+            # Wait to confirm output of the image encoder
+            image_embed  = self.workers[model_name].result_q.get()
+
+            if isinstance(image_embed, str) and image_embed ==  WORKER_TASK_ERROR:
+                # Error ENcoding the image. Return
+                return None
+     
+            # Return the image encoded
+            return image_embed;       
+
     def get_finished_inference_token(self):
         """
         Return the finish token for inference task
@@ -390,7 +543,7 @@ class Worker:
 
         if creation_status == WORKER_TASK_ERROR:
             # Error loading the RKLLM Model. Wait for the worker to exit
-            self.process.join()
+            self.process.terminate()
             return False
         
         # Success loading the model

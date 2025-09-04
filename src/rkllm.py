@@ -41,21 +41,20 @@ class RKLLM(object):
         self.rkllm_param.is_async = False
         self.rkllm_param.use_gpu = True
 
-
         # For Image MultiModal Models
-        self.rkllm_param.img_start = "".encode('utf-8')
-        self.rkllm_param.img_end = "".encode('utf-8')
-        self.rkllm_param.img_content = "".encode('utf-8')
+        self.rkllm_param.img_start = "<|vision_start|>".encode('utf-8');
+        self.rkllm_param.img_end = "<|vision_end|>".encode('utf-8');
+        self.rkllm_param.img_content = "<|image_pad|>".encode('utf-8');
 
         # Extend parameters for RKLLM
         self.rkllm_param.extend_param.base_domain_id = self.base_domain_id
         self.rkllm_param.extend_param.embed_flash = 1
         self.rkllm_param.extend_param.n_batch = 1
         self.rkllm_param.extend_param.use_cross_attn = 0
-        #self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
-        #self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
-        self.rkllm_param.extend_param.enabled_cpus_num = 4                                     # Better for RK3588
-        self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)  # Better for RK3588
+        self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
+        self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
+        #self.rkllm_param.extend_param.enabled_cpus_num = 4                                     # Better for RK3588
+        #self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)  # Better for RK3588
         
         
         # Initialization of the RKLLM model
@@ -173,6 +172,21 @@ class RKLLM(object):
             rkllm_input.input_data.embed_input.embed = ctypes.cast(embed_array, ctypes.POINTER(ctypes.c_float))
             rkllm_input.input_data.embed_input.n_tokens = ctypes.c_size_t(num_tokens)
         
+        elif model_input_type == RKLLMInputType.RKLLM_INPUT_MULTIMODAL:
+            prompt_input, image_embed, n_image_tokens, image_width, image_height = input
+
+            # Prompt
+            rkllm_input.input_data.multimodal_input.prompt = prompt_input.encode("utf-8")
+            
+            # Image Embedding
+            arr = image_embed.flatten().astype(np.float32)
+            rkllm_input.input_data.multimodal_input.image_embed = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+            rkllm_input.input_data.multimodal_input.n_image_tokens = ctypes.c_size_t(n_image_tokens)
+            rkllm_input.input_data.multimodal_input.n_image = ctypes.c_size_t(1)
+            rkllm_input.input_data.multimodal_input.image_width = ctypes.c_size_t(image_width)
+            rkllm_input.input_data.multimodal_input.image_height = ctypes.c_size_t(image_height)
+        
+
         # Run the RKLLM model with the input
         self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
         return
@@ -180,5 +194,8 @@ class RKLLM(object):
     def abort(self):
         return self.rkllm_abort(self.handle)
     
+    def clear_chache(self):
+        return self.rkllm_clear_kv_cache(self.handle, 0, None, None)
+
     def release(self):
         self.rkllm_destroy(self.handle)

@@ -7,6 +7,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 wget curl sudo git build-essential \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
+
 # Install RKNPU driver
 RUN cd /tmp \
     && git clone https://github.com/rockchip-linux/rknpu.git \

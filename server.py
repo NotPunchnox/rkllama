@@ -6,6 +6,7 @@ from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 
+
 # Local file
 from src.classes import *
 from src.rkllm import *
@@ -126,6 +127,7 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
+    vision_encoder = os.getenv("VISION_ENCODER")
 
     # View config Vars
     print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
@@ -140,8 +142,9 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     if not request_options:
         request_options = get_model_full_options(model_name, config.get_path("models"), request_options)
 
+    # Model loaded into memory
     model_loaded = variables.worker_manager_rkllm.add_worker(model_name, os.path.join(model_dir, from_value), model_dir, options=request_options)
-    
+
     if not model_loaded:
         return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
     else:
@@ -935,6 +938,22 @@ def delete_model_ollama():
 @app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
     
+    """from src.rknn import RKNN
+    try:
+        prompt = "What is in this image?"
+        model_dir2 = "/home/orangepi/qwen2VL/Qwen2-VL-Streamlit-App-with-RKLLM/models/Qwen2-VL-2B-RKLLM"
+        rknn_model = RKNN(model_path = os.path.join(model_dir2, "Qwen2-VL-2B-Instruct.rknn"), core_num=3, base_domain_id = 0)
+        
+        try:
+            rknn_model.run("/home/orangepi/qwen2VL/Qwen2-VL-Streamlit-App-with-RKLLM/data/demo.jpg")
+        finally:
+            rknn_model.stop()
+        return jsonify({"message": f"success"}), 200
+    except Exception as e:
+        logger.error(f"Failed to delete model : {str(e)}")
+        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
+    """
+
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
 
@@ -950,7 +969,8 @@ def generate_ollama():
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
-        enable_thinking = data.get('enable_thinking', None)
+        enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
+        images = data.get('images', None)  # For multimodal inputs
         
         # Support format options for structured JSON output
         format_spec = data.get('format')
@@ -993,7 +1013,8 @@ def generate_ollama():
             format_spec=format_spec,
             options=options,
             enable_thinking=enable_thinking,
-            is_openai_request=is_openai_request
+            is_openai_request=is_openai_request,
+            images=images
         )
     except Exception as e:
         if DEBUG_MODE:
@@ -1026,7 +1047,7 @@ def chat_ollama():
         system = data.get('system', '')
         stream = data.get('stream', True)
         tools = data.get('tools', None)
-        enable_thinking = data.get('enable_thinking', None)
+        enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
         
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
@@ -1064,7 +1085,15 @@ def chat_ollama():
                 # Don't add system message to filtered messages
             else:
                 filtered_messages.append(message)
+                # CHeck for images in user messages for multimodal
+                if message.get('role') == 'user' and 'images' in message:
+                    if 'images' not in data:
+                        data['images'] = []
+                    data['images'].extend(message['images'])
         
+        # Review the images in messages
+        images = data.get('images', None)
+
         # Only use the extracted system message or explicit system parameter if provided
         if system_in_messages or system:
             variables.system = system
@@ -1137,7 +1166,8 @@ def chat_ollama():
                 "format": format_spec,
                 "options": options,
                 "tools": tools,
-                "enable_thinking": enable_thinking
+                "enable_thinking": enable_thinking,
+                "images": images
             },
             'path': '/api/chat'
         })
@@ -1157,7 +1187,8 @@ def chat_ollama():
               options=options,
               tools=tools,
               enable_thinking=enable_thinking,
-              is_openai_request=is_openai_request)
+              is_openai_request=is_openai_request,
+              images=images)
 
     except Exception as e:
         logger.exception("Error in chat_ollama")
@@ -1260,7 +1291,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.43"
+        "version": "0.0.44"
     }), 200
 
 # Default route
