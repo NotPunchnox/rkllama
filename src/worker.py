@@ -84,17 +84,17 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
                 break
             
             elif task == WORKER_TASK_ABORT_INFERENCE:
-
+                logger.info(f"Aborting inference for model {name}...")
                 # Abort the inference of the model
                 model_rkllm.abort()
 
             elif task == WORKER_TASK_CLEAR_CACHE:
-
+                logger.info(f"Clearing KV cache for model {name}...")
                 # CLear the cache of the model
                 model_rkllm.clear_cache()
 
             elif task == WORKER_TASK_INFERENCE:
-
+                logger.info(f"Running inference for model {name}...")
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
                 thread_model.start()
@@ -120,7 +120,7 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
                 result_queue.put(WORKER_TASK_FINISHED)
 
             elif task == WORKER_TASK_EMBEDDING:
-
+                logger.info(f"Running embedding for model {name}...")
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
                 thread_model.start()
@@ -137,7 +137,7 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
                     result_queue.put(last_embeddings[0])
             
             elif task == WORKER_TASK_VISION_ENCODER:
-
+                logger.info(f"Running vision encoder for model {name}...")
                 # Run the vision encoder to get the image embedding
                 rknn_queue = Queue()
 
@@ -398,7 +398,7 @@ class WorkerManager:
             # Get the queue of tasks of the worker
 
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE,None,None))
+            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE,None,None,None))
 
 
     def inference(self, model_name, model_input):
@@ -450,7 +450,7 @@ class WorkerManager:
             image_embed  =  self.get_image_embed(model_name, images)
 
             # Prepare all the inputs for the multimodal inference
-            model_input = prompt_input, image_embed, IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT
+            model_input = (prompt_input, image_embed, IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT)
 
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
