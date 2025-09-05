@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.43](#New-Version)
+### [Version: 0.0.44](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -18,10 +18,11 @@ Video demo ( version 0.0.1 ):
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
 * Version `Lib rkllm-runtime`: V 1.2.1.
+* Version `Lib rknn-runtime`: V 2.3.2.
 
 ## File Structure
-- **`./models`**: contains your rkllm models.
-- **`./lib`**: C++ `rkllm` library used for inference and `fix_freqence_platform`.
+- **`./models`**: contains your rkllm models (wihh their rknn models if multimodal) .
+- **`./lib`**: C++ `rkllm` and `rklnn` library used for inference and `fix_freqence_platform`.
 - **`./app.py`**: API Rest server.
 - **`./client.py`**: Client to interact with the server.
 
@@ -49,7 +50,6 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/v1/completions`
    * `/v1/chat/completions`
    * `/v1/embeddings`
- 
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
@@ -65,6 +65,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
+- **Multimodal Suport** - Use Qwen2 or Qwen2.5 vision models to ask questions about images (base64, local file or URL image address).
 
 ## Documentation
 
@@ -265,6 +266,23 @@ This will automatically download the specified model file and prepare it for use
 
    *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
 
+
+### **For Multimodal encoder model (.rknn) Installation**
+1. **Download the Encoder Model .rknn**  
+   - Download `.rknn` models directly from [Hugging Face](https://huggingface.co).  
+   - Alternatively, convert your ONNX models into `.rknn` format.
+   - Place the `.rknn` model inside the same folder of the `.rkll` models. RKLLama detected the encoder model present in the directory
+
+Example directory structure for multimodal:
+   ```
+   ~/RKLLAMA/models/
+       └── qwen2-vision\:2b
+           |── Modelfile
+           └── Qwen2-VL-2B-Instruct.rkllm
+           └── Qwen2-VL-2B-Instruct.rknn
+   ```
+
+
 ## Configuration
 
 RKLLAMA uses a flexible configuration system that loads settings from multiple sources in a priority order:
@@ -316,7 +334,6 @@ If you have already downloaded models and do not wish to reinstall everything, p
 ---
 
 ## Upcoming Features
-- Add multimodal models
 - Add RKNN for onnx models (TTS, image classification/segmentation...)
 - `GGUF/HF to RKLLM` conversion software
 
@@ -341,4 +358,4 @@ System Monitor:
 *  [**ichlaffterlalu**](https://github.com/ichlaffterlalu): Contributed with a pull request for [Docker-Rkllama](https://github.com/NotPunchnox/rkllama/tree/Rkllama-Docker) and fixed multiple errors.
 *  [**TomJacobsUK**](https://github.com/TomJacobsUK): Contributed with pull requests for Ollama API compatibility and model naming improvements, and fixed CPU detection errors.
 *  [**Yoann Vanitou**](https://github.com/yvanitou): Contributed with Docker implementation improvements and fixed merge conflicts.
-*  [**Daniel Ferreira**](https://github.com/danielferr85): Contributed with Tools Support, OpenAI API compatibility and multiload RKLLM models in memory. Also improvements and fixes.
+*  [**Daniel Ferreira**](https://github.com/danielferr85): Contributed with Tools Support, OpenAI API compatibility and multiload RKLLM models in memory. Also improvements and fixes. Multimodal support implementation.

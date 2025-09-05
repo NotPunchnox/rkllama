@@ -6,6 +6,7 @@ from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 
+
 # Local file
 from src.classes import *
 from src.rkllm import *
@@ -126,6 +127,7 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
+    vision_encoder = os.getenv("VISION_ENCODER")
 
     # View config Vars
     print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
@@ -140,8 +142,9 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     if not request_options:
         request_options = get_model_full_options(model_name, config.get_path("models"), request_options)
 
+    # Model loaded into memory
     model_loaded = variables.worker_manager_rkllm.add_worker(model_name, os.path.join(model_dir, from_value), model_dir, options=request_options)
-    
+
     if not model_loaded:
         return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
     else:
@@ -472,6 +475,9 @@ def show_model_info():
     data = json.loads(request_data) if request_data else {}
     model_name = data.get('name') if "name" in data else data.get('model')
     ##### # Github Copilot End
+
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
     if DEBUG_MODE:
         logger.debug(f"API show request data: {data}")
@@ -855,6 +861,9 @@ def create_model():
     model_name = data.get('name')
     modelfile = data.get('modelfile', '')
     
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
     if DEBUG_MODE:
         logger.debug(f"API create request data: {data}")
 
@@ -904,6 +913,9 @@ def delete_model_ollama():
     data = request.get_json(force=True)
     model_name = data.get('name')
 
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
     if DEBUG_MODE:
         logger.debug(f"API delete request data: {data}")
 
@@ -950,12 +962,16 @@ def generate_ollama():
         prompt = data.get('prompt')
         system = data.get('system', '')
         stream = data.get('stream', True)
-        enable_thinking = data.get('enable_thinking', None)
+        enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
+        images = data.get('images', None)  # For multimodal inputs
         
         # Support format options for structured JSON output
         format_spec = data.get('format')
         options = data.get('options', {})
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         if DEBUG_MODE:
             logger.debug(f"API generate request data: {data}")
 
@@ -993,7 +1009,8 @@ def generate_ollama():
             format_spec=format_spec,
             options=options,
             enable_thinking=enable_thinking,
-            is_openai_request=is_openai_request
+            is_openai_request=is_openai_request,
+            images=images
         )
     except Exception as e:
         if DEBUG_MODE:
@@ -1026,8 +1043,11 @@ def chat_ollama():
         system = data.get('system', '')
         stream = data.get('stream', True)
         tools = data.get('tools', None)
-        enable_thinking = data.get('enable_thinking', None)
+        enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
         options = data.get('options', {})
@@ -1064,7 +1084,15 @@ def chat_ollama():
                 # Don't add system message to filtered messages
             else:
                 filtered_messages.append(message)
+                # CHeck for images in user messages for multimodal
+                if message.get('role') == 'user' and 'images' in message:
+                    if 'images' not in data:
+                        data['images'] = []
+                    data['images'].extend(message['images'])
         
+        # Review the images in messages
+        images = data.get('images', None)
+
         # Only use the extracted system message or explicit system parameter if provided
         if system_in_messages or system:
             variables.system = system
@@ -1137,7 +1165,8 @@ def chat_ollama():
                 "format": format_spec,
                 "options": options,
                 "tools": tools,
-                "enable_thinking": enable_thinking
+                "enable_thinking": enable_thinking,
+                "images": images
             },
             'path': '/api/chat'
         })
@@ -1157,7 +1186,8 @@ def chat_ollama():
               options=options,
               tools=tools,
               enable_thinking=enable_thinking,
-              is_openai_request=is_openai_request)
+              is_openai_request=is_openai_request,
+              images=images)
 
     except Exception as e:
         logger.exception("Error in chat_ollama")
@@ -1215,6 +1245,9 @@ def embeddings_ollama():
         keep_alive = data.get('keep_alive', False)
         options = data.get('options', {})
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         if DEBUG_MODE:
             logger.debug(f"API embedding request data: {data}")
 
@@ -1260,7 +1293,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.43"
+        "version": "0.0.44"
     }), 200
 
 # Default route

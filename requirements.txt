@@ -7,3 +7,4 @@ torch
 flask-cors
 pydantic>=2.0.0
 psutil
+opencv-python
