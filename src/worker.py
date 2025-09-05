@@ -69,9 +69,18 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
     
         # Announce the creation of the RKLLM model failed
         result_queue.put(WORKER_TASK_FINISHED)
-        
-        while True:
-            
+
+    except Exception as e:
+        logger.error(f"Failed creating the worker for model '{name}': {str(e)}")
+        # Announce the creation of the RKLLM model in memory
+        result_queue.put(WORKER_TASK_ERROR)
+        return
+
+    # Loop to wait for tasks
+    while True:
+
+        try:
+
             # Get the instruction to the worker
             task,inference_mode, model_input_type, model_input = task_queue.get()
 
@@ -161,10 +170,10 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
                 # Send final signal of the inference
                 result_queue.put(WORKER_TASK_FINISHED)
 
-    except Exception as e:
-        logger.error(f"Failed creating the worker for model '{name}': {str(e)}")
-        # Announce the creation of the RKLLM model in memory
-        result_queue.put(WORKER_TASK_ERROR)
+        except Exception as e:
+            logger.error(f"Failed executing task the worker for model '{name}' for task '{task}': {str(e)}")
+            # Announce the creation of the RKLLM model in memory
+            result_queue.put(WORKER_TASK_ERROR)
 
 
 # Class to manage the workers for RKLLM models
@@ -487,7 +496,7 @@ class WorkerManager:
                 raise RuntimeError(f"No encoder model (.rknn) found for : {model_name}")
 
             # Get the image path/base64/url from the request
-            image_path = images[0]  # For now, only one image supported
+            image_path = images[len(images) -1]  # For now, only one image supported (the last one)
             
             # Prepare the input for the vision encoder
             model_input = (model_encoder_path, core_mask, base_domain_id, image_path)

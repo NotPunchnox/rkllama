@@ -476,6 +476,9 @@ def show_model_info():
     model_name = data.get('name') if "name" in data else data.get('model')
     ##### # Github Copilot End
 
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
     if DEBUG_MODE:
         logger.debug(f"API show request data: {data}")
     
@@ -858,6 +861,9 @@ def create_model():
     model_name = data.get('name')
     modelfile = data.get('modelfile', '')
     
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
     if DEBUG_MODE:
         logger.debug(f"API create request data: {data}")
 
@@ -906,6 +912,9 @@ def pull_model_ollama():
 def delete_model_ollama():
     data = request.get_json(force=True)
     model_name = data.get('name')
+
+    # Remove possible namespace in model name. Ollama API allows namespace/model
+    model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
     if DEBUG_MODE:
         logger.debug(f"API delete request data: {data}")
@@ -960,6 +969,9 @@ def generate_ollama():
         format_spec = data.get('format')
         options = data.get('options', {})
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         if DEBUG_MODE:
             logger.debug(f"API generate request data: {data}")
 
@@ -1033,6 +1045,9 @@ def chat_ollama():
         tools = data.get('tools', None)
         enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         # Extract format parameters - can be object or string
         format_spec = data.get('format')
         options = data.get('options', {})
@@ -1230,6 +1245,9 @@ def embeddings_ollama():
         keep_alive = data.get('keep_alive', False)
         options = data.get('options', {})
         
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
         if DEBUG_MODE:
             logger.debug(f"API embedding request data: {data}")
 

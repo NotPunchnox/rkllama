@@ -195,8 +195,8 @@ class RKLLM(object):
     def abort(self):
         return self.rkllm_abort(self.handle)
     
-    def clear_chache(self):
-        return self.rkllm_clear_kv_cache(self.handle, 0, None, None)
+    def clear_cache(self):
+        return self.rkllm_clear_kv_cache(self.handle, 1, None, None)
 
     def release(self):
         self.rkllm_destroy(self.handle)
