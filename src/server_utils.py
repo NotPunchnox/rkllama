@@ -297,13 +297,17 @@ class ChatEndpointHandler(EndpointHandler):
                 if thread_finished and not final_sent:
                     final_sent = True
 
-                    # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
-                    if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                    # Final check for tool calls in the complete response
+                    if tools:
                         json_tool_calls = get_tool_calls("".join(final_response_tokens))
-                        if not tool_calls and json_tool_calls:
-                            tool_calls = True
+                        
+                        # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
+                        if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                            if not tool_calls and json_tool_calls:
+                                tool_calls = True
 
-                    if tool_calls:
+                    # If tool calls detected, send them as final response
+                    if tools and tool_calls:
                         chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
                         yield f"{json.dumps(chunk_tool_call)}\n"
                     elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
