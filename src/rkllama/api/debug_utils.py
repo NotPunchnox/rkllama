@@ -4,7 +4,7 @@ import datetime
 import logging
 import threading
 import time
-from config import is_debug_mode
+from rkllama.config import is_debug_mode
 
 
 # Check for debug mode

@@ -8,27 +8,27 @@ from flask_cors import CORS
 
 
 # Local file
-from src.classes import *
-from src.rkllm import *
-from src.process import Request
-import src.variables as variables
-from src.debug_utils import check_response_format
-from src.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
-from src.model_utils import (
+from rkllama.api.classes import *
+from rkllama.api.rkllm import *
+from rkllama.api.process import Request
+import rkllama.api.variables as variables
+from rkllama.api.debug_utils import check_response_format
+from rkllama.api.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
+from rkllama.api.model_utils import (
     extract_model_details, 
     get_huggingface_model_info,
     get_property_modelfile, get_model_full_options, find_rkllm_model_name
 )
-from src.worker import WorkerManager
+from rkllama.api.worker import WorkerManager
 
 # Import the config module
-import config
+import rkllama.config
 
 # Check for debug mode using the improved method
-DEBUG_MODE = config.is_debug_mode()
+DEBUG_MODE = rkllama.config.is_debug_mode()
 
 # Ensure logs directory exists before configuring logging
-logs_dir = config.get_path("logs")
+logs_dir = rkllama.config.get_path("logs")
 os.makedirs(logs_dir, exist_ok=True)
 
 # Set up logging with appropriate level based on debug mode
@@ -69,35 +69,35 @@ HUGGINGFACE_PATH="{huggingface_path}"
 
 SYSTEM="{system}"
 
-TEMPERATURE={config.get("model", "default_temperature")}
+TEMPERATURE={rkllama.config.get("model", "default_temperature")}
 
-ENABLE_THINKING={config.get("model", "default_enable_thinking")}
+ENABLE_THINKING={rkllama.config.get("model", "default_enable_thinking")}
 
-NUM_CTX={config.get("model", "default_num_ctx")}
+NUM_CTX={rkllama.config.get("model", "default_num_ctx")}
 
-MAX_NEW_TOKENS={config.get("model", "default_max_new_tokens")}
+MAX_NEW_TOKENS={rkllama.config.get("model", "default_max_new_tokens")}
 
-TOP_K={config.get("model", "default_top_k")}
+TOP_K={rkllama.config.get("model", "default_top_k")}
 
-TOP_P={config.get("model", "default_top_p")}
+TOP_P={rkllama.config.get("model", "default_top_p")}
 
-REPEAT_PENALTY={config.get("model", "default_repeat_penalty")}
+REPEAT_PENALTY={rkllama.config.get("model", "default_repeat_penalty")}
 
-FREQUENCY_PENALTY={config.get("model", "default_frequency_penalty")}
+FREQUENCY_PENALTY={rkllama.config.get("model", "default_frequency_penalty")}
 
-PRESENCE_PENALTY={config.get("model", "default_presence_penalty")}
+PRESENCE_PENALTY={rkllama.config.get("model", "default_presence_penalty")}
 
-MIROSTAT={config.get("model", "default_mirostat")}
+MIROSTAT={rkllama.config.get("model", "default_mirostat")}
 
-MIROSTAT_TAU={config.get("model", "default_mirostat_tau")}
+MIROSTAT_TAU={rkllama.config.get("model", "default_mirostat_tau")}
 
-MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
+MIROSTAT_ETA={rkllama.config.get("model", "default_mirostat_eta")}
 
 
 """
 
     # Use config for models path
-    path = os.path.join(config.get_path("models"), model_name)
+    path = os.path.join(rkllama.config.get_path("models"), model_name)
 
     # Create the directory if it doesn't exist
     if not os.path.exists(path):
@@ -111,7 +111,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None):
     
     # Use config for models path
-    model_dir = os.path.join(config.get_path("models"), model_name)
+    model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
@@ -140,7 +140,7 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
 
     # Get model parameters if not provided
     if not request_options:
-        request_options = get_model_full_options(model_name, config.get_path("models"), request_options)
+        request_options = get_model_full_options(model_name, rkllama.config.get_path("models"), request_options)
 
     # Model loaded into memory
     model_loaded = variables.worker_manager_rkllm.add_worker(model_name, os.path.join(model_dir, from_value), model_dir, options=request_options)
@@ -171,7 +171,7 @@ CORS(app)
 @app.route('/models', methods=['GET'])
 def list_models():
     # Return the list of available models using config path
-    models_dir = config.get_path("models")
+    models_dir = rkllama.config.get_path("models")
     
     if not os.path.exists(models_dir):
         return jsonify({"error": f"The models directory {models_dir} is not found."}), 500
@@ -206,7 +206,7 @@ def rm_model():
 
     model_name = data['model']
 
-    model_path = os.path.join(config.get_path("models"), model_name)
+    model_path = os.path.join(rkllama.config.get_path("models"), model_name)
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
@@ -259,7 +259,7 @@ def pull_model():
                 return
 
             # Use config to get models path
-            model_dir = os.path.join(config.get_path("models"), model_name)
+            model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
             os.makedirs(model_dir, exist_ok=True)
 
             # Define a file to download
@@ -351,7 +351,7 @@ def unload_models_route():
 def get_current_models():
     
     # Get the models info from Modelfile and HF
-    models_dir = config.get_path("models")
+    models_dir = rkllama.config.get_path("models")
     models_info = {}
     for subdir in os.listdir(models_dir):
         subdir_path = os.path.join(models_dir, subdir)
@@ -431,7 +431,7 @@ def recevoir_message():
 @app.route('/api/tags', methods=['GET'])
 def list_ollama_models():
     # Return models in Ollama API format
-    models_dir = config.get_path("models")
+    models_dir = rkllama.config.get_path("models")
     
     if not os.path.exists(models_dir):
         return jsonify({"models": []}), 200
@@ -485,7 +485,7 @@ def show_model_info():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
     
-    model_dir = os.path.join(config.get_path("models"), model_name)
+    model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     model_rkllm = find_rkllm_model_name(model_dir)
 
     if not os.path.exists(model_dir):
@@ -870,7 +870,7 @@ def create_model():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
     
-    model_dir = os.path.join(config.get_path("models"), model_name)
+    model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     os.makedirs(model_dir, exist_ok=True)
     
     with open(os.path.join(model_dir, "Modelfile"), "w") as f:
@@ -922,7 +922,7 @@ def delete_model_ollama():
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
 
-    model_path = os.path.join(config.get_path("models"), model_name)
+    model_path = os.path.join(rkllama.config.get_path("models"), model_name)
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
@@ -983,11 +983,11 @@ def generate_ollama():
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
+            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', rkllama.config.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
         # Get all model options
-        options = get_model_full_options(model_name, config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
@@ -1000,7 +1000,7 @@ def generate_ollama():
         lock_acquired = True
         
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
-        from src.server_utils import GenerateEndpointHandler
+        from rkllama.api.server_utils import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
             model_name=model_name,
             prompt=prompt,
@@ -1057,11 +1057,11 @@ def chat_ollama():
         
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
+            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', rkllama.config.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
         # Get all model options
-        options = get_model_full_options(model_name, config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
 
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
@@ -1176,7 +1176,7 @@ def chat_ollama():
         custom_req.handle_lock = False
         
         # Process the request - this won't release the lock
-        from src.server_utils import ChatEndpointHandler
+        from rkllama.api.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
               model_name=model_name,
               messages=messages,
@@ -1258,7 +1258,7 @@ def embeddings_ollama():
             return jsonify({"error": "Missing input"}), 400
 
         # Get all model options
-        options = get_model_full_options(model_name, config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
@@ -1269,7 +1269,7 @@ def embeddings_ollama():
         lock_acquired = True
         
         # DIRECTLY use the EmbedEndpointHandler instead of the process_ollama_generate_request wrapper
-        from src.server_utils import EmbedEndpointHandler
+        from rkllama.api.server_utils import EmbedEndpointHandler
         return EmbedEndpointHandler.handle_request(
             model_name=model_name,
             input_text=input_text,
@@ -1314,22 +1314,22 @@ def main():
     args = parser.parse_args()
 
     # Load arguments into the config
-    config.load_args(args)
+    rkllama.config.load_args(args)
     
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
-    DEBUG_MODE = config.is_debug_mode()
+    DEBUG_MODE = rkllama.config.is_debug_mode()
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         print_color("Debug mode enabled", "yellow")
-        config.display()
+        rkllama.config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
     # Get port from config
-    port = config.get("server", "port", "8080")
+    port = rkllama.config.get("server", "port", "8080")
 
     # Check the processor
-    processor = config.get("platform", "processor", None)
+    processor = rkllama.config.get("platform", "processor", None)
     if not processor:
         print_color("Error: processor not configured", "red")
         sys.exit(1)
@@ -1338,7 +1338,7 @@ def main():
             print_color("Error: Invalid processor. Please enter rk3588 or rk3576.", "red")
             sys.exit(1)
         print_color(f"Setting the frequency for the {processor} platform...", "cyan")
-        library_path = os.path.join(config.get_path("lib"), f"fix_freq_{processor}.sh")
+        library_path = os.path.join(rkllama.config.get_path("lib"), f"fix_freq_{processor}.sh")
         
         # Pass debug flag as parameter to the shell script
         debug_param = "1" if DEBUG_MODE else "0"
@@ -1352,8 +1352,8 @@ def main():
     print_color(f"Start the API at http://localhost:{port}", "blue")
     
     # Set Flask debug mode to match our debug flag
-    flask_debug = config.is_debug_mode()
-    app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
+    flask_debug = rkllama.config.is_debug_mode()
+    app.run(host=rkllama.config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
 
 if __name__ == "__main__":
     main()

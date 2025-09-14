@@ -1,12 +1,12 @@
 import ctypes
 import os
-import config
+import rkllama.config
 
 PROMPT_TEXT_PREFIX = "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
 
 # Define the path to the dynamic library
-library_path = os.path.join(config.get_path("lib"), "librkllmrt.so")
+library_path = os.path.join(rkllama.config.get_path("lib"), "librkllmrt.so")
 rkllm_lib = ctypes.CDLL(library_path)
 
 # Define the structures from the library
@@ -166,7 +166,7 @@ callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_voi
 ############################# RKNN ##############################
 
 # Load RKNN runtime
-rknn_library_path = os.path.join(config.get_path("lib"), "librknnrt.so")
+rknn_library_path = os.path.join(rkllama.config.get_path("lib"), "librknnrt.so")
 rknn_lib = ctypes.CDLL(rknn_library_path)
 
 # Constants from rknn_api.h

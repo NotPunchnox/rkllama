@@ -3,7 +3,7 @@ import re
 import logging
 import requests
 from pathlib import Path
-import config
+import rkllama.config
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
@@ -35,7 +35,7 @@ def get_huggingface_model_info(model_path):
             return None
         
         # Get DEBUG_MODE from configuration
-        debug_mode = config.is_debug_mode()
+        debug_mode = rkllama.config.is_debug_mode()
         
         # Extract repo_id from HUGGINGFACE_PATH
         url = f"https://huggingface.co/api/models/{model_path}"
@@ -157,7 +157,7 @@ def get_huggingface_model_info(model_path):
                 logger.debug(f"Failed to get HF data: {response.status_code}")
             return None
     except Exception as e:
-        debug_mode = config.is_debug_mode()
+        debug_mode = rkllama.config.is_debug_mode()
         if debug_mode:
             logger.exception(f"Error fetching HF model info: {str(e)}")
         return None
@@ -415,17 +415,17 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
 
     # Define default options in case of error
     default_options = {
-        "temperature": config.get("model", "default_temperature"),
-        "num_ctx": config.get("model", "default_num_ctx"),
-        "max_new_tokens": config.get("model", "default_max_new_tokens"),
-        "top_k": config.get("model", "default_top_k"),
-        "top_p": config.get("model", "default_top_p"),
-        "repeat_penalty": config.get("model", "default_repeat_penalty"),
-        "frequency_penalty": config.get("model", "default_frequency_penalty"),
-        "presence_penalty": config.get("model", "default_presence_penalty"),
-        "mirostat": config.get("model", "default_mirostat"),
-        "mirostat_tau": config.get("model", "default_mirostat_tau"),
-        "mirostat_eta": config.get("model", "default_mirostat_eta")
+        "temperature": rkllama.config.get("model", "default_temperature"),
+        "num_ctx": rkllama.config.get("model", "default_num_ctx"),
+        "max_new_tokens": rkllama.config.get("model", "default_max_new_tokens"),
+        "top_k": rkllama.config.get("model", "default_top_k"),
+        "top_p": rkllama.config.get("model", "default_top_p"),
+        "repeat_penalty": rkllama.config.get("model", "default_repeat_penalty"),
+        "frequency_penalty": rkllama.config.get("model", "default_frequency_penalty"),
+        "presence_penalty": rkllama.config.get("model", "default_presence_penalty"),
+        "mirostat": rkllama.config.get("model", "default_mirostat"),
+        "mirostat_tau": rkllama.config.get("model", "default_mirostat_tau"),
+        "mirostat_eta": rkllama.config.get("model", "default_mirostat_eta")
     }
 
     # Get the Modelfile of the model
@@ -466,7 +466,7 @@ def get_model_size(model_name) -> int:
     """
 
     # Get the models directory
-    models_dir = config.get_path("models")
+    models_dir = rkllama.config.get_path("models")
     model_path = os.path.join(models_dir, model_name)
     
     # check for the RKLLM file to get his size
@@ -508,7 +508,7 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
         The path to the vision encoder model or None if not found
     """
     # Get the models directory
-    models_dir = config.get_path("models")
+    models_dir = rkllama.config.get_path("models")
     model_path = os.path.join(models_dir, model_name)
     
     # check for the RKNN file
