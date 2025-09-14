@@ -23,3 +23,7 @@ Issues = "https://github.com/NotPunchnox/rkllama/issues"
 [build-system]
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+rkllama_server = "rkllama.server.server:main"
+rkllama_client = "rkllama.client.client:main"
