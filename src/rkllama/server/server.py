@@ -1337,20 +1337,22 @@ def main():
         if processor not in ["rk3588", "rk3576"]:
             print_color("Error: Invalid processor. Please enter rk3588 or rk3576.", "red")
             sys.exit(1)
-        print_color(f"Setting the frequency for the {processor} platform...", "cyan")
-        library_path = os.path.join(rkllama.config.get_path("lib"), f"fix_freq_{processor}.sh")
-        
-        # Pass debug flag as parameter to the shell script
-        debug_param = "1" if DEBUG_MODE else "0"
-        command = f"sudo bash {library_path} {debug_param}"
-        subprocess.run(command, shell=True)
+        if os.getuid() == 0:
+            print_color(f"Setting the frequency for the {processor} platform...", "cyan")
+            library_path = os.path.join(rkllama.config.get_path("lib"), f"fix_freq_{processor}.sh")
+
+            # Pass debug flag as parameter to the shell script
+            debug_param = "1" if DEBUG_MODE else "0"
+            command = f"bash {library_path} {debug_param}"
+            subprocess.run(command, shell=True)
 
     # Set the resource limits
-    resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
+    if os.getuid() == 0:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
 
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")
-    
+
     # Set Flask debug mode to match our debug flag
     flask_debug = rkllama.config.is_debug_mode()
     app.run(host=rkllama.config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
