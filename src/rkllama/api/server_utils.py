@@ -4,7 +4,7 @@ import datetime
 import logging
 import os
 import re  # Add import for regex used in JSON extraction
-import src.variables as variables
+import rkllama.api.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response

@@ -1,7 +1,7 @@
 import threading, time, json
 from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
-import src.variables as variables
+import rkllama.api.variables as variables
 import datetime
 import logging
 from rkllama.config import is_debug_mode  # Import the config module

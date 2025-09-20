@@ -1,8 +1,8 @@
 # img_encoder.py
 import numpy as np
-from src.classes import *
-from src.format_utils import prepare_image
-from src.model_utils import read_data_from_file
+from rkllama.api.classes import *
+from rkllama.api.format_utils import prepare_image
+from rkllama.api.model_utils import read_data_from_file
 import logging
 
 logger = logging.getLogger("rkllama.rknn")

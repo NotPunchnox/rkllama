@@ -1,6 +1,6 @@
 import threading
 from rkllama.config import is_debug_mode
-from src.worker import WorkerManager
+from rkllama.api.worker import WorkerManager
 
 isLocked = False
 
