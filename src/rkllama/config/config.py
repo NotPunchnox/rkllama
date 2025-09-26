@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Union, List, TypeVar, Type, Generic, cas
 from pathlib import Path
 
 # Import schema for validation
-from config_schema import RKLLAMA_SCHEMA, FieldType
+from rkllama.config.config_schema import RKLLAMA_SCHEMA, FieldType
 
 # Configure logger
 logger = logging.getLogger("rkllama.config")
@@ -82,7 +82,7 @@ class RKLLAMAConfig:
         if field_type is not None:
             # If we know the expected type, use schema validation
             try:
-                from config_schema import ConfigField
+                from rkllama.config.config_schema import ConfigField
                 temp_field = ConfigField(field_type, default)
                 return temp_field.validate(value)
             except ValueError:
@@ -361,7 +361,7 @@ class RKLLAMAConfig:
         if field_type is not None:
             # We have schema information - validate the value
             try:
-                from config_schema import ConfigField
+                from rkllama.config.config_schema import ConfigField
                 temp_field = ConfigField(field_type, default_value)
                 validated_value = temp_field.validate(value)
                 self.config[section][key] = validated_value
@@ -473,7 +473,7 @@ class RKLLAMAConfig:
         
         # Need conversion
         try:
-            from config_schema import ConfigField
+            from rkllama.config.config_schema import ConfigField
             temp_field = ConfigField(field_type, default)
             return temp_field.validate(value)
         except (ValueError, TypeError):

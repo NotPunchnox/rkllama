@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path
 import psutil
-import config
+import rkllama.config
 from operator import attrgetter
 
 
@@ -236,7 +236,7 @@ class WorkerManager:
         used_base_domain_ids = [self.workers[model].worker_model_info.base_domain_id for model in self.workers.keys()]
 
         # Get the max id of a domain base:
-        max_domain_id = config.get("model", "max_number_models_loaded_in_memory")
+        max_domain_id = rkllama.config.get("model", "max_number_models_loaded_in_memory")
 
         if reverse_order:
             # CHeck fir available from the highest to the lowest
@@ -342,7 +342,7 @@ class WorkerManager:
 
             # Update the worker model info with the invocation
             self.workers[model_name].worker_model_info.last_call = datetime.now()
-            self.workers[model_name].worker_model_info.expires_at = datetime.now() + timedelta(minutes=config.get("model", "max_minutes_loaded_in_memory"),)
+            self.workers[model_name].worker_model_info.expires_at = datetime.now() + timedelta(minutes=rkllama.config.get("model", "max_minutes_loaded_in_memory"),)
 
 
 
@@ -530,7 +530,7 @@ class WorkerModelInfo:
     def __init__(self, model_name, base_domain_id):
         self.model = model_name
         self.size = get_model_size(model_name)
-        self.expires_at = datetime.now() + timedelta(minutes=config.get("model", "max_minutes_loaded_in_memory"))
+        self.expires_at = datetime.now() + timedelta(minutes=rkllama.config.get("model", "max_minutes_loaded_in_memory"))
         self.loaded_at = datetime.now()
         self.base_domain_id = base_domain_id
         self.last_call = datetime.now()

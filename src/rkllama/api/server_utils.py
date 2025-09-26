@@ -4,15 +4,15 @@ import datetime
 import logging
 import os
 import re  # Add import for regex used in JSON extraction
-import src.variables as variables
+import rkllama.api.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response
 
-import config
+import rkllama.config
 
 # Check for debug mode using the improved method from config
-DEBUG_MODE = config.is_debug_mode()
+DEBUG_MODE = rkllama.config.is_debug_mode()
 
 # Set up logging based on debug mode
 logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
@@ -21,7 +21,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.join(config.get_path("logs"),'rkllama_debug.log')) if DEBUG_MODE else logging.NullHandler()
+        logging.FileHandler(os.path.join(rkllama.config.get_path("logs"),'rkllama_debug.log')) if DEBUG_MODE else logging.NullHandler()
     ]
 )
 logger = logging.getLogger("rkllama.server_utils")

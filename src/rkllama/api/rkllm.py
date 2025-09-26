@@ -23,17 +23,17 @@ class RKLLM(object):
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
         self.rkllm_param.model_path = bytes(model_path, 'utf-8')
-        self.rkllm_param.max_context_len = int(options.get("num_ctx", config.get("model", "default_num_ctx")))
-        self.rkllm_param.max_new_tokens = int(options.get("max_new_tokens", config.get("model", "default_max_new_tokens")))
-        self.rkllm_param.top_k = int(options.get("top_k", config.get("model", "default_top_k")))
-        self.rkllm_param.top_p = float(options.get("top_p", config.get("model", "default_top_p")))
-        self.rkllm_param.temperature = float(options.get("temperature", config.get("model", "default_temperature")))
-        self.rkllm_param.repeat_penalty = float(options.get("repeat_penalty", config.get("model", "default_repeat_penalty")))
-        self.rkllm_param.frequency_penalty = float(options.get("frequency_penalty", config.get("model", "default_frequency_penalty")))
-        self.rkllm_param.presence_penalty = float(options.get("presence_penalty", config.get("model", "default_presence_penalty")))
-        self.rkllm_param.mirostat = int(options.get("mirostat", config.get("model", "default_mirostat")))
-        self.rkllm_param.mirostat_tau = float(options.get("mirostat_tau", config.get("model", "default_mirostat_tau")))
-        self.rkllm_param.mirostat_eta = float(options.get("mirostat_eta", config.get("model", "default_mirostat_eta")))
+        self.rkllm_param.max_context_len = int(options.get("num_ctx", rkllama.config.get("model", "default_num_ctx")))
+        self.rkllm_param.max_new_tokens = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
+        self.rkllm_param.top_k = int(options.get("top_k", rkllama.config.get("model", "default_top_k")))
+        self.rkllm_param.top_p = float(options.get("top_p", rkllama.config.get("model", "default_top_p")))
+        self.rkllm_param.temperature = float(options.get("temperature", rkllama.config.get("model", "default_temperature")))
+        self.rkllm_param.repeat_penalty = float(options.get("repeat_penalty", rkllama.config.get("model", "default_repeat_penalty")))
+        self.rkllm_param.frequency_penalty = float(options.get("frequency_penalty", rkllama.config.get("model", "default_frequency_penalty")))
+        self.rkllm_param.presence_penalty = float(options.get("presence_penalty", rkllama.config.get("model", "default_presence_penalty")))
+        self.rkllm_param.mirostat = int(options.get("mirostat", rkllama.config.get("model", "default_mirostat")))
+        self.rkllm_param.mirostat_tau = float(options.get("mirostat_tau", rkllama.config.get("model", "default_mirostat_tau")))
+        self.rkllm_param.mirostat_eta = float(options.get("mirostat_eta", rkllama.config.get("model", "default_mirostat_eta")))
 
         # Fixme: these parameters are not used in the current implementation, but they are set to default values
         self.rkllm_param.skip_special_token = True

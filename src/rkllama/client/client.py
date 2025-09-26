@@ -4,7 +4,7 @@ import sys
 import os
 import configparser
 
-import config
+import rkllama.config
 
 STREAM_MODE = True
 VERBOSE = False
@@ -19,7 +19,7 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
-PORT = config.get("server", "port")
+PORT = rkllama.config.get("server", "port")
 API_URL = f"http://127.0.0.1:{PORT}/"
 
 
@@ -298,7 +298,7 @@ def chat(model):
             send_message(model, user_input)
 
 def update():
-    setup_path = os.path.join(config.get_path(), 'setup.sh')
+    setup_path = os.path.join(rkllama.config.get_path(), 'setup.sh')
     
     # Check if setup.sh exists
     if not os.path.exists(setup_path):
@@ -409,7 +409,7 @@ def main():
         if len(sys.argv) > 2:
             PORT = sys.argv[2]
 
-        server_script = os.path.join(config.get_path(), 'server.sh')
+        server_script = os.path.join(rkllama.config.get_path(), 'server.sh')
         os.system(f"bash {server_script} {'--no-conda' if use_no_conda else ''} --port={PORT}")
 
     elif command == "update":

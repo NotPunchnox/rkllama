@@ -1,0 +1,41 @@
+[project]
+name = "rkllama"
+version = "0.0.4"
+authors = [
+    { name="NotPunchnox", email="punchnoxpro@gmail.com" },
+    { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
+    { name="Daniel Ferreira", email="danielferreirandrade@gmail.com" },
+]
+description = "Ollama alternative for Rockchip NPU"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "Flask==2.3.2",
+    "requests==2.31.0",
+    "huggingface_hub",
+    "python-dotenv",
+    "transformers",
+    "torch",
+    "flask-cors",
+    "pydantic>=2.0.0",
+    "psutil",
+    "opencv-python",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "GPL-3.0"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/NotPunchnox/rkllama"
+Issues = "https://github.com/NotPunchnox/rkllama/issues"
+
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+rkllama_server = "rkllama.server.server:main"
+rkllama_client = "rkllama.client.client:main"
