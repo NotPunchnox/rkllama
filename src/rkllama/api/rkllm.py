@@ -41,12 +41,11 @@ class RKLLM(object):
         self.rkllm_param.is_async = False
         self.rkllm_param.use_gpu = True
 
-
         # For Image MultiModal Models
-        self.rkllm_param.img_start = "<|vision_start|>".encode('utf-8');
-        self.rkllm_param.img_end = "<|vision_end|>".encode('utf-8');
-        self.rkllm_param.img_content = "<|image_pad|>".encode('utf-8');
-
+        self.rkllm_param.img_start = options.get("img_start", "").encode("utf-8");
+        self.rkllm_param.img_end = options.get("img_end", "").encode("utf-8");
+        self.rkllm_param.img_content = options.get("img_content", "").encode("utf-8");
+        
         # Extend parameters for RKLLM
         self.rkllm_param.extend_param.base_domain_id = self.base_domain_id
         self.rkllm_param.extend_param.embed_flash = 1

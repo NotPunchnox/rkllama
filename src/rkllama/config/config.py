@@ -274,6 +274,9 @@ class RKLLAMAConfig:
                 
             if hasattr(args, "processor") and args.processor:
                 self.set("platform", "processor", args.processor)
+
+            if hasattr(args, "models") and args.models:
+                self.set("paths", "models", args.models)    
             
             if hasattr(args, "config") and args.config:
                 # Load custom config file with highest priority

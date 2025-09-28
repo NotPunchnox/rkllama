@@ -1311,10 +1311,14 @@ def main():
     parser.add_argument('--processor', type=str, help="Processor: rk3588/rk3576.")
     parser.add_argument('--port', type=str, help="Port for the server")
     parser.add_argument('--debug', action='store_true', help="Enable debug mode")
+    parser.add_argument('--models', type=str, help="Path whe models will be loaded from")
     args = parser.parse_args()
 
     # Load arguments into the config
     rkllama.config.load_args(args)
+
+    # Validate directories for running
+    rkllama.config.validate()
     
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
@@ -1324,7 +1328,7 @@ def main():
         print_color("Debug mode enabled", "yellow")
         rkllama.config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
-
+  
     # Get port from config
     port = rkllama.config.get("server", "port", "8080")
 
@@ -1339,7 +1343,8 @@ def main():
             sys.exit(1)
         if os.getuid() == 0:
             print_color(f"Setting the frequency for the {processor} platform...", "cyan")
-            library_path = os.path.join(rkllama.config.get_path("lib"), f"fix_freq_{processor}.sh")
+            library_path = importlib.resources.files("rkllama.lib") / f"fix_freq_{processor}.sh"
+            #library_path = os.path.join(rkllama.config.get_path("lib"), f"fix_freq_{processor}.sh")
 
             # Pass debug flag as parameter to the shell script
             debug_param = "1" if DEBUG_MODE else "0"
