@@ -1,7 +1,7 @@
 # Dockerfile for RKLLama
 # Improved by Yoann Vanitou <yvanitou@gmail.com>
 
-FROM python:slim
+FROM python:3.12-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 wget curl sudo git build-essential \
@@ -9,32 +9,28 @@ RUN apt-get update \
 
 RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
 
-# Install RKNPU driver
-RUN cd /tmp \
-    && git clone https://github.com/rockchip-linux/rknpu.git \
-    && cd rknpu \
-    && mkdir -p /usr/lib \
-    && cp -r drivers/linux-aarch64/usr/lib/* /usr/lib/ \
-    && cp -r rknn/rknn_api/librknn_api/lib/* /usr/lib/ \
-    && cp -r rknn/rknn_utils/librknn_utils/lib/* /usr/lib/ \
-    && ldconfig \
-    && cd .. \
-    && rm -rf rknpu
-
 WORKDIR /opt/rkllama
 
 # Copy RKLLM runtime library explicitly
-COPY ./lib/librkllmrt.so /usr/lib/
+COPY ./src/rkllama/lib/librkllmrt.so /usr/lib/
 RUN chmod 755 /usr/lib/librkllmrt.so && ldconfig
 
-COPY ./lib /opt/rkllama/lib
+# Copy RKNN runtime library explicitly
+COPY ./src/rkllama/lib/librknnrt.so /usr/lib/
+RUN chmod 755 /usr/lib/librknnrt.so && ldconfig
+
 COPY ./src /opt/rkllama/src
 COPY ./models /opt/rkllama/models
-COPY requirements.txt README.md LICENSE *.sh *.py /opt/rkllama/
-RUN chmod +x setup.sh && ./setup.sh --no-conda
+COPY README.md LICENSE pyproject.toml /opt/rkllama/
+
+# Install RKNNLite toolkit
+RUN python -m pip install .
 
 EXPOSE 8080
 
-CMD ["/usr/local/bin/rkllama", "serve"]
+CMD ["rkllama_server", "--models", "/opt/rkllama/models"]
 # If you want to change the port see
 # documentation/configuration.md for the INI file settings.
+
+
+

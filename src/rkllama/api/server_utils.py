@@ -214,8 +214,6 @@ class ChatEndpointHandler(EndpointHandler):
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
 
-            # Clear the cache of the model to avoid issues with multimodal
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
         
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
@@ -244,7 +242,7 @@ class ChatEndpointHandler(EndpointHandler):
             
 
             while not thread_finished or not final_sent:
-                token = result_q.get()  # Block until receive any token
+                token = result_q.get(timeout=300)  # Block until receive any token
                 if token == finished_inference_token:
                     thread_finished = True
             
@@ -364,7 +362,7 @@ class ChatEndpointHandler(EndpointHandler):
 
 
         while not thread_finished:
-            token = result_q.get()  # Block until receive any token
+            token = result_q.get(timeout=300)  # Block until receive any token
             if token == finished_inference_token:
                 thread_finished = True
                 continue
@@ -553,7 +551,7 @@ class GenerateEndpointHandler(EndpointHandler):
             thread_finished = False
  
             while not thread_finished or not final_sent:
-                token = result_q.get()  # Block until receive any token
+                token = result_q.get(timeout=300)  # Block until receive any token
                 if token == finished_inference_token:
                     thread_finished = True
             
@@ -624,7 +622,7 @@ class GenerateEndpointHandler(EndpointHandler):
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
         while not thread_finished:
-            token = result_q.get()  # Block until receive any token
+            token = result_q.get(timeout=300)  # Block until receive any token
             if token == finished_inference_token:
                 thread_finished = True
                 continue
@@ -774,7 +772,7 @@ class EmbedEndpointHandler(EndpointHandler):
         result_q = variables.worker_manager_rkllm.get_result(model_name)
 
         # Wait for the last_embedding hidden layer return
-        embeddings = result_q.get()  
+        embeddings = result_q.get(timeout=300)  
         
         # Calculate metrics
         metrics = cls.calculate_durations(start_time, prompt_eval_time)

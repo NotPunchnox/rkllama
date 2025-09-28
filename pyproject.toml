@@ -1,6 +1,6 @@
 [project]
 name = "rkllama"
-version = "0.0.4"
+version = "0.0.45"
 authors = [
     { name="NotPunchnox", email="punchnoxpro@gmail.com" },
     { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
@@ -20,6 +20,10 @@ dependencies = [
     "pydantic>=2.0.0",
     "psutil",
     "opencv-python",
+    "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.12'",
+    "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.11'",
+    "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.10'",
+    "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.9'"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -27,6 +31,24 @@ classifiers = [
 ]
 license = "GPL-3.0"
 license-files = ["LICEN[CS]E*"]
+
+
+[options]
+include_package_data = true
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"rkllama.lib" = ["*.so", "*.sh"]
+
+#[tool.setuptools.data-files]
+#"rkllama/config/lib" = [
+#    "lib/*"
+#]
 
 [project.urls]
 Homepage = "https://github.com/NotPunchnox/rkllama"

@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.44](#New-Version)
+### [Version: 0.0.45](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -65,7 +65,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
-- **Multimodal Suport** - Use Qwen2 or Qwen2.5 vision models to ask questions about images (base64, local file or URL image address).
+- **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/MiniCPMV4 vision models to ask questions about images (base64, local file or URL image address).
 
 ## Documentation
 
@@ -80,7 +80,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 
 ## Installation
 
-###  Standard Installation
+###  Standard Installation (recommended create a virtual environment like: conda, uv, venv)
 
 1. **Clone the repository:**
 
@@ -92,8 +92,7 @@ cd rkllama
 2.  **Install RKLLama:**
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+python -m pip install .
 ```
 
 **Output:**
@@ -109,7 +108,7 @@ docker pull ghcr.io/notpunchnox/rkllama:main
 ```
 run server
 ```bash
-docker run -it --privileged -p 8080:8080 ghcr.io/notpunchnox/rkllama:main
+docker run -it --privileged -p 8080:8080 -v <local_models_dir>:/opt/rkllama/models ghcr.io/notpunchnox/rkllama:main 
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
@@ -128,12 +127,12 @@ docker compose up --detach --remove-orphans
 *Virtualization with `conda` is started automatically, as well as the NPU frequency setting.*
 1. Start the server
 ```bash
-rkllama serve
+rkllama_server --models <models_dir>
 ```
 
 To enable debug mode:
 ```bash
-rkllama serve --debug
+rkllama_server --debug --models <models_dir>
 ```
 
 **Output:**
@@ -143,11 +142,11 @@ rkllama serve --debug
 ### Run Client
 1. Command to start the client
 ```bash
-rkllama
+rkllama_client
 ```
 or 
 ```bash
-rkllama help
+rkllama_client help
 ```
 
 **Output:**
@@ -155,7 +154,7 @@ rkllama help
 
 2. See the available models
 ```bash
-rkllama list
+rkllama_client list
 ```
 **Output:**
 ![Image](./documentation/ressources/list.png)
@@ -163,7 +162,7 @@ rkllama list
 
 3. Run a model
 ```bash
-rkllama run <model_name>
+rkllama_client run <model_name>
 ```
 **Output:**
 ![Image](./documentation/ressources/launch_chat.png)
@@ -214,13 +213,13 @@ For complete documentation: [Tool Calling Guide](./documentation/api/tools.md)
 You can download and install a model from the Hugging Face platform with the following command:
 
 ```bash
-rkllama pull username/repo_id/model_file.rkllm/custom_model_name
+rkllama_client pull username/repo_id/model_file.rkllm/custom_model_name
 ```
 
 Alternatively, you can run the command interactively:
 
 ```bash
-rkllama pull
+rkllama_client pull
 Repo ID ( example: punchnox/Tinnyllama-1.1B-rk3588-rkllm-1.1.4): <your response>
 File ( example: TinyLlama-1.1B-Chat-v1.0-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm): <your response>
 Custom Model Name ( example: tinyllama-chat:1.1b ): <your response>
@@ -239,8 +238,8 @@ This will automatically download the specified model file and prepare it for use
    - Alternatively, convert your GGUF models into `.rkllm` format (conversion tool coming soon on [my GitHub](https://github.com/notpunchnox)).
 
 2. **Place the Model**  
-   - Navigate to the `~/RKLLAMA/models` directory on your system.
-   - Make a directory with model name.
+   - Create a `models` directory on your system.
+   - Make a new subdirectory with model name.
    - Place the `.rkllm` files in this directory.
    - Create `Modelfile` and add this :
 
@@ -272,6 +271,30 @@ This will automatically download the specified model file and prepare it for use
    - Download `.rknn` models directly from [Hugging Face](https://huggingface.co).  
    - Alternatively, convert your ONNX models into `.rknn` format.
    - Place the `.rknn` model inside the same folder of the `.rkll` models. RKLLama detected the encoder model present in the directory
+   - Include manually the following properties in the Modelfile according to the convertion properties used for the conversion of the vision encoder `.rknn`
+        * IMAGE_WIDTH=448
+        * IMAGE_HEIGHT
+        * N_IMAGE_TOKENS
+        * IMG_START
+        * IMG_END
+        * IMG_CONTENT
+
+        For example, for Qwen2VL/Qwen2.5VL can be:
+        IMAGE_WIDTH=392
+        IMAGE_HEIGHT=392
+        N_IMAGE_TOKENS=196
+        IMG_START=<|vision_start|>
+        IMG_END=<|vision_end|>
+        IMG_CONTENT=<|image_pad|>
+
+        For example, for MiniCPMV4 can be:
+        IMAGE_WIDTH=448
+        IMAGE_HEIGHT=448
+        N_IMAGE_TOKENS=64
+        IMG_START=<image>
+        IMG_END=</image>
+        IMG_CONTENT=<unk>
+
 
 Example directory structure for multimodal:
    ```
@@ -291,20 +314,10 @@ See the [Configuration Documentation](documentation/configuration.md) for comple
 
 ## Uninstall
 
-1. Go to the `~/RKLLAMA/` folder
-    ```bash
-    cd ~/RKLLAMA/
-    cp ./uninstall.sh ../
-    cd ../ && chmod +x ./uninstall.sh && ./uninstall.sh
+1. Remove the pyhton package rkllama
     ```
-
-2. If you don't have the `uninstall.sh` file:
-    ```bash
-    wget https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/uninstall.sh
-    chmod +x ./uninstall.sh
-    ./uninstall.sh
+    pip uninstall rkllama
     ```
-
 **Output:**
 ![Image](./documentation/ressources/uninstall.png)
 
