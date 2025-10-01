@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.45](#New-Version)
+### [Version: 0.0.46](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -17,7 +17,7 @@ Video demo ( version 0.0.1 ):
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
-* Version `Lib rkllm-runtime`: V 1.2.1.
+* Version `Lib rkllm-runtime`: V 1.2.2.
 * Version `Lib rknn-runtime`: V 2.3.2.
 
 ## File Structure
@@ -65,7 +65,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
-- **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/MiniCPMV4 vision models to ask questions about images (base64, local file or URL image address).
+- **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/MiniCPMV4/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address).
 
 ## Documentation
 

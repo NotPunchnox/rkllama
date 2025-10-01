@@ -89,10 +89,12 @@ class RKLLM(object):
 
         self.rkllm_abort = rkllm_lib.rkllm_abort
 
-        # system_prompt = "<|im_start|>system You are a helpful assistant. <|im_end|>"
-        # prompt_prefix = "<|im_start|>user"
-        # prompt_postfix = "<|im_end|><|im_start|>assistant"
-        # self.set_chat_template(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(prompt_prefix.encode('utf-8')), ctypes.c_char_p(prompt_postfix.encode('utf-8')))
+        # CHeck if chat template options are provided
+        if all(item in options for item in ["system_prompt","prompt_prefix","prompt_postfix"]): 
+            system_prompt = options.get("system_prompt")
+            prompt_prefix = options.get("prompt_prefix")
+            prompt_postfix = options.get("prompt_postfix")
+            self.set_chat_template(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(prompt_prefix.encode('utf-8')), ctypes.c_char_p(prompt_postfix.encode('utf-8')))
 
         self.lora_adapter_path = None
         self.lora_model_name = None
