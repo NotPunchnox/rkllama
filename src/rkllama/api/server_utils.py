@@ -7,7 +7,7 @@ import re  # Add import for regex used in JSON extraction
 import rkllama.api.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
-from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response
+from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
 
 import rkllama.config
 
@@ -791,6 +791,82 @@ class EmbedEndpointHandler(EndpointHandler):
         # Format response
         response = cls.format_complete_response(model_name, embeddings.tolist(), metrics, None)
         
+        # Return response
+        return jsonify(response), 200
+    
+
+class GenerateImageEndpointHandler(EndpointHandler):
+    """Handler for v1/images/generations endpoint requests"""
+    
+    @staticmethod
+    def format_complete_response(image_list, model_name, model_dir, output_format, response_format, metrics):
+        """Format a complete non-streaming response for generate endpoint"""
+
+        # Construct the default base64 response format
+        data = [{"b64_json": get_base64_image_from_pil(img, output_format)} for img in image_list]
+
+        if response_format == "url":
+            # Construct the output dir for images
+            output_dir = f"{model_dir}/images"
+
+            # Construct the url response format
+            data = [{"url": get_url_image_from_pil(img, model_name, output_dir, output_format)} for img in image_list]
+
+        response = {
+            "created": int(time.time()),
+            "data": data,
+            "usage": {
+                "total_tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "input_tokens_details": {
+                    "text_tokens": 0,
+                    "image_tokens": 0
+                }
+            }
+        }
+        
+        return response
+    
+    @classmethod
+    def handle_request(cls,  model_name, prompt, stream, size, response_format, output_format, num_images, seed, num_inference_steps, guidance_scale):
+        """Process a generate request with proper format handling"""
+
+        if DEBUG_MODE:
+            logger.debug(f"GenerateImageEndpointHandler: processing request for {model_name}")
+        
+        # Check if streaming or not
+        if not stream:
+            # Ollama request handling 
+            ollama_response, code =  cls.handle_complete(model_name, prompt, size, response_format, output_format, num_images, seed, num_inference_steps, guidance_scale)
+        
+            # Return Ollama response
+            return ollama_response, code
+        else:
+            # Streaming not supported for image generation
+            return Response("Streaming not supported yet for image generation", status=400)
+        
+    
+    @classmethod
+    def handle_complete(cls, model_name, prompt, size, response_format, output_format, num_images, seed, num_inference_steps, guidance_scale):
+        """Handle complete generate image response"""
+
+
+        start_time = time.time()
+        prompt_eval_time = None
+        
+        # Use config for models path
+        model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
+
+        # Send the task of embedding to the model
+        image_list = variables.worker_manager_rkllm.generate_image(model_name, model_dir, prompt, size, num_images, seed, num_inference_steps, guidance_scale)
+        
+        # Calculate metrics
+        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+        
+        # Format response
+        response = cls.format_complete_response(image_list, model_name, model_dir, output_format, response_format, metrics)
+
         # Return response
         return jsonify(response), 200
     

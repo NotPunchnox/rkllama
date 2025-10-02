@@ -10,6 +10,10 @@ import numpy as np
 import os
 import base64
 import requests
+from PIL import Image
+import io
+
+import rkllama.config
 
 try:
     from pydantic import BaseModel, ValidationError, create_model
@@ -899,3 +903,51 @@ def get_tool_calls(response):
         tool_calls = get_tool_calls_generic(response)
 
     return tool_calls
+
+
+def get_base64_image_from_pil(image: Image.Image, output_format) -> str:
+    """Convert a PIL Image to a base64-encoded string.
+    Args:
+        image (PIL.Image.Image): The PIL Image to convert.
+        output_format (str): The desired output format, either "png" or "jpg".
+    Returns:
+        str: The base64-encoded string representation of the image.
+    """
+    # Save image to a bytes buffer
+    buffered = io.BytesIO()
+
+    # Save in PNG format 
+    image.save(buffered, format=output_format)
+
+    # Get byte data
+    img_bytes = buffered.getvalue()
+
+    # Encode to base64
+    return base64.b64encode(img_bytes).decode("utf-8")
+
+
+def get_url_image_from_pil(image: Image.Image, model_name, output_dir, output_format) -> str:
+    """Convert a PIL Image to a base64-encoded string.
+    Args:
+        image (PIL.Image.Image): The PIL Image to convert.
+        output_dir (str): The directory to save the image file.
+        output_format (str): The desired output format, either "png" or "jpg".
+    Returns:
+        str: The url string representation of the image.
+    """
+
+    # Create output dir if not exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save image to dir file
+    file_name= f"out_image_{int(time.time())}.{output_format.lower()}"
+    out_path = f"{output_dir}/{file_name}"
+
+    # Save the image to a file
+    image.save(out_path) 
+
+    # Get port from config
+    port = rkllama.config.get("server", "port", "8080")
+
+    # Encode to base64
+    return f"http://localhost:{port}/files/{model_name}/images/{file_name}"

@@ -3,8 +3,9 @@ import sys, os, subprocess, resource, argparse, shutil, time, requests, json, da
 import re
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from flask_cors import CORS
+import random
 
 
 # Local file
@@ -1295,6 +1296,90 @@ def ollama_version():
     return jsonify({
         "version": "0.0.44"
     }), 200
+
+
+@app.route('/v1/images/generations', methods=['POST'])
+def generate_image_openai():
+    
+    lock_acquired = False  # Track lock status
+
+    try:
+        data = request.get_json(force=True)
+        
+        # Supported OpenAI parameters by RKNN
+        prompt = data.get('prompt')
+        model_name = data.get('model', None)
+        size = data.get('size', "512x512")        
+        stream = data.get('stream', False)
+        output_format = data.get('output_format', 'png')
+        num_images = data.get('n', 1)
+        response_format = data.get('response_format', 'b64_json')
+
+        # Non supported OpenAI parameters by RKNN
+        background = data.get('background', None)
+        moderation = data.get('moderation', None)
+        output_compression = data.get('output_compression', None)
+        partial_images = data.get('partial_images', None)
+        quality = data.get('quality', None)
+        style = data.get('style', None)
+        user = data.get('user', None)
+
+        # Not OpenAI parameters, but used by rkllama
+        seed = data.get('seed', random.randint(1, 99))
+        num_inference_steps = data.get('num_inference_steps', 4)
+        guidance_scale = data.get('guidance_scale', 7.5)
+        
+        
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
+        
+        if DEBUG_MODE:
+            logger.debug(f"API OpenAI Generate Image request data: {data}")
+
+        # Acquire lock before processing the request
+        variables.verrou.acquire()
+        lock_acquired = True  # Mark lock as acquired
+        
+        # Process the request - this won't release the lock
+        from rkllama.api.server_utils import GenerateImageEndpointHandler
+        return GenerateImageEndpointHandler.handle_request(
+              model_name=model_name,
+              prompt=prompt,
+              stream=stream,
+              size=size,
+              response_format=response_format,
+              output_format=output_format,
+              num_images=num_images,
+              seed=seed,
+              num_inference_steps=num_inference_steps,
+              guidance_scale=guidance_scale)
+
+    except Exception as e:
+        logger.exception("Error in generate_image_openai")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            if DEBUG_MODE:
+                logger.debug("Releasing lock in generate_image_openai")
+            variables.verrou.release()
+
+
+# Default route
+@app.route('/files/<model_name>/images/<file_name>', methods=['GET'])
+def get_generated_image(model_name, file_name):
+    
+    # Get the model directory
+    model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
+
+    # Get the file path
+    file_path = f"{model_dir}/images/{file_name}"
+
+    # Return File as attachment
+    return send_file(file_path, as_attachment=True)
+
 
 # Default route
 @app.route('/', methods=['GET'])
