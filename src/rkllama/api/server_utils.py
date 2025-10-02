@@ -213,6 +213,8 @@ class ChatEndpointHandler(EndpointHandler):
         else:
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            # Clear the cache to prevent image embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
         
         # Wait for result queue
@@ -355,6 +357,8 @@ class ChatEndpointHandler(EndpointHandler):
         else:
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            # Clear the cache to prevent image embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
         
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
@@ -535,6 +539,9 @@ class GenerateEndpointHandler(EndpointHandler):
         else:
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            # Clear the cache to prevent image embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
@@ -617,6 +624,9 @@ class GenerateEndpointHandler(EndpointHandler):
         else:
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            # Clear the cache to prevent image embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
