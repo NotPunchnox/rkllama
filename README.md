@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.46](#New-Version)
+### [Version: 0.0.47](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -50,6 +50,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/v1/completions`
    * `/v1/chat/completions`
    * `/v1/embeddings`
+   * `/v1/images/generations`
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
@@ -66,6 +67,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
 - **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/MiniCPMV4/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address).
+- **Image Generation** - Generate images with OpenAI Image generation endpoint usin model LCM Stable Diffusion RKNN models.
 
 ## Documentation
 
@@ -304,6 +306,35 @@ Example directory structure for multimodal:
            └── Qwen2-VL-2B-Instruct.rkllm
            └── Qwen2-VL-2B-Instruct.rknn
    ```
+
+
+### **For Image Generation Installation**
+1. In a temporary folder, clone the repository happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2 from Hugging Face.
+2. Execute the ONNX to RKNN convertion of the models for your needs **WITH RKNN TOOLKIT LIBRARY VERSION 2.3.2**. For example:
+   ```
+    python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 512x512 --components "text_encoder,unet,vae_decoder" --target_platform rk3588
+   ```
+3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** 
+2. Copy the folders: "scheduler, text_encoder, unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
+3. The structure of the model **MUST** be like this:
+
+   ```
+   ~/RKLLAMA/models/
+       └── lcm-stable-diffusion
+           |── scheduler
+              |── scheduler_config.json
+           └── text_encoder
+              |── config.json
+              |── model.rknn
+           └── unet
+              |── config.json
+              |── model.rknn
+           └── vae_decoder
+              |── config.json
+              |── model.rknn
+           
+   ```
+4. Done! You are ready to test the OpenAI endpoint /v1/images/generations to generate images. You can add it to OpenWebUI in the Image Generation section.
 
 
 ## Configuration
