@@ -3,6 +3,7 @@ import psutil
 import rkllama.config
 import time
 import threading
+import random
 from multiprocessing import Process, Queue
 from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile
@@ -23,7 +24,7 @@ WORKER_TASK_FINISHED = "<RKLLM_TASK_FINISHED>"
 WORKER_TASK_ERROR = "<RKLLM_TASK_ERROR>"
 WORKER_TASK_ABORT_INFERENCE = "ABORT"
 WORKER_TASK_CLEAR_CACHE = "CLEAR_CACHE"
-
+WORKER_TASK_GENERATE_IMAGE = "GENERATE_IMAGE"
 
 
 def run_encoder(model_input, rknn_queue):
@@ -46,10 +47,33 @@ def run_encoder(model_input, rknn_queue):
     
     # Send the encoded image to the main process
     rknn_queue.put(image_embeddings)
-    
 
-# Worker 
-def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
+
+
+def run_image_generator(model_input, rknn_queue):
+    """
+    Run the image generator model to get the image
+    Args:
+        model_input (tuple): (model_encoder_path, image_path)
+        rknn_queue (Queue): Queue to return the image embedding
+    Returns:
+        str: Image
+    """
+
+    from .image_generator import generate_image
+
+    # Get the arguments for the call
+    model_name, prompt, size, seed, num_inference_steps, guidance_scale = model_input
+
+    # Run the visionencder to get the image embedding
+    image = generate_image(model_name, prompt, size, seed, num_inference_steps, guidance_scale)
+    
+    # Send the encoded image to the main process
+    rknn_queue.put(image)
+
+
+# RKLLM Worker 
+def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
     
     # Initialize individual callback for each worker to prevent error from RKLLM
     from .callback import callback_impl, global_status, global_text,split_byte_data, last_embeddings
@@ -171,6 +195,45 @@ def run_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_d
             result_queue.put(WORKER_TASK_ERROR)
 
 
+
+# RKNN Process 
+def run_rknn_process(name, task, model_input, result_queue: Queue):
+    
+    try:
+
+        if task == WORKER_TASK_GENERATE_IMAGE:
+            logger.info(f"Running image generator for model {name}...")
+            # Run the vision encoder to get the image embedding
+            rknn_queue = Queue()
+
+            # Define the process for the encoder
+            rknn_process = Process(target=run_image_generator, args=(model_input,rknn_queue,))
+
+            # Start the encoder worker
+            rknn_process.start() 
+
+            # Get the encoded image from the queue
+            img = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
+
+            # Terminate the process encoder after use
+            rknn_process.terminate()
+
+            # Send the image 
+            result_queue.put(img)
+
+        else:
+            result_queue.put(f"Unknown task: {task}")
+            # Send final signal of the inference
+            result_queue.put(WORKER_TASK_FINISHED)
+
+    except Exception as e:
+        logger.error(f"Failed executing task the rknn process for model '{name}' for task '{task}': {str(e)}")
+        # Announce the creation of the RKLLM model in memory
+        result_queue.put(WORKER_TASK_ERROR)
+
+
+
+
 # Class to manage the workers for RKLLM models
 class WorkerManager:
     def __init__(self):
@@ -267,7 +330,7 @@ class WorkerManager:
         if model_name not in self.workers.keys():
 
             # Get the available domain id for the RKLLM process
-            base_domain_id = self.get_available_base_domain_id(reverse_order=True)
+            base_domain_id = self.get_available_base_domain_id(reverse_order=False)
 
             # Add the worker to the dictionary of workers
             worker_model = Worker(model_name,base_domain_id)
@@ -509,6 +572,57 @@ class WorkerManager:
             # Return the image encoded
             return image_embed;       
 
+
+
+    def generate_image(self, model_name,model_dir, prompt, size, num_images, seed, num_inference_steps, guidance_scale) -> None:
+        """
+        Send a generate image task to the corresponding model worker
+        
+        Args:
+            model_name (str): Worker name to send the task.
+            model_dir (str): Model directory name to invoke
+            prompt (str): Prompt to generate the image
+            stream (bool): If true, stream the response
+            size (str): Size of the image
+            num_images (int): Number of images to generate
+            seed (int): Seed for the random number generator
+            num_inference_steps (int): Number of inference steps
+            guidance_scale (float): Guidance scale for the generation
+        """
+
+        # List to store the generated images
+        image_list = []
+
+        # Loop over the number of images to generate
+        for image in range(num_images):
+
+            if image > 1:
+                # For the next images, use a different seed
+                seed = random.randint(1, 99)
+
+            # Prepare the input for the vision encoder
+            model_input = (model_dir, prompt, size, seed, num_inference_steps, guidance_scale)
+
+            # Result queue for the RKNN process
+            result_queue = Queue()
+
+            # Send the Encoder task of the image
+            run_rknn_process(model_name, WORKER_TASK_GENERATE_IMAGE,model_input,result_queue)  
+
+            # Wait to confirm output of the image 
+            image_base  = result_queue.get(timeout=300)  # Timeout after 60 seconds
+
+            if isinstance(image_base, str) and image_base ==  WORKER_TASK_ERROR:
+                # Error ENcoding the image. Return
+                return None
+
+            # Add the image to the list
+            image_list.append(image_base)    
+    
+        # Return the image
+        return image_list;   
+
+
     def get_finished_inference_token(self):
         """
         Return the finish token for inference task
@@ -546,7 +660,7 @@ class Worker:
         """
 
         # Define the process for the worker
-        self.process = Process(target=run_worker, args=(self.worker_model_info.model, self.task_q, self.result_q, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
+        self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.task_q, self.result_q, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
 
         # Start the worker
         self.process.start() 
