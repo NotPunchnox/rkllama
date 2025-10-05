@@ -235,25 +235,21 @@ This will automatically download the specified model file and prepare it for use
 ---
 
 ### **Manual Installation**
-1. **Download the Model**  
-   - Download `.rkllm` models directly from [Hugging Face](https://huggingface.co).  
+1. **Download the Model**
+   - Download `.rkllm` models directly from [Hugging Face](https://huggingface.co).
    - Alternatively, convert your GGUF models into `.rkllm` format (conversion tool coming soon on [my GitHub](https://github.com/notpunchnox)).
 
-2. **Place the Model**  
-   - Create a `models` directory on your system.
+2. **Place the Model**
+   - Create the `models` directory on your system.
    - Make a new subdirectory with model name.
    - Place the `.rkllm` files in this directory.
    - Create `Modelfile` and add this :
 
    ```env
     FROM="file.rkllm"
-
     HUGGINGFACE_PATH="huggingface_repository"
-
     SYSTEM="Your system prompt"
-
     TEMPERATURE=1.0
-
     TOKENIZER="path-to-tokenizer"
     ```
 
@@ -268,35 +264,38 @@ This will automatically download the specified model file and prepare it for use
    *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
 
 
-### **For Multimodal encoder model (.rknn) Installation**
-1. **Download the Encoder Model .rknn**  
-   - Download `.rknn` models directly from [Hugging Face](https://huggingface.co).  
+### **For Multimodal Encoder Model (.rknn) Installation**
+1. **Download the encoder model .rknn**
+   - Download `.rknn` models directly from [Hugging Face](https://huggingface.co).
    - Alternatively, convert your ONNX models into `.rknn` format.
-   - Place the `.rknn` model inside the same folder of the `.rkll` models. RKLLama detected the encoder model present in the directory
-   - Include manually the following properties in the Modelfile according to the convertion properties used for the conversion of the vision encoder `.rknn`
-        * IMAGE_WIDTH=448
-        * IMAGE_HEIGHT
-        * N_IMAGE_TOKENS
-        * IMG_START
-        * IMG_END
-        * IMG_CONTENT
+   - Place the `.rknn` model inside the `models` directory. RKLLama detected the encoder model present in the directory.
+   - Include manually the following properties in the `Modelfile` according to the conversion properties used for the conversion of the vision encoder `.rknn`:
+   ```env
+    IMAGE_WIDTH=448
+    IMAGE_HEIGHT=
+    N_IMAGE_TOKENS=
+    IMG_START=
+    IMG_END=
+    IMG_CONTENT=
 
-        For example, for Qwen2VL/Qwen2.5VL can be:
-        IMAGE_WIDTH=392
-        IMAGE_HEIGHT=392
-        N_IMAGE_TOKENS=196
-        IMG_START=<|vision_start|>
-        IMG_END=<|vision_end|>
-        IMG_CONTENT=<|image_pad|>
+    # For example, for Qwen2VL/Qwen2.5VL:
 
-        For example, for MiniCPMV4 can be:
-        IMAGE_WIDTH=448
-        IMAGE_HEIGHT=448
-        N_IMAGE_TOKENS=64
-        IMG_START=<image>
-        IMG_END=</image>
-        IMG_CONTENT=<unk>
+    IMAGE_WIDTH=392
+    IMAGE_HEIGHT=392
+    N_IMAGE_TOKENS=196
+    IMG_START=<|vision_start|>
+    IMG_END=<|vision_end|>
+    IMG_CONTENT=<|image_pad|>
 
+    # For example, for MiniCPMV4:
+
+    IMAGE_WIDTH=448
+    IMAGE_HEIGHT=448
+    N_IMAGE_TOKENS=64
+    IMG_START=<image>
+    IMG_END=</image>
+    IMG_CONTENT=<unk>
+   ```
 
 Example directory structure for multimodal:
    ```
@@ -307,9 +306,8 @@ Example directory structure for multimodal:
            └── Qwen2-VL-2B-Instruct.rknn
    ```
 
-
 ### **For Image Generation Installation**
-1. In a temporary folder, clone the repository happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2 from Hugging Face.
+1. In a temporary folder, clone the repository `happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2` from Hugging Face.
 2. Execute the ONNX to RKNN convertion of the models for your needs **WITH RKNN TOOLKIT LIBRARY VERSION 2.3.2**. For example:
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 512x512 --components "text_encoder,unet,vae_decoder" --target_platform rk3588
