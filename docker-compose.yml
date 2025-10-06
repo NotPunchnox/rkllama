@@ -5,8 +5,9 @@ services:
     build: .
     privileged: true
     volumes:
-      - ./models:/root/RKLLAMA/models
+      - ./models:/opt/rkllama/models
     ports:
+      # Host:Container
       - "8080:8080"
-      - "11434:11434"
+      - "11432:8080"
     restart: unless-stopped

@@ -1,13 +1,9 @@
-# Dockerfile for RKLLama
-# Improved by Yoann Vanitou <yvanitou@gmail.com>
-
 FROM python:3.12-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 wget curl sudo git build-essential \
+    && apt-get install -y ffmpeg libsm6 libxext6 \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
 
 WORKDIR /opt/rkllama
 
@@ -24,13 +20,10 @@ COPY ./models /opt/rkllama/models
 COPY README.md LICENSE pyproject.toml /opt/rkllama/
 
 # Install RKNNLite toolkit
-RUN python -m pip install .
+RUN python -m pip --no-cache-dir install .
 
 EXPOSE 8080
 
-CMD ["rkllama_server", "--models", "/opt/rkllama/models"]
-# If you want to change the port see
+# If you want to change the port see the
 # documentation/configuration.md for the INI file settings.
-
-
-
+CMD ["rkllama_server", "--models", "/opt/rkllama/models"]

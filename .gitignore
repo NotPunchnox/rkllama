@@ -1,5 +1,4 @@
-models/*/*.rkllm
-models/*/*
+models/**/*
 src/__pycache__
 *.log
 config/config.env
@@ -7,7 +6,6 @@ tests
 
 # macOS system files
 .DS_Store
-**/.DS_Store
 
 # Python bytecode
 __pycache__/
