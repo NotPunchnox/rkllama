@@ -1118,7 +1118,7 @@ def chat_ollama():
         #    rkllm_loaded = get_model_loaded_by_name(loaded_models,model_name)
         #    rkllm_model_request = rkllm_loaded.model_rkllm
         #    # If model is already loaded, check its options are the same for the current request
-        #    if rkllm_model_request.rkllm_param.max_context_len != int(options.get("num_ctx")) \
+        #    if rkllm_model_request.rkllm_param.max_context_len != int(float(options.get("num_ctx", 0))) \
         #        or rkllm_model_request.rkllm_param.max_new_tokens != int(options.get("max_new_tokens")) \
         #        or rkllm_model_request.rkllm_param.top_k != int(options.get("top_k")) \
         #        or round(rkllm_model_request.rkllm_param.top_p,2) != round(float(options.get("top_p")),2) \

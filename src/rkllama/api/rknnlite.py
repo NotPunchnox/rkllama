@@ -11,7 +11,7 @@ logger = logging.getLogger("rkllama.rknnlite")
 
 
 # Run the visionencder to get the image embedding
-def run_vision_encoder(model_encoder_path, image_source, image_width, image_height):
+def run_vision_encoder(model_encoder_path, images_source, image_width, image_height):
     """
     Run the vision encoder to get the image embedding
     Args:
@@ -24,21 +24,27 @@ def run_vision_encoder(model_encoder_path, image_source, image_width, image_heig
     """
     
     # Prepare the image
-    img = prepare_image(image_source, image_width, image_height)
-    
+    prepared_images = [prepare_image(image_source, image_width, image_height) for image_source in images_source]
+
     # Init encoder
     vision_encoder = RKNNLite(verbose=False)
     vision_encoder.load_rknn(model_encoder_path)
     vision_encoder.init_runtime()
 
     # Inference
-    image_embeddings = vision_encoder.inference(inputs=[img.astype(np.float32)], data_type="float32", data_format="nhwc")[0]
-    
+    image_embeddings = [vision_encoder.inference(inputs=[img.astype(np.float32)], data_type="float32", data_format="nhwc")[0] for img in prepared_images]
+    logger.debug(f"Image embeddings shapes: {[emb.shape for emb in image_embeddings]}")
+
+    # Concatenate along the first axis (rows)
+    np_float32_image_embeddings = [emb.astype(np.float32) for emb in image_embeddings]
+    concatenated_image_embeddings = np.concatenate(np_float32_image_embeddings, axis=0)
+    logger.debug(f"Concatenated image embeddings shape: {concatenated_image_embeddings.shape}")
+
     # Release RKNNLite resources
     vision_encoder.release()
 
     # Return the encoded image to the main process
-    return image_embeddings.astype(np.float32)
+    return concatenated_image_embeddings
 
 
 def load_image(source: str):

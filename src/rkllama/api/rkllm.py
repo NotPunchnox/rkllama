@@ -23,7 +23,7 @@ class RKLLM(object):
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
         self.rkllm_param.model_path = bytes(model_path, 'utf-8')
-        self.rkllm_param.max_context_len = int(options.get("num_ctx", rkllama.config.get("model", "default_num_ctx")))
+        self.rkllm_param.max_context_len =  int(float((options.get("num_ctx", rkllama.config.get("model", "default_num_ctx")))))
         self.rkllm_param.max_new_tokens = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
         self.rkllm_param.top_k = int(options.get("top_k", rkllama.config.get("model", "default_top_k")))
         self.rkllm_param.top_p = float(options.get("top_p", rkllama.config.get("model", "default_top_p")))
@@ -175,8 +175,9 @@ class RKLLM(object):
             rkllm_input.input_data.embed_input.n_tokens = ctypes.c_size_t(num_tokens)
         
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_MULTIMODAL:
-            prompt_input, image_embed, n_image_tokens, image_width, image_height = input
-
+            prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images = input
+            logger.debug(f"Running multimodal inference with {num_images} images, each of size {image_width}x{image_height}, and {n_image_tokens} image tokens.")
+            
             # Prompt
             rkllm_input.input_data.multimodal_input.prompt = prompt_input.encode("utf-8")
             
@@ -184,7 +185,7 @@ class RKLLM(object):
             arr = image_embed.flatten().astype(np.float32)
             rkllm_input.input_data.multimodal_input.image_embed = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
             rkllm_input.input_data.multimodal_input.n_image_tokens = ctypes.c_size_t(n_image_tokens)
-            rkllm_input.input_data.multimodal_input.n_image = ctypes.c_size_t(1)
+            rkllm_input.input_data.multimodal_input.n_image = ctypes.c_size_t(num_images)
             rkllm_input.input_data.multimodal_input.image_width = ctypes.c_size_t(image_width)
             rkllm_input.input_data.multimodal_input.image_height = ctypes.c_size_t(image_height)
         

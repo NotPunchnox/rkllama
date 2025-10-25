@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.47](#New-Version)
+### [Version: 0.0.48](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -66,8 +66,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
-- **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/MiniCPMV4/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address).
-- **Image Generation** - Generate images with OpenAI Image generation endpoint usin model LCM Stable Diffusion RKNN models.
+- **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/Qwen3VL/MiniCPMV4/MiniCPMV4.5/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address). More than one image in the same request is allowed.
+- **Image Generation** - Generate images with OpenAI Image generation endpoint usin model LCM Stable Diffusion 1.5 RKNN models.
 
 ## Documentation
 

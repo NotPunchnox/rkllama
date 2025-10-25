@@ -40,10 +40,10 @@ def run_encoder(model_input, rknn_queue):
     from .rknnlite import run_vision_encoder
 
     # Get the arguments for the call
-    model_encoder_path, img_source, image_width, image_height = model_input
+    model_encoder_path, images_source, image_width, image_height = model_input
 
     # Run the visionencder to get the image embedding
-    image_embeddings = run_vision_encoder(model_encoder_path, img_source, image_width, image_height)
+    image_embeddings = run_vision_encoder(model_encoder_path, images_source, image_width, image_height)
     
     # Send the encoded image to the main process
     rknn_queue.put(image_embeddings)
@@ -524,9 +524,10 @@ class WorkerManager:
             image_width = int(get_property_modelfile(model_name, 'IMAGE_WIDTH', rkllama.config.get_path("models"))) 
             image_height = int(get_property_modelfile(model_name, 'IMAGE_HEIGHT', rkllama.config.get_path("models"))) 
             n_image_tokens = int(get_property_modelfile(model_name, 'N_IMAGE_TOKENS', rkllama.config.get_path("models"))) 
+            num_images = len(images)
 
             # Prepare the image input embed for multimodal
-            image_embed  =  self.get_image_embed(model_name, model_encoder_path, images, image_width, image_height)
+            image_embed  =  self.get_images_embed(model_name, model_encoder_path, images, image_width, image_height)
 
             # Check if the image was encoded correctly
             if image_embed is None:
@@ -534,13 +535,13 @@ class WorkerManager:
                 raise RuntimeError(f"Unexpected error encoding image for model : {model_name}")
             
             # Prepare all the inputs for the multimodal inference
-            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height)
+            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images)
             
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
 
 
-    def get_image_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
+    def get_images_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
         """
         Send a vision encoder task to the corresponding model worker
         
@@ -553,11 +554,8 @@ class WorkerManager:
         """
         if model_name in self.workers.keys():
 
-            # Get the image path/base64/url from the request
-            image_path = images[len(images) -1]  # For now, only one image supported (the last one)
-            
             # Prepare the input for the vision encoder
-            model_input = (model_encoder_path, image_path, image_width, image_height)
+            model_input = (model_encoder_path, images, image_width, image_height)
 
             # Send the Encoder task of the image
             self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
