@@ -630,7 +630,7 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
                 tool["id"] = f"call_{uuid.uuid4().hex}"
                 tool["type"] = "function"
                 tool["index"] = idx
-                tool["function"]["arguments"] = f"{str(tool["function"]["arguments"]).replace("'",'\"')}"
+                tool["function"]["arguments"] = str(tool["function"]["arguments"]).replace("'", '"')
             delta["tool_calls"] = tool_calls
         
         chunk = {
