@@ -16,7 +16,7 @@ COPY ./src/rkllama/lib/librknnrt.so /usr/lib/
 RUN chmod 755 /usr/lib/librknnrt.so && ldconfig
 
 COPY ./src /opt/rkllama/src
-COPY ./models /opt/rkllama/models
+RUN mkdir /opt/rkllama/models
 COPY README.md LICENSE pyproject.toml /opt/rkllama/
 
 # Install RKNNLite toolkit
