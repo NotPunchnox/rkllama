@@ -144,6 +144,9 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                     if not tokens_processed:
                         time.sleep(0.01)
 
+                # CLear the cache after inference
+                model_rkllm.clear_cache()
+
                 # Send final signal of the inference
                 result_queue.put(WORKER_TASK_FINISHED)
 
@@ -330,7 +333,7 @@ class WorkerManager:
         if model_name not in self.workers.keys():
 
             # Get the available domain id for the RKLLM process
-            base_domain_id = self.get_available_base_domain_id(reverse_order=False)
+            base_domain_id = self.get_available_base_domain_id(reverse_order=True)
 
             # Add the worker to the dictionary of workers
             worker_model = Worker(model_name,base_domain_id)
@@ -383,7 +386,7 @@ class WorkerManager:
         Args:
             model_size (int) -> Size of the model to load
         """
-        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > model_size
+        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > (model_size * 1.20) # Include 20% more memory required than the model size
     
 
     def send_task(self, model_name, task):
@@ -553,6 +556,13 @@ class WorkerManager:
             image_height (int): Height of the image
         """
         if model_name in self.workers.keys():
+            
+            # Get model encoder size
+            model_encoder_size = os.path.getsize(model_encoder_path)
+            # Check if available meory in server for encoder
+            if not self.is_memory_available_for_model(model_encoder_size):
+                # Unload the oldest model until memory avilable
+                self.unload_oldest_models_from_memory(model_encoder_size)
 
             # Prepare the input for the vision encoder
             model_input = (model_encoder_path, images, image_width, image_height)

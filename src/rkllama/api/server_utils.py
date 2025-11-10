@@ -8,7 +8,7 @@ import rkllama.api.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
-
+from .model_utils import get_property_modelfile
 import rkllama.config
 
 # Check for debug mode using the improved method from config
@@ -39,9 +39,14 @@ class EndpointHandler:
     
     
     @staticmethod
-    def prepare_prompt(messages, system="", tools=None, enable_thinking=False):
+    def prepare_prompt(model_name, messages, system="", tools=None, enable_thinking=False):
         """Prepare prompt with proper system handling"""
-        tokenizer = AutoTokenizer.from_pretrained(variables.model_id, trust_remote_code=True)
+
+        # Get model specific tokenizer from Huggin Face specified in Modelfile
+        model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH").replace('"', '').replace("'", "")
+
+        # Get the tokenizer configured for the model
+        tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
         if system and supports_system_role:
@@ -162,7 +167,7 @@ class ChatEndpointHandler(EndpointHandler):
             prompt_token_count = None
             if not images:    
                 # Create the prompts tokens for text only requests
-                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages, system, tools, enable_thinking)
+                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
             
             else:
                 if DEBUG_MODE:
@@ -493,7 +498,7 @@ class GenerateEndpointHandler(EndpointHandler):
             prompt_token_count = None
             if not images:    
                 # Create the prompts tokens for text only requests
-                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=messages, system=system,enable_thinking=enable_thinking)
+                tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
@@ -757,7 +762,7 @@ class EmbedEndpointHandler(EndpointHandler):
         variables.global_status = -1
 
         # Create the prompts
-        _, prompt_tokens, prompt_token_count = cls.prepare_prompt(messages=input_text)
+        _, prompt_tokens, prompt_token_count = cls.prepare_prompt(model_name=model_name, messages=input_text)
 
         # Ollama request handling 
         ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, prompt_token_count)

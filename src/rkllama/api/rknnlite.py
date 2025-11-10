@@ -84,6 +84,10 @@ def load_image(source: str):
         except Exception as e:
             logger.error("Error loading from Base64:", e)
     
+    # Convert BGR → RGB (Color fix)
+    if img is not None:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
     return img
 
 
