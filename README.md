@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.49](#New-Version)
+### [Version: 0.0.50](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -17,7 +17,7 @@ Video demo ( version 0.0.1 ):
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
-* Version `Lib rkllm-runtime`: V 1.2.2.
+* Version `Lib rkllm-runtime`: V 1.2.3.
 * Version `Lib rknn-runtime`: V 2.3.2.
 
 ## File Structure
