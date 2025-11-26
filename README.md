@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.50](#New-Version)
+### [Version: 0.0.51](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -307,15 +307,25 @@ Example directory structure for multimodal:
    ```
 
 ### **For Image Generation Installation**
-1. In a temporary folder, clone the repository `happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2` from Hugging Face.
+1. In a temporary folder, clone the repository https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 or https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 from Hugging Face for the desired SD model
 2. Execute the ONNX to RKNN convertion of the models for your needs **WITH RKNN TOOLKIT LIBRARY VERSION 2.3.2**. For example:
+   
+   For LCM SD 1.5
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 512x512 --components "text_encoder,unet,vae_decoder" --target_platform rk3588
    ```
-3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** 
-2. Copy the folders: "scheduler, text_encoder, unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
+   
+   or
+
+   For LCM SSD1B
+   ```
+    python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 1024x1024 --components "text_encoder,text_encoder_2,unet,vae_decoder" --target_platform rk3588
+   ```
+3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** or **lcm-segmind-stable-diffusion** 
+2. Copy the folders: "scheduler, text_encoder, text_encoder_2 (for SSD1B only), unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
 3. The structure of the model **MUST** be like this:
 
+   For LCM SD 1.5
    ```
    ~/RKLLAMA/models/
        └── lcm-stable-diffusion
@@ -332,7 +342,33 @@ Example directory structure for multimodal:
               |── model.rknn
            
    ```
+
+   or
+
+   For LCM SSD1B
+   ```
+   ~/RKLLAMA/models/
+       └── lcm-segmind-stable-diffusion
+           |── scheduler
+              |── scheduler_config.json
+           └── text_encoder
+              |── config.json
+              |── model.rknn
+           └── text_encoder_2
+              |── config.json
+              |── model.rknn
+           └── unet
+              |── config.json
+              |── model.rknn
+           └── vae_decoder
+              |── config.json
+              |── model.rknn
+           
+   ```
+
+
 4. Done! You are ready to test the OpenAI endpoint /v1/images/generations to generate images. You can add it to OpenWebUI in the Image Generation section.
+5. Available converted models for RK3588 and RKNN 2.3.2 at: https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 (only 512x512 resolutions) and https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 (only 1024x1024 resolutions)
 
 
 ## Configuration
