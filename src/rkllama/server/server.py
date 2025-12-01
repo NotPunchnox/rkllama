@@ -426,6 +426,66 @@ def recevoir_message():
     return Request(modele_rkllm, modelfile)
 
 
+# OpenAI API compatibility routes
+
+@app.route('/v1/models', methods=['GET'])
+def list_openai_models():
+    # Return models in OpenAI API format
+    models_dir = rkllama.config.get_path("models")
+    
+    # Check if models exists
+    if not os.path.exists(models_dir):
+        return jsonify({"object": "list", "data": []}), 200
+
+    # Loop over the available models 
+    models = []
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm") or file == "unet": # Include Stable Diffusion models
+                    models.append({
+                        "id": subdir,      
+                        "object": "model",      
+                        "created": int(datetime.datetime.fromtimestamp(
+                            os.path.getmtime(os.path.join(subdir_path, file))
+                        ).timestamp()),
+                        "owned_by": "rkllama"
+                    })
+                    break
+
+    return jsonify({"object": "list", "data": models}), 200
+
+
+# Default route
+@app.route('/v1/models/<model_name>', methods=['GET'])
+def list_openai_model(model_name):
+    
+    # Return models in OpenAI API format
+    models_dir = rkllama.config.get_path("models")
+    
+    # Check if models exists
+    if not os.path.exists(models_dir):
+        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+
+    # Loop over the available models to search for the required one
+    for subdir in os.listdir(models_dir):
+        subdir_path = os.path.join(models_dir, subdir)
+        if os.path.isdir(subdir_path):
+            for file in os.listdir(subdir_path):
+                if file.endswith(".rkllm") or file == "unet": # Include Stable Diffusion models
+                    if subdir == model_name:
+                       return jsonify({
+                          "id": subdir,      
+                          "object": "model",      
+                          "created": int(datetime.datetime.fromtimestamp(
+                            os.path.getmtime(os.path.join(subdir_path, file))
+                           ).timestamp()),
+                          "owned_by": "rkllama"
+                    }), 200     
+                    
+    return jsonify({"error": f"Model '{model_name}' not found"}), 404
+
 
 # Ollama API compatibility routes
 
