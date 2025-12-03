@@ -43,7 +43,7 @@ class EndpointHandler:
         """Prepare prompt with proper system handling"""
 
         # Get model specific tokenizer from Huggin Face specified in Modelfile
-        model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH").replace('"', '').replace("'", "")
+        model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
 
         # Get the tokenizer configured for the model
         tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
