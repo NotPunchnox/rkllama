@@ -25,6 +25,7 @@ WORKER_TASK_ERROR = "<RKLLM_TASK_ERROR>"
 WORKER_TASK_ABORT_INFERENCE = "ABORT"
 WORKER_TASK_CLEAR_CACHE = "CLEAR_CACHE"
 WORKER_TASK_GENERATE_IMAGE = "GENERATE_IMAGE"
+WORKER_TASK_GENERATE_SPEECH = "GENERATE_SPEECH"
 
 
 def run_encoder(model_input, rknn_queue):
@@ -70,6 +71,29 @@ def run_image_generator(model_input, rknn_queue):
     
     # Send the encoded image to the main process
     rknn_queue.put(image)
+
+
+def run_speech_generator(model_input, rknn_queue):
+    """
+    Run piper generator model to get the audio
+    Args:
+        model_input (tuple): (model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+        rknn_queue (Queue): Queue to return the audio
+    Returns:
+        str: Audio
+    """
+
+    from .tts import generate_speech
+
+    # Get the arguments for the call
+    model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio = model_input
+
+    # Run the piper
+    audio = generate_speech(model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+    
+    # Send the audio bytes to the main process
+    rknn_queue.put(audio)
+
 
 
 # RKLLM Worker 
@@ -223,6 +247,26 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
 
             # Send the image 
             result_queue.put(img)
+
+        elif task == WORKER_TASK_GENERATE_SPEECH:
+            logger.info(f"Running speech generator for model {name}...")
+            # Run piper
+            rknn_queue = Queue()
+
+            # Define the process for piper
+            rknn_process = Process(target=run_speech_generator, args=(model_input,rknn_queue,))
+
+            # Start the piper worker
+            rknn_process.start() 
+
+            # Get the audio from the queue
+            audio = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
+
+            # Terminate the process piper after use
+            rknn_process.terminate()
+
+            # Send the audio 
+            result_queue.put(audio)
 
         else:
             result_queue.put(f"Unknown task: {task}")
@@ -630,6 +674,36 @@ class WorkerManager:
         # Return the image
         return image_list;   
 
+
+    def generate_speech(self, model_name, model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio) -> None:
+        """
+        Send a generate speech task to the corresponding model worker
+        
+        Args:
+            model_name (str): Worker name to send the task.
+            model_dir (str): Model directory name to invoke
+ 
+        """
+
+        # Prepare the input for piper
+        model_input = (model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+
+        # Result queue for the RKNN process
+        result_queue = Queue()
+
+        # Send the Encoder task of the Speech
+        run_rknn_process(model_name, WORKER_TASK_GENERATE_SPEECH,model_input,result_queue)  
+
+        # Wait to confirm output of the image 
+        audio  = result_queue.get(timeout=300)  # Timeout after 60 seconds
+
+        if isinstance(audio, str) and audio ==  WORKER_TASK_ERROR:
+            # Error Generating the speech. Return
+            return None
+
+        # Return the audio
+        return audio
+    
 
     def get_finished_inference_token(self):
         """

@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.52](#New-Version)
+### [Version: 0.0.53](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -51,6 +51,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/v1/chat/completions`
    * `/v1/embeddings`
    * `/v1/images/generations`
+   * `/v1/audio/speech`
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
@@ -67,7 +68,9 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **CPU Model Auto-detection** - Automatic detection of RK3588 or RK3576 platform.
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
 - **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/Qwen3VL/MiniCPMV4/MiniCPMV4.5/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address). More than one image in the same request is allowed.
-- **Image Generation** - Generate images with OpenAI Image generation endpoint usin model LCM Stable Diffusion 1.5 RKNN models.
+- **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
+- **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN.
+
 
 ## Documentation
 
@@ -322,8 +325,8 @@ Example directory structure for multimodal:
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 1024x1024 --components "text_encoder,text_encoder_2,unet,vae_decoder" --target_platform rk3588
    ```
 3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** or **lcm-segmind-stable-diffusion** 
-2. Copy the folders: "scheduler, text_encoder, text_encoder_2 (for SSD1B only), unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
-3. The structure of the model **MUST** be like this:
+4. Copy the folders: "scheduler, text_encoder, text_encoder_2 (for SSD1B only), unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
+5. The structure of the model **MUST** be like this:
 
    For LCM SD 1.5
    ```
@@ -367,9 +370,43 @@ Example directory structure for multimodal:
    ```
 
 
-4. Done! You are ready to test the OpenAI endpoint /v1/images/generations to generate images. You can add it to OpenWebUI in the Image Generation section.
-5. Available converted models for RK3588 and RKNN 2.3.2 at: https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 (only 512x512 resolutions) and https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 (only 1024x1024 resolutions)
+6. Done! You are ready to test the OpenAI endpoint /v1/images/generations to generate images. You can add it to OpenWebUI in the Image Generation section.
+7. Available converted models for RK3588 and RKNN 2.3.2 at: https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 (only 512x512 resolutions) and https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 (only 1024x1024 resolutions)
 
+
+
+### **For Speech Generation (TTS) Installation**
+1. Download a voice from https://huggingface.co/danielferr85/piper-checkpoints-rknn from Hugging Face. (You can convert new ones, see below)
+2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **es_AR-daniela-high** 
+3. Copy the encoder (.onnx), decoder (.rknn) and config (.json) file from the choosed voice to the new directory model created in RKLLMA.
+4. The structure of the model **MUST** be like this:
+
+   ```
+   ~/RKLLAMA/models/
+       └── es_AR-daniela-high
+           |── encoder.onnx
+           └── decoder.rknn
+           └── config.json
+          
+   ```
+
+5. Done! You are ready to test the OpenAI endpoint /v1/audio/speech to generate audio. You can add it to OpenWebUI in the Audio section for TTS.
+
+**IMPORTANT**
+- You must convert only your decoder (.rknn) for your specific platform (for example rk3588).
+- The encoder can have any name but must ended with extension .onnx
+- The decoder can have any name but must ended with extension .rknn
+- The config of the model can have any name but must ended with extension .json
+- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
+- Always **CHECK THE LICENSE** of the voice that you are going to use.
+- In OpenAI request, the argument **model** is the name of the model folder that you create and the argument **voice** is the speaker of the voice if the voice is multispeaker (For example 'F' (Female) or 'M' (Male). Check the config of the model). If the model is monospeaker, then voice can be skipped.
+- You can convert any Piper TTS model (or create one, or finetuning one) creating first the encoder and decoder in ONNX format and then converting the decoder in RKNN:
+   1. Clone this repo and branch **streaming**: https://github.com/mush42/piper/tree/streaming
+   2. Create a virtual environemnt and install that repo
+   3. Clone the repository https://huggingface.co/danielferr85/piper-checkpoints-rknn from Hugging Face
+   4. Download the entire folder of the voice to convert from dataset: https://huggingface.co/datasets/rhasspy/piper-checkpoints and put it inside the repo **piper-checkpoints-rknn** (the structure must be for example: es/es_MX/ald/medium/). You can also use the script  **download_models.py** from download automatically the model you want.
+   5. Execute the script export_encoder_decoder.py to export the encoder and decoder IN ONNX format.
+   6. Execute the script export_rknn.py to export the decoder in RKNN format (you must uhave installed the rknn-toolkit version 2.3.2).
 
 ## Configuration
 
