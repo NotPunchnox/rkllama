@@ -51,10 +51,14 @@ class RKLLM(object):
         self.rkllm_param.extend_param.embed_flash = 1
         self.rkllm_param.extend_param.n_batch = 1
         self.rkllm_param.extend_param.use_cross_attn = 0
-        self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
-        self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
-        #self.rkllm_param.extend_param.enabled_cpus_num = 4                                     # Better for RK3588
-        #self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)  # Better for RK3588
+        #self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
+        self.rkllm_param.extend_param.enabled_cpus_num = 4  
+        #self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
+        processor = rkllama.config.get("platform", "processor", None)
+        if processor.lower() in ["rk3576", "rk3588"]: # Recommended new way by Rockchip
+            self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)
+        else:
+            self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 0)|(1 << 1)|(1 << 2)|(1 << 3)
         
         
         # Initialization of the RKLLM model
