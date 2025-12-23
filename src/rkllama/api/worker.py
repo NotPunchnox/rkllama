@@ -26,6 +26,7 @@ WORKER_TASK_ABORT_INFERENCE = "ABORT"
 WORKER_TASK_CLEAR_CACHE = "CLEAR_CACHE"
 WORKER_TASK_GENERATE_IMAGE = "GENERATE_IMAGE"
 WORKER_TASK_GENERATE_SPEECH = "GENERATE_SPEECH"
+WORKER_TASK_GENERATE_TRANSCRIPTION = "GENERATE_TRANSCRIPTION"
 
 
 def run_encoder(model_input, rknn_queue):
@@ -92,6 +93,28 @@ def run_speech_generator(model_input, rknn_queue):
     audio = generate_speech(model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
     
     # Send the audio bytes to the main process
+    rknn_queue.put(audio)
+
+
+def run_transcription_generator(model_input, rknn_queue):
+    """
+    Run omniasr generator model to get the transcription
+    Args:
+        model_input (tuple): (model_omniasr_path,file,language)
+        rknn_queue (Queue): Queue to return the transcription
+    Returns:
+        str: Transcription
+    """
+
+    from .stt import generate_transcription
+
+    # Get the arguments for the call
+    model_omniasr_path,file,language = model_input
+
+    # Run the omniasr
+    audio = generate_transcription(model_omniasr_path,file,language)
+    
+    # Send the text transcription to the main process
     rknn_queue.put(audio)
 
 
@@ -267,6 +290,26 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
 
             # Send the audio 
             result_queue.put(audio)
+
+        elif task == WORKER_TASK_GENERATE_TRANSCRIPTION:
+            logger.info(f"Running transcription generator for model {name}...")
+            # Run omniasr
+            rknn_queue = Queue()
+
+            # Define the process for omniasr
+            rknn_process = Process(target=run_transcription_generator, args=(model_input,rknn_queue,))
+
+            # Start the omniasr worker
+            rknn_process.start() 
+
+            # Get the text from the queue
+            text = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
+
+            # Terminate the process omniasr after use
+            rknn_process.terminate()
+
+            # Send the text 
+            result_queue.put(text)
 
         else:
             result_queue.put(f"Unknown task: {task}")
@@ -703,6 +746,35 @@ class WorkerManager:
 
         # Return the audio
         return audio
+    
+    def generate_transcription(self, model_name, model_dir, file, language, response_format) -> None:
+        """
+        Send a generate transcription task to the corresponding model worker
+        
+        Args:
+            model_name (str): Worker name to send the task.
+            model_dir (str): Model directory name to invoke
+ 
+        """
+
+        # Prepare the input for omniasr
+        model_input = (model_dir, file, language)
+
+        # Result queue for the RKNN process
+        result_queue = Queue()
+
+        # Send the inference task of the Transcription
+        run_rknn_process(model_name, WORKER_TASK_GENERATE_TRANSCRIPTION,model_input,result_queue)  
+
+        # Wait to confirm output of the image 
+        text  = result_queue.get(timeout=300)  # Timeout after 60 seconds
+
+        if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
+            # Error Generating the transcription. Return
+            return None
+
+        # Return the transcription
+        return text
     
 
     def get_finished_inference_token(self):
