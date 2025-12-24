@@ -958,3 +958,62 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
         # Return the audio
         return audio
     
+
+
+class GenerateTranscriptionsEndpointHandler(EndpointHandler):
+    """Handler for v1/audio/transcriptions endpoint requests"""
+    
+    @staticmethod
+    def format_complete_response(text, response_format):
+        """Format a complete non-streaming response for generate endpoint"""
+
+        response ={
+            "text": text,
+            "usage": {
+                "type": "tokens",
+                "input_tokens": 0,
+                "input_token_details": {
+                "text_tokens": 0,
+                "audio_tokens": 0
+                },
+                "output_tokens": 0,
+                "total_tokens": 0
+            }
+        }
+        
+        return response
+    
+    @classmethod
+    def handle_request(cls, model_name,file, language, response_format, stream):
+        """Process a generate request with proper format handling"""
+        
+        if DEBUG_MODE:
+            logger.debug(f"GenerateTranscriptionsEndpointHandler: processing request for {model_name}")
+        
+        # Check if streaming or not
+        if stream:
+
+            # Streaming not supported yet for audio generation
+            return Response("Streaming not supported yet for audio transcription", status=400)
+        
+
+        else:
+            # Transcription output 
+            transcription_text =  cls.handle_complete(model_name,file, language, response_format)
+        
+            # Return response
+            return cls.format_complete_response(transcription_text, response_format)
+    
+    @classmethod
+    def handle_complete(cls, model_name,file, language, response_format):
+        """Handle complete generate transcription response"""
+
+        # Use config for models path
+        model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
+
+        # Send the task of generate transcription to the model
+        transcription_text = variables.worker_manager_rkllm.generate_transcription(model_name, model_dir, file, language, response_format)
+        
+        # Return the transcription text
+        return transcription_text
+    

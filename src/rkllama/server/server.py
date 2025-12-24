@@ -7,8 +7,6 @@ from flask import Flask, request, jsonify, Response, stream_with_context, send_f
 from flask_cors import CORS
 import random
 
-
-
 # Local file
 from rkllama.api.classes import *
 from rkllama.api.rkllm import *
@@ -1507,6 +1505,68 @@ def generate_speech_openai():
                 logger.debug("Releasing lock in generate_speech_openai")
             variables.verrou.release()
 
+
+@app.route('/v1/audio/transcriptions', methods=['POST'])
+def generate_transcriptions_openai():
+    
+    lock_acquired = False  # Track lock status
+
+    try:
+        form = request.form
+
+        # CHeck the file uploaded file
+        if "file" not in request.files:
+            return jsonify({"error": "file field missing"}), 400
+        
+        # Supported OpenAI parameters by RKNN
+        file = request.files["file"]
+        model_name = form.get('model', None)
+        language = form.get('language', None)        
+        response_format = form.get('response_format', 'text')
+        stream = form.get('stream', False)
+        
+        # Non supported OpenAI parameters by Piper
+        chunking_strategy = form.get('chunking_strategy', None)
+        known_speaker_names = form.get('known_speaker_names', None)
+        known_speaker_references = form.get('known_speaker_references', None)
+        prompt = form.get('prompt', None)
+        temperature = form.get('temperature', None)
+        timestamp_granularities = form.get('timestamp_granularities', None)
+
+        # Not OpenAI parameters, but used by rkllama/omnilingual
+
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
+        # Format bool values
+        stream = strtobool(stream) if bool(stream) else False # Disabled by default
+
+        if DEBUG_MODE:
+            logger.debug(f"API OpenAI Generate Transcription request data: {form}")
+
+        # Acquire lock before processing the request
+        variables.verrou.acquire()
+        lock_acquired = True  # Mark lock as acquired
+        
+        # Process the request - this won't release the lock
+        from rkllama.api.server_utils import GenerateTranscriptionsEndpointHandler
+        return GenerateTranscriptionsEndpointHandler.handle_request(
+              model_name=model_name,
+              file=file,
+              language=language,
+              response_format=response_format,
+              stream=stream)
+
+    except Exception as e:
+        logger.exception("Error in generate_transcriptions_openai")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            if DEBUG_MODE:
+                logger.debug("Releasing lock in generate_transcriptions_openai")
+            variables.verrou.release()
 
 
 # Default route

@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.53](#New-Version)
+### [Version: 0.0.54](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -52,6 +52,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/v1/embeddings`
    * `/v1/images/generations`
    * `/v1/audio/speech`
+   * `/v1/audio/transcriptions`
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
@@ -70,6 +71,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/Qwen3VL/MiniCPMV4/MiniCPMV4.5/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address). More than one image in the same request is allowed.
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
 - **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN.
+- **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC running the model with RKNN.
 
 
 ## Documentation
@@ -407,6 +409,29 @@ Example directory structure for multimodal:
    4. Download the entire folder of the voice to convert from dataset: https://huggingface.co/datasets/rhasspy/piper-checkpoints and put it inside the repo **piper-checkpoints-rknn** (the structure must be for example: es/es_MX/ald/medium/). You can also use the script  **download_models.py** from download automatically the model you want.
    5. Execute the script export_encoder_decoder.py to export the encoder and decoder IN ONNX format.
    6. Execute the script export_rknn.py to export the decoder in RKNN format (you must uhave installed the rknn-toolkit version 2.3.2).
+
+
+### **For Transcriptions Generation (STT) Installation**
+1. Download a model from https://huggingface.co/danielferr85/omniASR-ctc-rknn from Hugging Face.
+2. Create a folder inside the models directory in RKLLAMA for the model, For example: **omniasr-ctc:300m** 
+3. Copy the model (.rknn) and vocabulary (.txt) file from the choosed model to the new directory model created in RKLLMA.
+4. The structure of the model **MUST** be like this:
+
+   ```
+   ~/RKLLAMA/models/
+       └── omniasr-ctc:300m
+           └── model.rknn
+           └── vocab.txt
+          
+   ```
+
+5. Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
+
+**IMPORTANT**
+- The model can have any name but must ended with extension .rknn
+- The vocabulary of the model can have any name but must ended with extension .txt 
+- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
+
 
 ## Configuration
 
