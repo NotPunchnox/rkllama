@@ -2,7 +2,7 @@ models/**/*
 src/__pycache__
 *.log
 config/config.env
-tests
+
 
 # macOS system files
 .DS_Store
