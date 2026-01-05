@@ -10,6 +10,17 @@ from fastapi.responses import StreamingResponse
 
 import rkllama.config
 from rkllama.api.model_utils import get_model_full_options
+from rkllama.api.schemas import (
+    NativeDeleteRequest,
+    NativeDeleteResponse,
+    NativeLoadRequest,
+    NativeLoadResponse,
+    NativeModelsResponse,
+    NativeUnloadAllResponse,
+    NativeUnloadRequest,
+    NativeUnloadResponse,
+    PullRequest,
+)
 from rkllama.api.worker import WorkerManager
 from rkllama.server.dependencies import get_debug_mode, get_models_path, get_worker_manager
 
@@ -112,7 +123,7 @@ def unload_model(model_name: str, worker_manager: WorkerManager) -> None:
 
 
 @router.get("/models")
-async def list_models(models_path: str = Depends(get_models_path)) -> dict:
+async def list_models(models_path: str = Depends(get_models_path)) -> NativeModelsResponse:
     """List available models."""
     if not os.path.exists(models_path):
         raise HTTPException(status_code=500, detail=f"Models directory {models_path} not found.")
@@ -135,74 +146,67 @@ async def list_models(models_path: str = Depends(get_models_path)) -> dict:
                     model_dirs.append(subdir)
                     break
 
-    return {"models": model_dirs}
+    return NativeModelsResponse(models=model_dirs)
 
 
 @router.delete("/rm")
 async def rm_model(
-    data: dict,
+    request: NativeDeleteRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
-) -> dict:
+) -> NativeDeleteResponse:
     """Delete a model."""
-    model_name = data.get("model")
-    if not model_name:
-        raise HTTPException(status_code=400, detail="Please specify a model.")
-
-    model_path = os.path.join(models_path, model_name)
+    model_path = os.path.join(models_path, request.model)
     if not os.path.exists(model_path):
-        raise HTTPException(status_code=404, detail=f"Model directory for '{model_name}' not found")
+        raise HTTPException(status_code=404, detail=f"Model directory for '{request.model}' not found")
 
     # Unload if loaded
-    if wm.exists_model_loaded(model_name):
+    if wm.exists_model_loaded(request.model):
         if debug:
-            logger.debug(f"Unloading model '{model_name}' before deletion")
-        unload_model(model_name, wm)
+            logger.debug(f"Unloading model '{request.model}' before deletion")
+        unload_model(request.model, wm)
 
     try:
         if debug:
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
-        return {"message": "The model has been successfully deleted!"}
+        return NativeDeleteResponse(message="The model has been successfully deleted!")
     except Exception as e:
-        logger.error(f"Failed to delete model '{model_name}': {e}")
+        logger.error(f"Failed to delete model '{request.model}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {e}")
 
 
 @router.post("/pull")
 async def pull_model(
-    data: dict,
+    request: PullRequest,
     models_path: str = Depends(get_models_path),
 ) -> StreamingResponse:
     """Pull a model from various sources (HuggingFace, URL, S3)."""
     import json
 
-    from rkllama.pull.base import PullSource, get_handler
+    from rkllama.pull.base import PullSource as BasePullSource
+    from rkllama.pull.base import get_handler
 
     async def generate_progress():
-        model = data.get("model")
-        source_type = data.get("source", "huggingface").lower()
-        model_name = data.get("model_name", data.get("name"))
-
-        if not model:
-            yield json.dumps({"status": "error", "error": "Model not specified"}) + "\n"
-            return
+        model = request.model
+        source_type = request.source.value.lower()
+        model_name = request.model_name
 
         # Determine source type
         try:
             if source_type == "url" or model.startswith(("http://", "https://")):
                 # Check if it's an S3 URL
                 if "s3" in model and "amazonaws.com" in model:
-                    pull_source = PullSource.S3
+                    pull_source = BasePullSource.S3
                 elif model.startswith(("http://", "https://")):
-                    pull_source = PullSource.URL
+                    pull_source = BasePullSource.URL
                 else:
-                    pull_source = PullSource.HUGGINGFACE
+                    pull_source = BasePullSource.HUGGINGFACE
             elif source_type == "s3" or model.startswith("s3://"):
-                pull_source = PullSource.S3
+                pull_source = BasePullSource.S3
             else:
-                pull_source = PullSource.HUGGINGFACE
+                pull_source = BasePullSource.HUGGINGFACE
 
             handler = get_handler(pull_source)
 
@@ -217,49 +221,41 @@ async def pull_model(
 
 @router.post("/load_model")
 async def load_model_route(
-    data: dict,
+    request: NativeLoadRequest,
     wm: WorkerManager = Depends(get_worker_manager),
-) -> dict:
+) -> NativeLoadResponse:
     """Load a model into the NPU."""
-    model_name = data.get("model_name")
-    if not model_name:
-        raise HTTPException(status_code=400, detail="Please enter the name of the model to be loaded.")
+    if wm.exists_model_loaded(request.model_name):
+        return NativeLoadResponse(error="A model is already loaded. Nothing to do.")
 
-    if wm.exists_model_loaded(model_name):
-        return {"error": "A model is already loaded. Nothing to do."}
-
-    if "from" in data or "huggingface_path" in data:
+    if request.from_value or request.huggingface_path:
         _, error = load_model(
-            model_name, wm, from_value=data.get("from"), huggingface_path=data.get("huggingface_path")
+            request.model_name, wm, from_value=request.from_value, huggingface_path=request.huggingface_path
         )
     else:
-        _, error = load_model(model_name, wm)
+        _, error = load_model(request.model_name, wm)
 
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    return {"message": f"Model {model_name} loaded successfully."}
+    return NativeLoadResponse(message=f"Model {request.model_name} loaded successfully.")
 
 
 @router.post("/unload_model")
 async def unload_model_route(
-    data: dict,
+    request: NativeUnloadRequest,
     wm: WorkerManager = Depends(get_worker_manager),
-) -> dict:
+) -> NativeUnloadResponse:
     """Unload a model from the NPU."""
-    model_name = data.get("model_name")
-    if not model_name:
-        raise HTTPException(status_code=400, detail="Please enter the name of the model to be unloaded.")
+    if not wm.exists_model_loaded(request.model_name):
+        raise HTTPException(status_code=400, detail=f"No model {request.model_name} is currently loaded.")
 
-    if not wm.exists_model_loaded(model_name):
-        raise HTTPException(status_code=400, detail=f"No model {model_name} is currently loaded.")
-
-    unload_model(model_name, wm)
-    return {"message": f"Model {model_name} successfully unloaded!"}
+    unload_model(request.model_name, wm)
+    return NativeUnloadResponse(message=f"Model {request.model_name} successfully unloaded!")
 
 
 @router.post("/unload_models")
-async def unload_models_route(wm: WorkerManager = Depends(get_worker_manager)) -> dict:
+async def unload_models_route(wm: WorkerManager = Depends(get_worker_manager)) -> NativeUnloadAllResponse:
     """Unload all models."""
     wm.stop_all()
-    return {"message": "Models successfully unloaded!"}
+    return NativeUnloadAllResponse(message="Models successfully unloaded!")

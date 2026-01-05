@@ -18,6 +18,8 @@ from rkllama.api.schemas.openai import (
     OpenAICompletionRequest,
     OpenAIEmbeddingRequest,
     OpenAIImageRequest,
+    OpenAIModel,
+    OpenAIModelList,
     OpenAISpeechRequest,
 )
 from rkllama.api.worker import WorkerManager
@@ -36,10 +38,10 @@ def strip_namespace(model_name: str) -> str:
 
 
 @router.get("/models")
-async def list_openai_models(models_path: str = Depends(get_models_path)) -> dict:
+async def list_openai_models(models_path: str = Depends(get_models_path)) -> OpenAIModelList:
     """List models in OpenAI format."""
     if not os.path.exists(models_path):
-        return {"object": "list", "data": []}
+        return OpenAIModelList(data=[])
 
     models = []
     for subdir in os.listdir(models_path):
@@ -49,24 +51,22 @@ async def list_openai_models(models_path: str = Depends(get_models_path)) -> dic
                 # Include RKLLM, RKNN (SD), and Piper models
                 if file.endswith(".rkllm") or file.endswith(".rknn") or file == "unet":
                     models.append(
-                        {
-                            "id": subdir,
-                            "object": "model",
-                            "created": int(
+                        OpenAIModel(
+                            id=subdir,
+                            created=int(
                                 datetime.datetime.fromtimestamp(
                                     os.path.getmtime(os.path.join(subdir_path, file))
                                 ).timestamp()
                             ),
-                            "owned_by": "rkllama",
-                        }
+                        )
                     )
                     break
 
-    return {"object": "list", "data": models}
+    return OpenAIModelList(data=models)
 
 
 @router.get("/models/{model_name}")
-async def get_openai_model(model_name: str, models_path: str = Depends(get_models_path)) -> dict:
+async def get_openai_model(model_name: str, models_path: str = Depends(get_models_path)) -> OpenAIModel:
     """Get a specific model in OpenAI format."""
     if not os.path.exists(models_path):
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
@@ -76,16 +76,14 @@ async def get_openai_model(model_name: str, models_path: str = Depends(get_model
         if os.path.isdir(subdir_path) and subdir == model_name:
             for file in os.listdir(subdir_path):
                 if file.endswith(".rkllm") or file == "unet":
-                    return {
-                        "id": subdir,
-                        "object": "model",
-                        "created": int(
+                    return OpenAIModel(
+                        id=subdir,
+                        created=int(
                             datetime.datetime.fromtimestamp(
                                 os.path.getmtime(os.path.join(subdir_path, file))
                             ).timestamp()
                         ),
-                        "owned_by": "rkllama",
-                    }
+                    )
 
     raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
 

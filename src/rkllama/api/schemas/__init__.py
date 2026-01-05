@@ -13,6 +13,16 @@ from .modelfile import (
     ModelfilePropertyResponse,
     ModelfileResponse,
 )
+from .native import (
+    NativeDeleteRequest,
+    NativeDeleteResponse,
+    NativeLoadRequest,
+    NativeLoadResponse,
+    NativeModelsResponse,
+    NativeUnloadAllResponse,
+    NativeUnloadRequest,
+    NativeUnloadResponse,
+)
 from .ollama import (
     ChatMessage,
     ChatRequest,
@@ -34,6 +44,7 @@ from .ollama import (
     PullProgress,
     PullRequest,
     PullResponse,
+    PullSource,
     RunningModel,
     ShowRequest,
     ShowResponse,
@@ -84,6 +95,7 @@ __all__ = [
     "PullRequest",
     "PullResponse",
     "PullProgress",
+    "PullSource",
     "DeleteRequest",
     "DeleteResponse",
     "LoadRequest",
@@ -116,4 +128,13 @@ __all__ = [
     "ModelfilePropertyResponse",
     "ModelfileResponse",
     "ModelfilePatchRequest",
+    # Native
+    "NativeDeleteRequest",
+    "NativeDeleteResponse",
+    "NativeLoadRequest",
+    "NativeLoadResponse",
+    "NativeModelsResponse",
+    "NativeUnloadAllResponse",
+    "NativeUnloadRequest",
+    "NativeUnloadResponse",
 ]

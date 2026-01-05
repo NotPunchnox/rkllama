@@ -277,15 +277,31 @@ async def create_model(request: CreateRequest, models_path: str = Depends(get_mo
 
 
 @router.post("/pull")
-async def pull_model_ollama(request: PullRequest) -> StreamingResponse:
-    """Pull a model (Ollama-compatible)."""
+async def pull_model_ollama(
+    request: PullRequest,
+    models_path: str = Depends(get_models_path),
+) -> StreamingResponse:
+    """Pull a model from HuggingFace, URL, or S3.
+
+    Examples:
+        - HuggingFace: `{"model": "owner/repo/model.rkllm", "model_name": "my-model"}`
+        - URL: `{"model": "https://example.com/model.rkllm", "model_name": "my-model"}`
+        - S3: `{"model": "s3://bucket/path/model.rkllm", "model_name": "my-model"}`
+    """
     from rkllama.server.routers.native import pull_model
 
     if not request.model:
-        raise HTTPException(status_code=400, detail="Missing model name")
+        raise HTTPException(status_code=400, detail="Missing model path")
 
-    # Redirect to native pull
-    return await pull_model({"model": request.model})
+    # Pass all fields to native pull
+    return await pull_model(
+        {
+            "model": request.model,
+            "model_name": request.model_name,
+            "source": request.source.value,
+        },
+        models_path,
+    )
 
 
 @router.delete("/delete", response_model=DeleteResponse)

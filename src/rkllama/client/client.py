@@ -240,18 +240,41 @@ def pull_model(model):
             sys.stdout.write(text)
             sys.stdout.flush()
 
-        # Progress bar
-        for line in response.iter_lines(decode_unicode=True):
+        # Progress bar - parse NDJSON responses
+        for line in response.iter_lines():
             if line:
+                # Decode bytes to string if needed
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8')
                 line = line.strip()
-                if line.endswith('%'):  # Checks if the line contains a percentage
-                    try:
-                        progress = int(line.strip('%'))
-                        update_progress(progress)
-                    except ValueError:
-                        print(f"\n{line}")  # Displays non-numeric messages
-                else:
-                    print(f"\n{line}")  # Displays other messages
+
+                try:
+                    # Try to parse as JSON (new format)
+                    data = json.loads(line)
+                    status = data.get('status', '')
+
+                    if status == 'downloading':
+                        completed = data.get('completed', 0)
+                        total = data.get('total', 1)
+                        if total > 0:
+                            progress = (completed / total) * 100
+                            update_progress(progress)
+                    elif status == 'error':
+                        print(f"\n{RED}Error: {data.get('error', 'Unknown error')}{RESET}")
+                    elif status == 'success':
+                        pass  # Will print complete message after loop
+                    elif status:
+                        print(f"\n{CYAN}{status}{RESET}")
+                except json.JSONDecodeError:
+                    # Fallback: old format with percentage
+                    if line.endswith('%'):
+                        try:
+                            progress = int(line.strip('%'))
+                            update_progress(progress)
+                        except ValueError:
+                            print(f"\n{line}")
+                    else:
+                        print(f"\n{line}")
 
         print(f"\n{GREEN}Download complete.{RESET}")
     except requests.RequestException as e:
