@@ -13,10 +13,7 @@ except (ImportError, OSError):
     RKLLM_AVAILABLE = False
 
 # Skip marker for tests requiring RKLLM library
-requires_rkllm = pytest.mark.skipif(
-    not RKLLM_AVAILABLE,
-    reason="RKLLM native library not available (ARM-only)"
-)
+requires_rkllm = pytest.mark.skipif(not RKLLM_AVAILABLE, reason="RKLLM native library not available (ARM-only)")
 
 
 @pytest.fixture
@@ -31,13 +28,9 @@ def mock_worker_manager() -> MagicMock:
 
     # Mock result queue for inference
     result_queue = MagicMock()
-    result_queue.get = MagicMock(
-        side_effect=["Hello", " ", "world", "!", "<RKLLM_TASK_FINISHED>"]
-    )
+    result_queue.get = MagicMock(side_effect=["Hello", " ", "world", "!", "<RKLLM_TASK_FINISHED>"])
     manager.get_result = MagicMock(return_value=result_queue)
-    manager.get_finished_inference_token = MagicMock(
-        return_value="<RKLLM_TASK_FINISHED>"
-    )
+    manager.get_finished_inference_token = MagicMock(return_value="<RKLLM_TASK_FINISHED>")
 
     return manager
 
@@ -50,7 +43,7 @@ def sample_modelfile(tmp_path: Path) -> Path:
 
     modelfile = model_dir / "Modelfile"
     modelfile.write_text(
-        '''FROM="test-model.rkllm"
+        """FROM="test-model.rkllm"
 
 HUGGINGFACE_PATH="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
@@ -79,7 +72,7 @@ MIROSTAT_TAU=3.0
 MIROSTAT_ETA=0.1
 
 ENABLE_THINKING=False
-'''
+"""
     )
 
     # Create dummy .rkllm file
@@ -104,10 +97,11 @@ def test_client(mock_worker_manager: MagicMock, models_path: Path) -> Generator:
     from fastapi.testclient import TestClient
 
     # Patch config before importing app
-    with patch("rkllama.config.get_path") as mock_get_path, \
-         patch("rkllama.config.is_debug_mode", return_value=False), \
-         patch("rkllama.config.get", return_value="0.7"):
-
+    with (
+        patch("rkllama.config.get_path") as mock_get_path,
+        patch("rkllama.config.is_debug_mode", return_value=False),
+        patch("rkllama.config.get", return_value="0.7"),
+    ):
         mock_get_path.return_value = str(models_path)
 
         from rkllama.server.app import create_app
@@ -131,9 +125,7 @@ def async_mock_worker_manager() -> MagicMock:
 
     # Mock async result queue
     result_queue = AsyncMock()
-    result_queue.get = AsyncMock(
-        side_effect=["Hello", " ", "world", "!", "<RKLLM_TASK_FINISHED>"]
-    )
+    result_queue.get = AsyncMock(side_effect=["Hello", " ", "world", "!", "<RKLLM_TASK_FINISHED>"])
     manager.get_result = MagicMock(return_value=result_queue)
 
     return manager

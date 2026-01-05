@@ -68,10 +68,7 @@ class TestModelfilePatchEndpoint:
 
     def test_update_single_property(self, test_client: TestClient):
         """Test updating a single property."""
-        response = test_client.patch(
-            "/api/modelfile/test-model",
-            json={"properties": {"temperature": 0.9}}
-        )
+        response = test_client.patch("/api/modelfile/test-model", json={"properties": {"temperature": 0.9}})
         assert response.status_code == 200
         data = response.json()
 
@@ -80,8 +77,7 @@ class TestModelfilePatchEndpoint:
     def test_update_multiple_properties(self, test_client: TestClient):
         """Test updating multiple properties at once."""
         response = test_client.patch(
-            "/api/modelfile/test-model",
-            json={"properties": {"temperature": 0.8, "top_k": 50}}
+            "/api/modelfile/test-model", json={"properties": {"temperature": 0.8, "top_k": 50}}
         )
         assert response.status_code == 200
         data = response.json()
@@ -91,17 +87,14 @@ class TestModelfilePatchEndpoint:
 
     def test_update_invalid_property_name(self, test_client: TestClient):
         """Test updating with invalid property name."""
-        response = test_client.patch(
-            "/api/modelfile/test-model",
-            json={"properties": {"INVALID_PROPERTY": "value"}}
-        )
+        response = test_client.patch("/api/modelfile/test-model", json={"properties": {"INVALID_PROPERTY": "value"}})
         assert response.status_code == 400
 
     def test_update_invalid_temperature_value(self, test_client: TestClient):
         """Test updating temperature with invalid value."""
         response = test_client.patch(
             "/api/modelfile/test-model",
-            json={"properties": {"temperature": 5.0}}  # Out of range
+            json={"properties": {"temperature": 5.0}},  # Out of range
         )
         assert response.status_code == 400
 
@@ -109,16 +102,13 @@ class TestModelfilePatchEndpoint:
         """Test updating mirostat with invalid value."""
         response = test_client.patch(
             "/api/modelfile/test-model",
-            json={"properties": {"mirostat": 5}}  # Must be 0, 1, or 2
+            json={"properties": {"mirostat": 5}},  # Must be 0, 1, or 2
         )
         assert response.status_code == 400
 
     def test_update_nonexistent_model(self, test_client: TestClient):
         """Test updating Modelfile for nonexistent model."""
-        response = test_client.patch(
-            "/api/modelfile/nonexistent-model",
-            json={"properties": {"temperature": 0.5}}
-        )
+        response = test_client.patch("/api/modelfile/nonexistent-model", json={"properties": {"temperature": 0.5}})
         assert response.status_code == 404
 
 

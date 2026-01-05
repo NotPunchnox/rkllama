@@ -57,23 +57,13 @@ class TestOpenAIChatCompletionsEndpoint:
 
     def test_chat_completions_validates_model(self, test_client: TestClient):
         """Test that chat completions requires a model."""
-        response = test_client.post(
-            "/v1/chat/completions",
-            json={
-                "messages": [{"role": "user", "content": "Hello"}]
-            }
-        )
+        response = test_client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "Hello"}]})
         # Should fail validation without model
         assert response.status_code == 422
 
     def test_chat_completions_validates_messages(self, test_client: TestClient):
         """Test that chat completions requires messages."""
-        response = test_client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "test-model"
-            }
-        )
+        response = test_client.post("/v1/chat/completions", json={"model": "test-model"})
         # Should fail validation without messages
         assert response.status_code == 422
 
@@ -83,23 +73,13 @@ class TestOpenAICompletionsEndpoint:
 
     def test_completions_validates_model(self, test_client: TestClient):
         """Test that completions requires a model."""
-        response = test_client.post(
-            "/v1/completions",
-            json={
-                "prompt": "Hello"
-            }
-        )
+        response = test_client.post("/v1/completions", json={"prompt": "Hello"})
         # Should fail validation without model
         assert response.status_code == 422
 
     def test_completions_validates_prompt(self, test_client: TestClient):
         """Test that completions requires a prompt."""
-        response = test_client.post(
-            "/v1/completions",
-            json={
-                "model": "test-model"
-            }
-        )
+        response = test_client.post("/v1/completions", json={"model": "test-model"})
         # Should fail validation without prompt
         assert response.status_code == 422
 
@@ -109,22 +89,12 @@ class TestOpenAIEmbeddingsEndpoint:
 
     def test_embeddings_validates_model(self, test_client: TestClient):
         """Test that embeddings requires a model."""
-        response = test_client.post(
-            "/v1/embeddings",
-            json={
-                "input": "Hello world"
-            }
-        )
+        response = test_client.post("/v1/embeddings", json={"input": "Hello world"})
         # Should fail validation without model
         assert response.status_code == 422
 
     def test_embeddings_validates_input(self, test_client: TestClient):
         """Test that embeddings requires input."""
-        response = test_client.post(
-            "/v1/embeddings",
-            json={
-                "model": "test-model"
-            }
-        )
+        response = test_client.post("/v1/embeddings", json={"model": "test-model"})
         # Should fail validation without input
         assert response.status_code == 422

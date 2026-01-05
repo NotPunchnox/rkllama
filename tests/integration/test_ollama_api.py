@@ -61,10 +61,7 @@ class TestOllamaLoadUnloadEndpoints:
         mock_worker_manager.exists_model_loaded.return_value = False
 
         with patch("rkllama.server.routers.ollama.load_model", return_value=(None, None)):
-            response = test_client.post(
-                "/api/load",
-                json={"model": "test-model"}
-            )
+            response = test_client.post("/api/load", json={"model": "test-model"})
 
         assert response.status_code == 200
         data = response.json()
@@ -74,10 +71,7 @@ class TestOllamaLoadUnloadEndpoints:
         """Test loading an already loaded model."""
         mock_worker_manager.exists_model_loaded.return_value = True
 
-        response = test_client.post(
-            "/api/load",
-            json={"model": "test-model"}
-        )
+        response = test_client.post("/api/load", json={"model": "test-model"})
 
         assert response.status_code == 200
         data = response.json()
@@ -87,10 +81,7 @@ class TestOllamaLoadUnloadEndpoints:
         """Test unloading a model via /api/unload."""
         mock_worker_manager.exists_model_loaded.return_value = True
 
-        response = test_client.post(
-            "/api/unload",
-            json={"model": "test-model"}
-        )
+        response = test_client.post("/api/unload", json={"model": "test-model"})
 
         assert response.status_code == 200
         mock_worker_manager.stop_worker.assert_called()
@@ -99,10 +90,7 @@ class TestOllamaLoadUnloadEndpoints:
         """Test unloading a model that isn't loaded."""
         mock_worker_manager.exists_model_loaded.return_value = False
 
-        response = test_client.post(
-            "/api/unload",
-            json={"model": "test-model"}
-        )
+        response = test_client.post("/api/unload", json={"model": "test-model"})
 
         assert response.status_code == 200
         data = response.json()
@@ -114,10 +102,7 @@ class TestOllamaShowEndpoint:
 
     def test_show_existing_model(self, test_client: TestClient):
         """Test showing info for an existing model."""
-        response = test_client.post(
-            "/api/show",
-            json={"name": "test-model"}
-        )
+        response = test_client.post("/api/show", json={"name": "test-model"})
 
         assert response.status_code == 200
         data = response.json()
@@ -126,18 +111,12 @@ class TestOllamaShowEndpoint:
 
     def test_show_nonexistent_model(self, test_client: TestClient):
         """Test showing info for a nonexistent model."""
-        response = test_client.post(
-            "/api/show",
-            json={"name": "nonexistent-model"}
-        )
+        response = test_client.post("/api/show", json={"name": "nonexistent-model"})
 
         assert response.status_code == 404
 
     def test_show_missing_model_name(self, test_client: TestClient):
         """Test show endpoint with missing model name."""
-        response = test_client.post(
-            "/api/show",
-            json={}
-        )
+        response = test_client.post("/api/show", json={})
 
         assert response.status_code == 400

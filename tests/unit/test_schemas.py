@@ -1,6 +1,5 @@
 """Tests for Pydantic schemas."""
 
-
 from rkllama.api.schemas.common import ErrorResponse, ModelDetails, Options
 from rkllama.api.schemas.modelfile import (
     ModelfilePatchRequest,
@@ -135,9 +134,7 @@ class TestModelfileSchemas:
 
     def test_modelfile_patch_request(self):
         """Test ModelfilePatchRequest."""
-        req = ModelfilePatchRequest(
-            properties={"TEMPERATURE": 0.9, "TOP_K": 50}
-        )
+        req = ModelfilePatchRequest(properties={"TEMPERATURE": 0.9, "TOP_K": 50})
         assert req.properties["TEMPERATURE"] == 0.9
         assert req.properties["TOP_K"] == 50
 

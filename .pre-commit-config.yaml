@@ -17,9 +17,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-        files: ^src/rkllama/(api/schemas|pull|server/routers)/
+        files: ^src/rkllama/(api/schemas|pull|server/routers|tests)/
       - id: ruff-format
-        files: ^src/rkllama/(api/schemas|pull|server/routers)/
+        files: ^src/rkllama/(api/schemas|pull|server/routers|tests)/
 
   - repo: local
     hooks:
