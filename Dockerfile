@@ -21,7 +21,6 @@ RUN chmod 755 /usr/lib/librknnrt.so && ldconfig
 
 # Copy project files
 COPY ./src /opt/rkllama/src
-COPY ./wheels /opt/rkllama/wheels
 RUN mkdir /opt/rkllama/models
 COPY README.md LICENSE pyproject.toml uv.lock /opt/rkllama/
 
