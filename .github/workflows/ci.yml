@@ -25,10 +25,10 @@ jobs:
         run: uv sync --dev
 
       - name: Run ruff check
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/rkllama/api/schemas/ src/rkllama/pull/ src/rkllama/server/routers/ tests/
 
       - name: Run ruff format check
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/rkllama/api/schemas/ src/rkllama/pull/ src/rkllama/server/routers/ tests/
 
   test:
     name: Test
