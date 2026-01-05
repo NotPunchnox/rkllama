@@ -6,7 +6,7 @@ import os
 import re  # Add import for regex used in JSON extraction
 import rkllama.api.variables as variables
 from transformers import AutoTokenizer
-from flask import jsonify, Response, stream_with_context
+from fastapi.responses import StreamingResponse, Response
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
 from .model_utils import get_property_modelfile
 import rkllama.config
@@ -189,7 +189,7 @@ class ChatEndpointHandler(EndpointHandler):
                     result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=True)
 
                     # Convert Ollama streaming response to OpenAI format
-                    ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
+                    ollama_chunk = StreamingResponse(result, media_type="text/event-stream")
 
                 # Return Ollama streaming response
                 return ollama_chunk
@@ -341,7 +341,7 @@ class ChatEndpointHandler(EndpointHandler):
                     final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
                     yield f"{json.dumps(final_chunk)}\n"
 
-        return Response(generate(), content_type='application/x-ndjson')
+        return StreamingResponse(generate(), media_type='application/x-ndjson')
 
 
     @classmethod
@@ -413,7 +413,7 @@ class ChatEndpointHandler(EndpointHandler):
            }
 
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return jsonify(response), 200
+        return response
 
 
 class GenerateEndpointHandler(EndpointHandler):
@@ -515,7 +515,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=False)
 
                     # Convert Ollama streaming response to OpenAI format
-                    ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
+                    ollama_chunk = StreamingResponse(result, media_type="text/event-stream")
 
                 # Return Ollama streaming response
                 return ollama_chunk
@@ -609,7 +609,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     yield f"{json.dumps(final_chunk)}\n"
 
 
-        return Response(generate(), content_type='application/x-ndjson')
+        return StreamingResponse(generate(), media_type='application/x-ndjson')
 
     @classmethod
     def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, enable_thinking, images=None):
@@ -732,7 +732,7 @@ class GenerateEndpointHandler(EndpointHandler):
         if DEBUG_MODE and format_data:
             logger.debug(f"Created formatted response with JSON content")
 
-        return jsonify(response), 200
+        return response
 
 
 
@@ -797,7 +797,7 @@ class EmbedEndpointHandler(EndpointHandler):
         response = cls.format_complete_response(model_name, embeddings.tolist(), metrics, None)
 
         # Return response
-        return jsonify(response), 200
+        return response
 
 
 class GenerateImageEndpointHandler(EndpointHandler):
@@ -849,7 +849,7 @@ class GenerateImageEndpointHandler(EndpointHandler):
             return ollama_response, code
         else:
             # Streaming not supported for image generation
-            return Response("Streaming not supported yet for image generation", status=400)
+            return Response(content="Streaming not supported yet for image generation", status_code=400)
 
 
     @classmethod
@@ -873,7 +873,7 @@ class GenerateImageEndpointHandler(EndpointHandler):
         response = cls.format_complete_response(image_list, model_name, model_dir, output_format, response_format, metrics)
 
         # Return response
-        return jsonify(response), 200
+        return response
 
 
 
@@ -925,25 +925,25 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
         if stream_format == "sse":
 
             # Streaming not supported yet for audio generation
-            return Response("Streaming not supported yet for audio generation", status=400)
+            return Response(content="Streaming not supported yet for audio generation", status_code=400)
 
 
         else:
             # Audio output
             audio_bytes, media_type =  cls.handle_complete(model_name,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
 
-            # COnstruct the response
-            response = Response(
-                response=stream_bytes(audio_bytes),
-                mimetype=media_type
+            # Construct the response with headers
+            headers = {
+                "Content-Length": str(len(audio_bytes)),
+                "Accept-Ranges": "bytes"
+            }
+
+            # Return streaming response
+            return StreamingResponse(
+                content=stream_bytes(audio_bytes),
+                media_type=media_type,
+                headers=headers
             )
-
-            # Set the headers
-            response.headers["Content-Length"] = str(len(audio_bytes))
-            response.headers["Accept-Ranges"] = "bytes"
-
-            # Return response
-            return response
 
     @classmethod
     def handle_complete(cls, model_name,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio):
@@ -994,7 +994,7 @@ class GenerateTranscriptionsEndpointHandler(EndpointHandler):
         if stream:
 
             # Streaming not supported yet for audio generation
-            return Response("Streaming not supported yet for audio transcription", status=400)
+            return Response(content="Streaming not supported yet for audio transcription", status_code=400)
 
 
         else:
