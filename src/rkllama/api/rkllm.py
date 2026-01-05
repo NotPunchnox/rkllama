@@ -1,7 +1,11 @@
 import ctypes
-from .classes import *
-import logging, multiprocessing
+import logging
+import multiprocessing
+
 import numpy as np
+
+import rkllama.config
+from .classes import *
 
 logger = logging.getLogger("rkllama.rkllm")
 
