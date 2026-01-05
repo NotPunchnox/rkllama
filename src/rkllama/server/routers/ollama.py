@@ -19,12 +19,22 @@ from rkllama.api.model_utils import (
 )
 from rkllama.api.schemas.ollama import (
     ChatRequest,
+    CreateRequest,
+    CreateResponse,
+    DeleteRequest,
+    DeleteResponse,
+    EmbeddingsRequest,
     GenerateRequest,
     LoadRequest,
+    LoadResponse,
     PsResponse,
+    PullRequest,
     ShowRequest,
+    ShowResponse,
     TagsResponse,
     UnloadRequest,
+    UnloadResponse,
+    VersionResponse,
 )
 from rkllama.api.worker import WorkerManager
 from rkllama.server.dependencies import get_debug_mode, get_models_path, get_worker_manager
@@ -139,14 +149,14 @@ async def get_current_models(
     return PsResponse(models=models_running)
 
 
-@router.post("/show")
+@router.post("/show", response_model=ShowResponse)
 async def show_model_info(
     request: ShowRequest,
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
-) -> dict:
+) -> ShowResponse:
     """Show detailed model information."""
-    model_name = request.name or request.model
+    model_name = request.model
     if not model_name:
         raise HTTPException(status_code=400, detail="Missing model name")
 
@@ -247,11 +257,11 @@ async def show_model_info(
     return response
 
 
-@router.post("/create")
-async def create_model(data: dict, models_path: str = Depends(get_models_path)) -> dict:
+@router.post("/create", response_model=CreateResponse)
+async def create_model(request: CreateRequest, models_path: str = Depends(get_models_path)) -> CreateResponse:
     """Create a new model from modelfile."""
-    model_name = data.get("name")
-    modelfile = data.get("modelfile", "")
+    model_name = request.model
+    modelfile = request.modelfile
 
     if not model_name:
         raise HTTPException(status_code=400, detail="Missing model name")
@@ -263,35 +273,33 @@ async def create_model(data: dict, models_path: str = Depends(get_models_path)) 
     with open(os.path.join(model_dir, "Modelfile"), "w") as f:
         f.write(modelfile)
 
-    return {"status": "success", "model": model_name}
+    return CreateResponse(status="success", model=model_name)
 
 
 @router.post("/pull")
-async def pull_model_ollama(data: dict) -> StreamingResponse:
+async def pull_model_ollama(request: PullRequest) -> StreamingResponse:
     """Pull a model (Ollama-compatible)."""
     from rkllama.server.routers.native import pull_model
 
-    model = data.get("name", data.get("model"))
-    if not model:
+    if not request.model:
         raise HTTPException(status_code=400, detail="Missing model name")
 
     # Redirect to native pull
-    return await pull_model({"model": model})
+    return await pull_model({"model": request.model})
 
 
-@router.delete("/delete")
+@router.delete("/delete", response_model=DeleteResponse)
 async def delete_model_ollama(
-    data: dict,
+    request: DeleteRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
-) -> dict:
+) -> DeleteResponse:
     """Delete a model (Ollama-compatible)."""
-    model_name = data.get("name")
-    if not model_name:
+    if not request.model:
         raise HTTPException(status_code=400, detail="Missing model name")
 
-    model_name = strip_namespace(model_name)
+    model_name = strip_namespace(request.model)
     model_path = os.path.join(models_path, model_name)
 
     if not os.path.exists(model_path):
@@ -306,43 +314,43 @@ async def delete_model_ollama(
         import shutil
 
         shutil.rmtree(model_path)
-        return {"message": "The model has been successfully deleted!"}
+        return DeleteResponse(status="success", message="The model has been successfully deleted!")
     except Exception as e:
         logger.error(f"Failed to delete model '{model_name}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {e}")
 
 
-@router.post("/load")
+@router.post("/load", response_model=LoadResponse)
 async def load_model_ollama(
     request: LoadRequest,
     wm: WorkerManager = Depends(get_worker_manager),
-) -> dict:
+) -> LoadResponse:
     """Load a model (Ollama-compatible)."""
     model_name = strip_namespace(request.model)
 
     if wm.exists_model_loaded(model_name):
-        return {"status": "success", "message": "Model already loaded"}
+        return LoadResponse(status="success", message="Model already loaded", model=model_name)
 
     _, error = load_model(model_name, wm, request_options=request.options)
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    return {"status": "success"}
+    return LoadResponse(status="success", model=model_name)
 
 
-@router.post("/unload")
+@router.post("/unload", response_model=UnloadResponse)
 async def unload_model_ollama(
     request: UnloadRequest,
     wm: WorkerManager = Depends(get_worker_manager),
-) -> dict:
+) -> UnloadResponse:
     """Unload a model (Ollama-compatible)."""
     model_name = strip_namespace(request.model)
 
     if not wm.exists_model_loaded(model_name):
-        return {"status": "success", "message": "Model not loaded"}
+        return UnloadResponse(status="success", message="Model not loaded")
 
     unload_model(model_name, wm)
-    return {"status": "success"}
+    return UnloadResponse(status="success")
 
 
 @router.post("/generate")
@@ -452,25 +460,25 @@ async def chat_ollama(
 @router.post("/embeddings")
 @router.post("/embed")
 async def embeddings_ollama(
-    data: dict,
+    request: EmbeddingsRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
     """Generate embeddings (Ollama-compatible)."""
-    model_name = data.get("model")
+    model_name = request.model
     if not model_name:
         raise HTTPException(status_code=400, detail="Missing model name")
 
     model_name = strip_namespace(model_name)
-    input_text = data.get("input", data.get("prompt"))
+    input_text = request.input
 
     if not input_text:
         raise HTTPException(status_code=400, detail="Missing input")
 
-    truncate = data.get("truncate", True)
-    keep_alive = data.get("keep_alive", False)
-    options = get_model_full_options(model_name, models_path, data.get("options", {}))
+    truncate = request.truncate
+    keep_alive = request.keep_alive
+    options = get_model_full_options(model_name, models_path, request.options or {})
 
     # Load model if needed
     if not wm.exists_model_loaded(model_name):
@@ -490,7 +498,7 @@ async def embeddings_ollama(
     )
 
 
-@router.get("/version")
-async def ollama_version() -> dict:
+@router.get("/version", response_model=VersionResponse)
+async def ollama_version() -> VersionResponse:
     """Return version for Ollama compatibility."""
-    return {"version": "0.0.54"}
+    return VersionResponse(version="0.0.54")

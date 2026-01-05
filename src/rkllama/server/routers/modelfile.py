@@ -6,9 +6,12 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from rkllama.api.schemas.modelfile import (
     ModelfilePatchRequest,
+    ModelfilePropertyName,
+    ModelfilePropertyResponse,
     ModelfileResponse,
     validate_property_name,
     validate_property_value,
@@ -131,13 +134,13 @@ async def get_modelfile(
     )
 
 
-@router.get("/{model}/{property_name}")
+@router.get("/{model}/{property_name}", response_model=ModelfilePropertyResponse)
 async def get_modelfile_property(
     model: str,
-    property_name: str,
+    property_name: ModelfilePropertyName,
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
-) -> dict:
+) -> ModelfilePropertyResponse:
     """Get a specific property from a model's Modelfile."""
     model_dir = os.path.join(models_path, model)
     modelfile_path = os.path.join(model_dir, "Modelfile")
@@ -148,25 +151,22 @@ async def get_modelfile_property(
     if not os.path.exists(modelfile_path):
         raise HTTPException(status_code=404, detail=f"Modelfile not found for model '{model}'")
 
-    # Normalize property name to uppercase
-    property_name_upper = property_name.upper()
-
     if debug:
-        logger.debug(f"Reading property '{property_name_upper}' for model: {model}")
+        logger.debug(f"Reading property '{property_name.value}' for model: {model}")
 
     properties = parse_modelfile(modelfile_path)
 
-    if property_name_upper not in properties:
+    if property_name.value not in properties:
         raise HTTPException(
             status_code=404,
-            detail=f"Property '{property_name_upper}' not found in Modelfile for model '{model}'",
+            detail=f"Property '{property_name.value}' not found in Modelfile for model '{model}'",
         )
 
-    return {
-        "model": model,
-        "property": property_name_upper,
-        "value": properties[property_name_upper],
-    }
+    return ModelfilePropertyResponse(
+        model=model,
+        property=property_name,
+        value=properties[property_name.value],
+    )
 
 
 @router.patch("/{model}")
@@ -231,13 +231,22 @@ async def update_modelfile(
     )
 
 
-@router.delete("/{model}/{property_name}")
+class ModelfilePropertyDeleteResponse(BaseModel):
+    """Response for deleting a property."""
+
+    model: str
+    property: ModelfilePropertyName
+    deleted_value: str | int | float | bool
+    message: str
+
+
+@router.delete("/{model}/{property_name}", response_model=ModelfilePropertyDeleteResponse)
 async def delete_modelfile_property(
     model: str,
-    property_name: str,
+    property_name: ModelfilePropertyName,
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
-) -> dict:
+) -> ModelfilePropertyDeleteResponse:
     """Delete a property from a model's Modelfile."""
     model_dir = os.path.join(models_path, model)
     modelfile_path = os.path.join(model_dir, "Modelfile")
@@ -248,33 +257,31 @@ async def delete_modelfile_property(
     if not os.path.exists(modelfile_path):
         raise HTTPException(status_code=404, detail=f"Modelfile not found for model '{model}'")
 
-    property_name_upper = property_name.upper()
-
     # Prevent deletion of required properties
-    required_properties = ["FROM", "HUGGINGFACE_PATH"]
-    if property_name_upper in required_properties:
+    required_properties = [ModelfilePropertyName.FROM, ModelfilePropertyName.HUGGINGFACE_PATH]
+    if property_name in required_properties:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete required property '{property_name_upper}'",
+            detail=f"Cannot delete required property '{property_name.value}'",
         )
 
     if debug:
-        logger.debug(f"Deleting property '{property_name_upper}' for model: {model}")
+        logger.debug(f"Deleting property '{property_name.value}' for model: {model}")
 
     properties = parse_modelfile(modelfile_path)
 
-    if property_name_upper not in properties:
+    if property_name.value not in properties:
         raise HTTPException(
             status_code=404,
-            detail=f"Property '{property_name_upper}' not found in Modelfile for model '{model}'",
+            detail=f"Property '{property_name.value}' not found in Modelfile for model '{model}'",
         )
 
-    deleted_value = properties.pop(property_name_upper)
+    deleted_value = properties.pop(property_name.value)
     write_modelfile(modelfile_path, properties)
 
-    return {
-        "model": model,
-        "property": property_name_upper,
-        "deleted_value": deleted_value,
-        "message": f"Property '{property_name_upper}' deleted successfully",
-    }
+    return ModelfilePropertyDeleteResponse(
+        model=model,
+        property=property_name,
+        deleted_value=deleted_value,
+        message=f"Property '{property_name.value}' deleted successfully",
+    )

@@ -1,16 +1,40 @@
 """Pydantic schemas for Modelfile CRUD API endpoints."""
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ModelfileProperty(BaseModel):
-    """Single property from a Modelfile."""
+class ModelfilePropertyName(str, Enum):
+    """Valid Modelfile property names."""
 
-    name: str = Field(..., description="Property name (e.g., TEMPERATURE)")
-    value: str | int | float | bool = Field(..., description="Property value")
-    description: str | None = Field(None, description="Property description")
+    # Required
+    FROM = "FROM"
+    HUGGINGFACE_PATH = "HUGGINGFACE_PATH"
+
+    # Generation parameters
+    SYSTEM = "SYSTEM"
+    TEMPERATURE = "TEMPERATURE"
+    NUM_CTX = "NUM_CTX"
+    MAX_NEW_TOKENS = "MAX_NEW_TOKENS"
+    TOP_K = "TOP_K"
+    TOP_P = "TOP_P"
+    REPEAT_PENALTY = "REPEAT_PENALTY"
+    FREQUENCY_PENALTY = "FREQUENCY_PENALTY"
+    PRESENCE_PENALTY = "PRESENCE_PENALTY"
+
+    # Mirostat
+    MIROSTAT = "MIROSTAT"
+    MIROSTAT_TAU = "MIROSTAT_TAU"
+    MIROSTAT_ETA = "MIROSTAT_ETA"
+
+    # Features
+    ENABLE_THINKING = "ENABLE_THINKING"
+    VISION_ENCODER = "VISION_ENCODER"
+    TOKENIZER = "TOKENIZER"
+    TEMPLATE = "TEMPLATE"
+    LICENSE = "LICENSE"
 
 
 class ModelfileResponse(BaseModel):
@@ -20,24 +44,13 @@ class ModelfileResponse(BaseModel):
     path: str = Field(..., description="Path to Modelfile")
     properties: dict[str, Any] = Field(default_factory=dict, description="All properties")
 
-    # Parsed/validated properties (optional, for convenience)
-    from_: str | None = Field(None, alias="FROM", description="Model file path")
-    huggingface_path: str | None = Field(None, alias="HUGGINGFACE_PATH")
-    system: str | None = Field(None, alias="SYSTEM")
-    temperature: float | None = Field(None, alias="TEMPERATURE")
-    num_ctx: int | None = Field(None, alias="NUM_CTX")
-    max_new_tokens: int | None = Field(None, alias="MAX_NEW_TOKENS")
-    top_k: int | None = Field(None, alias="TOP_K")
-    top_p: float | None = Field(None, alias="TOP_P")
-    repeat_penalty: float | None = Field(None, alias="REPEAT_PENALTY")
-    frequency_penalty: float | None = Field(None, alias="FREQUENCY_PENALTY")
-    presence_penalty: float | None = Field(None, alias="PRESENCE_PENALTY")
-    mirostat: int | None = Field(None, alias="MIROSTAT")
-    mirostat_tau: float | None = Field(None, alias="MIROSTAT_TAU")
-    mirostat_eta: float | None = Field(None, alias="MIROSTAT_ETA")
-    enable_thinking: bool | None = Field(None, alias="ENABLE_THINKING")
 
-    model_config = {"populate_by_name": True}
+class ModelfilePropertyResponse(BaseModel):
+    """Response schema for GET /api/modelfile/{model}/{property}."""
+
+    model: str = Field(..., description="Model name")
+    property: ModelfilePropertyName = Field(..., description="Property name")
+    value: str | int | float | bool | None = Field(None, description="Property value")
 
 
 class ModelfilePatchRequest(BaseModel):
@@ -95,26 +108,26 @@ class ModelfileListResponse(BaseModel):
 # ============================================================================
 
 
-MODELFILE_REQUIRED_PROPERTIES = ["FROM", "HUGGINGFACE_PATH"]
+MODELFILE_REQUIRED_PROPERTIES = [ModelfilePropertyName.FROM, ModelfilePropertyName.HUGGINGFACE_PATH]
 
 MODELFILE_OPTIONAL_PROPERTIES = [
-    "SYSTEM",
-    "TEMPERATURE",
-    "NUM_CTX",
-    "MAX_NEW_TOKENS",
-    "TOP_K",
-    "TOP_P",
-    "REPEAT_PENALTY",
-    "FREQUENCY_PENALTY",
-    "PRESENCE_PENALTY",
-    "MIROSTAT",
-    "MIROSTAT_TAU",
-    "MIROSTAT_ETA",
-    "ENABLE_THINKING",
-    "VISION_ENCODER",
-    "TOKENIZER",
-    "TEMPLATE",
-    "LICENSE",
+    ModelfilePropertyName.SYSTEM,
+    ModelfilePropertyName.TEMPERATURE,
+    ModelfilePropertyName.NUM_CTX,
+    ModelfilePropertyName.MAX_NEW_TOKENS,
+    ModelfilePropertyName.TOP_K,
+    ModelfilePropertyName.TOP_P,
+    ModelfilePropertyName.REPEAT_PENALTY,
+    ModelfilePropertyName.FREQUENCY_PENALTY,
+    ModelfilePropertyName.PRESENCE_PENALTY,
+    ModelfilePropertyName.MIROSTAT,
+    ModelfilePropertyName.MIROSTAT_TAU,
+    ModelfilePropertyName.MIROSTAT_ETA,
+    ModelfilePropertyName.ENABLE_THINKING,
+    ModelfilePropertyName.VISION_ENCODER,
+    ModelfilePropertyName.TOKENIZER,
+    ModelfilePropertyName.TEMPLATE,
+    ModelfilePropertyName.LICENSE,
 ]
 
 MODELFILE_ALL_PROPERTIES = MODELFILE_REQUIRED_PROPERTIES + MODELFILE_OPTIONAL_PROPERTIES
@@ -122,7 +135,11 @@ MODELFILE_ALL_PROPERTIES = MODELFILE_REQUIRED_PROPERTIES + MODELFILE_OPTIONAL_PR
 
 def validate_property_name(name: str) -> bool:
     """Validate that a property name is allowed."""
-    return name.upper() in MODELFILE_ALL_PROPERTIES
+    try:
+        ModelfilePropertyName(name.upper())
+        return True
+    except ValueError:
+        return False
 
 
 def validate_property_value(name: str, value: Any) -> tuple[bool, str | None]:

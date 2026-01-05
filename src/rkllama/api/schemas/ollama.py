@@ -210,7 +210,7 @@ class CreateRequest(BaseModel):
     """Request schema for /api/create endpoint."""
 
     model: str = Field(..., alias="name", description="Model name")
-    modelfile: str = Field(..., description="Modelfile content")
+    modelfile: str = Field("", description="Modelfile content")
     stream: bool = Field(False, description="Stream progress")
     path: str | None = Field(None, description="Path to Modelfile (alternative to content)")
 
