@@ -9,7 +9,8 @@ from .common import (
 )
 from .modelfile import (
     ModelfilePatchRequest,
-    ModelfileProperty,
+    ModelfilePropertyName,
+    ModelfilePropertyResponse,
     ModelfileResponse,
 )
 from .ollama import (
@@ -111,7 +112,8 @@ __all__ = [
     "OpenAITranscriptionRequest",
     "OpenAITranscriptionResponse",
     # Modelfile
-    "ModelfileProperty",
+    "ModelfilePropertyName",
+    "ModelfilePropertyResponse",
     "ModelfileResponse",
     "ModelfilePatchRequest",
 ]
