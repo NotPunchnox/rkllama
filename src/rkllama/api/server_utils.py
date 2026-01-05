@@ -224,6 +224,8 @@ class ChatEndpointHandler(EndpointHandler):
 
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
+        if result_q is None:
+            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
 
@@ -367,6 +369,8 @@ class ChatEndpointHandler(EndpointHandler):
 
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
+        if result_q is None:
+            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
 
@@ -549,6 +553,8 @@ class GenerateEndpointHandler(EndpointHandler):
 
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
+        if result_q is None:
+            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
 
@@ -634,6 +640,8 @@ class GenerateEndpointHandler(EndpointHandler):
 
         # Wait for result queue
         result_q = variables.worker_manager_rkllm.get_result(model_name)
+        if result_q is None:
+            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
         finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
         while not thread_finished:
@@ -785,6 +793,8 @@ class EmbedEndpointHandler(EndpointHandler):
         # Send the task of embedding to the model
         variables.worker_manager_rkllm.embedding(model_name, input_tokens)
         result_q = variables.worker_manager_rkllm.get_result(model_name)
+        if result_q is None:
+            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
 
         # Wait for the last_embedding hidden layer return
         embeddings = result_q.get(timeout=300)
