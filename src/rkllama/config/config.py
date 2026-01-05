@@ -1,11 +1,11 @@
+import argparse
+import configparser
+import datetime
+import logging
 import os
 import sys
-import configparser
-import argparse
-import logging
-import datetime
-from typing import Any, Dict, Optional, Union, List, TypeVar, Type, Generic, cast, Callable, Tuple
 from pathlib import Path
+from typing import Any, TypeVar, Union
 
 # Import schema for validation
 from rkllama.config.config_schema import RKLLAMA_SCHEMA, FieldType
@@ -42,7 +42,7 @@ class RKLLAMAConfig:
         # Generate shell configuration for environment exports
         self._generate_shell_config()
 
-    def _get_field_info(self, section: str, key: str) -> Tuple[Optional[FieldType], Any]:
+    def _get_field_info(self, section: str, key: str) -> tuple[FieldType | None, Any]:
         """
         Get field type information from schema or cache.
 
@@ -309,7 +309,7 @@ class RKLLAMAConfig:
         # Future implementation could restore values from lower priority sources
         pass
 
-    def resolve_path(self, path: str) -> str:
+    def resolve_path(self, path: str) -> str | None:
         """Resolve a path relative to the application root"""
         if not path:
             return None
@@ -386,7 +386,7 @@ class RKLLAMAConfig:
         # Re-generate shell config when values change
         self._generate_shell_config()
 
-    def get(self, section: str, key: str, default: Any = None, as_type: Optional[Union[FieldType, type]] = None) -> Any:
+    def get(self, section: str, key: str, default: Any = None, as_type: FieldType | type | None = None) -> Any:
         """
         Retrieves a configuration value with optional type conversion.
 
@@ -434,7 +434,7 @@ class RKLLAMAConfig:
                 return float(value)
             return self._convert_to_field_type(value, FieldType.FLOAT, section, key, default)
 
-        if as_type is list or as_type is List:
+        if as_type is list or as_type is list:
             if isinstance(value, list):
                 return value
             return self._convert_to_field_type(value, FieldType.LIST, section, key, default)
@@ -483,7 +483,7 @@ class RKLLAMAConfig:
             logger.warning(f"Type conversion failed for {section}.{key}, expected {field_type.value}, using default")
             return default
 
-    def get_path(self, key: str, default: Any = None) -> str:
+    def get_path(self, key: str, default: Any = None) -> str | None:
         """
         Retrieves a path configuration and resolves it.
         Path resolution includes app_root and environment variable expansion.
@@ -657,7 +657,7 @@ class RKLLAMAConfig:
 config = RKLLAMAConfig()
 
 # Updated convenience functions for module-level access
-def get(section: str, key: str, default: Any = None, as_type: Optional[Union[FieldType, type]] = None) -> Any:
+def get(section: str, key: str, default: Any = None, as_type: FieldType | type | None = None) -> Any:
     """
     Retrieves a configuration value with optional type conversion.
 
@@ -676,7 +676,7 @@ def set(section: str, key: str, value: Any):
     """Set a configuration value"""
     config.set(section, key, value)
 
-def get_path(key: str, default: Any = None) -> str:
+def get_path(key: str, default: Any = None) -> str | None:
     """Get a path configuration value"""
     return config.get_path(key, default)
 

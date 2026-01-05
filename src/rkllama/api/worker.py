@@ -820,7 +820,7 @@ class Worker:
         self.process.start()
 
         # Wait to confirm initialization
-        creation_status = self.result_q.get(timeout=60)  # Timeout after 60 seconds
+        creation_status = self.result_q.get(timeout=300)  # Timeout after 5 minutes for large models
 
         if creation_status == WORKER_TASK_ERROR:
             # Error loading the RKLLM Model. Wait for the worker to exit
