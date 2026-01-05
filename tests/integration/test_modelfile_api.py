@@ -1,7 +1,5 @@
 """Integration tests for Modelfile CRUD API endpoints."""
 
-import pytest
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 

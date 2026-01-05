@@ -1,8 +1,13 @@
 """Tests for Pydantic schemas."""
 
-import pytest
 
-from rkllama.api.schemas.common import ModelDetails, Options, ErrorResponse
+from rkllama.api.schemas.common import ErrorResponse, ModelDetails, Options
+from rkllama.api.schemas.modelfile import (
+    ModelfilePatchRequest,
+    ModelfileResponse,
+    validate_property_name,
+    validate_property_value,
+)
 from rkllama.api.schemas.ollama import (
     ChatMessage,
     ChatRequest,
@@ -13,12 +18,6 @@ from rkllama.api.schemas.ollama import (
 from rkllama.api.schemas.openai import (
     OpenAIChatMessage,
     OpenAIChatRequest,
-)
-from rkllama.api.schemas.modelfile import (
-    ModelfileResponse,
-    ModelfilePatchRequest,
-    validate_property_name,
-    validate_property_value,
 )
 
 

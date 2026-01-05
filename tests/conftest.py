@@ -1,16 +1,16 @@
 """Shared pytest fixtures for RKLlama tests."""
 
-import pytest
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Check if RKLLM library is available (ARM-only)
-RKLLM_AVAILABLE = False
 try:
     from rkllama.api.classes import RKLLM_AVAILABLE
 except (ImportError, OSError):
-    pass
+    RKLLM_AVAILABLE = False
 
 # Skip marker for tests requiring RKLLM library
 requires_rkllm = pytest.mark.skipif(

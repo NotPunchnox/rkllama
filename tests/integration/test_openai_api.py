@@ -1,7 +1,5 @@
 """Integration tests for OpenAI API compatible endpoints."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 
