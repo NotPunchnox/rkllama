@@ -57,7 +57,7 @@ curl http://localhost:8080/api/tags
 
 ### Features
 - **Multiple Detection Methods**: Works with Qwen's `<tool_call>` tags and generic JSON formats
-- **Streaming Support**: Tool calls work in both streaming and non-streaming modes  
+- **Streaming Support**: Tool calls work in both streaming and non-streaming modes
 - **Format Normalization**: Automatically handles different parameter formats (`parameters` vs `arguments`)
 - **Model Agnostic**: Works with any LLM that can output proper JSON
 

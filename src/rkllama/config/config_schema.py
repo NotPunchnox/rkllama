@@ -5,7 +5,7 @@ class FieldType(Enum):
     """Enumeration of field types for configuration schema"""
     STRING = "string"
     INTEGER = "integer"
-    FLOAT = "float" 
+    FLOAT = "float"
     BOOLEAN = "boolean"
     LIST = "list"
     PATH = "path"
@@ -14,11 +14,11 @@ T = TypeVar('T')
 
 class ConfigField(Generic[T]):
     """Definition of a configuration field with type information and validation"""
-    
+
     def __init__(
-        self, 
+        self,
         field_type: FieldType,
-        default: T, 
+        default: T,
         description: str = "",
         min_value: Optional[Union[int, float]] = None,
         max_value: Optional[Union[int, float]] = None,
@@ -34,30 +34,30 @@ class ConfigField(Generic[T]):
         self.options = options
         self.item_type = item_type
         self.required = required
-        
+
     def validate(self, value: Any) -> T:
         """Validate a value against this field definition"""
         if value is None:
             if self.required:
                 raise ValueError(f"Field is required but value is None")
             return self.default
-            
+
         # Type conversion based on field_type
         converted_value = self._convert_value(value)
-            
+
         # Range validation for numeric types
         if self.field_type in [FieldType.INTEGER, FieldType.FLOAT]:
             if self.min_value is not None and converted_value < self.min_value:
                 raise ValueError(f"Value {converted_value} is less than minimum {self.min_value}")
             if self.max_value is not None and converted_value > self.max_value:
                 raise ValueError(f"Value {converted_value} is greater than maximum {self.max_value}")
-                
+
         # Options validation
         if self.options is not None and converted_value not in self.options:
             raise ValueError(f"Value {converted_value} is not in allowed options: {self.options}")
-            
+
         return converted_value
-        
+
     def _convert_value(self, value: Any) -> T:
         """Convert a value to the appropriate type based on field_type"""
         try:
@@ -96,77 +96,77 @@ class ConfigField(Generic[T]):
 
 class ConfigSectionSchema:
     """Schema definition for a configuration section"""
-    
+
     def __init__(self, description: str = ""):
         self.description = description
         self.fields: Dict[str, ConfigField] = {}
-        
+
     def add_field(self, name: str, field: ConfigField):
         """Add a field to this section schema"""
         self.fields[name] = field
         return self
-        
+
     def string(self, name: str, default: str = "", description: str = "", options: List[str] = None, required: bool = False):
         """Add a string field to this section schema"""
         self.fields[name] = ConfigField(
-            FieldType.STRING, 
-            default, 
+            FieldType.STRING,
+            default,
             description,
             options=options,
             required=required
         )
         return self
-        
-    def integer(self, name: str, default: int = 0, description: str = "", min_value: int = None, 
+
+    def integer(self, name: str, default: int = 0, description: str = "", min_value: int = None,
                 max_value: int = None, required: bool = False):
         """Add an integer field to this section schema"""
         self.fields[name] = ConfigField(
-            FieldType.INTEGER, 
-            default, 
+            FieldType.INTEGER,
+            default,
             description,
             min_value=min_value,
             max_value=max_value,
             required=required
         )
         return self
-        
-    def float(self, name: str, default: float = 0.0, description: str = "", 
+
+    def float(self, name: str, default: float = 0.0, description: str = "",
               min_value: float = None, max_value: float = None, required: bool = False):
         """Add a float field to this section schema"""
         self.fields[name] = ConfigField(
-            FieldType.FLOAT, 
-            default, 
+            FieldType.FLOAT,
+            default,
             description,
             min_value=min_value,
             max_value=max_value,
             required=required
         )
         return self
-        
+
     def boolean(self, name: str, default: bool = False, description: str = "", required: bool = False):
         """Add a boolean field to this section schema"""
         self.fields[name] = ConfigField(
-            FieldType.BOOLEAN, 
-            default, 
+            FieldType.BOOLEAN,
+            default,
             description,
             required=required
         )
         return self
-        
-    def list(self, name: str, default: List = None, description: str = "", 
+
+    def list(self, name: str, default: List = None, description: str = "",
              item_type: FieldType = None, required: bool = False):
         """Add a list field to this section schema"""
         if default is None:
             default = []
         self.fields[name] = ConfigField(
-            FieldType.LIST, 
-            default, 
+            FieldType.LIST,
+            default,
             description,
             item_type=item_type,
             required=required
         )
         return self
-    
+
     def path(self, name: str, default: str = "", description: str = "", required: bool = False):
         """Add a path field to this section schema"""
         self.fields[name] = ConfigField(
@@ -176,15 +176,15 @@ class ConfigSectionSchema:
             required=required
         )
         return self
-        
+
     def validate_section(self, values: Dict[str, Any]) -> Dict[str, Any]:
         """Validate values against this section schema"""
         validated = {}
-        
+
         # First, apply defaults for all fields
         for name, field in self.fields.items():
             validated[name] = field.default
-            
+
         # Then override with provided values
         if values:
             for name, value in values.items():
@@ -196,34 +196,34 @@ class ConfigSectionSchema:
                 else:
                     # Keep unknown fields, but don't validate them
                     validated[name] = value
-                    
+
         return validated
 
 class ConfigSchema:
     """Schema definition for the entire configuration"""
-    
+
     def __init__(self):
         self.sections: Dict[str, ConfigSectionSchema] = {}
-        
+
     def add_section(self, name: str, section: ConfigSectionSchema = None, description: str = ""):
         """Add a section to this schema"""
         if section is None:
             section = ConfigSectionSchema(description)
         self.sections[name] = section
         return section
-        
+
     def get_section(self, name: str) -> ConfigSectionSchema:
         """Get a section from this schema"""
         return self.sections.get(name)
-        
+
     def validate(self, config: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Validate a configuration against this schema"""
         validated = {}
-        
+
         # First, apply defaults for all sections
         for section_name, section_schema in self.sections.items():
             validated[section_name] = section_schema.validate_section({})
-            
+
         # Then override with provided values
         if config:
             for section_name, section_values in config.items():
@@ -232,19 +232,19 @@ class ConfigSchema:
                 else:
                     # Keep unknown sections, but don't validate them
                     validated[section_name] = section_values
-                    
+
         return validated
 
 def create_rkllama_schema() -> ConfigSchema:
     """Create and return the RKLLAMA configuration schema"""
     schema = ConfigSchema()
-    
+
     # Server section
     server = schema.add_section("server", description="Server configuration settings")
     server.integer("port", 8080, "Server port number", min_value=1, max_value=65535)
     server.string("host", "0.0.0.0", "Server host address")
     server.boolean("debug", False, "Enable debug mode")
-    
+
     # Paths section
     paths = schema.add_section("paths", description="Path configuration")
     paths.path("models", "models", "Path to model files")
@@ -253,7 +253,7 @@ def create_rkllama_schema() -> ConfigSchema:
     paths.path("src", "src", "Path to source files")
     paths.path("lib", "lib", "Path to library files")
     paths.path("temp", "temp", "Path to temporary files")
-    
+
     # Model section
     model = schema.add_section("model", description="Model configuration")
     model.string("default", "", "Default model to use")
@@ -271,13 +271,13 @@ def create_rkllama_schema() -> ConfigSchema:
     model.string("default_mirostat_eta", 0.1, "Default Mirostat Eta for the model to use")
     model.string("max_minutes_loaded_in_memory", 30, "Max minutes allowed to be load in memory a model without any activity/inference")
     model.string("max_number_models_loaded_in_memory", 10, "Max number of models allowed to be loaded simultaneously in memory")
-    
+
 
     # Platform section
     platform = schema.add_section("platform", description="Platform configuration")
-    platform.string("processor", "rk3588", "Target processor", 
+    platform.string("processor", "rk3588", "Target processor",
                    options=["rk3588", "rk3576"])
-    
+
     return schema
 
 # Create the global schema instance

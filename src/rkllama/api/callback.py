@@ -34,7 +34,7 @@ def callback_impl(result, userdata, status):
                         text_bytes = bytes(text_bytes)
                     except:
                         text_bytes = b""
-                        
+
                 # Now safely concatenate
                 try:
                     decoded_text = (split_byte_data + text_bytes).decode('utf-8')
@@ -56,7 +56,7 @@ def callback_impl(result, userdata, status):
                     except UnicodeDecodeError:
                         # Still incomplete, keep for next time
                         pass
-            
+
             # --- EMBEDDINGS Part---
             if result and result.contents and result.contents.last_hidden_layer.hidden_states:
                 num_tokens = result.contents.last_hidden_layer.num_tokens
@@ -75,8 +75,8 @@ def callback_impl(result, userdata, status):
                 #last_embeddings = embeddings.copy()
                 last_embeddings.append(embeddings)
                 print(f"\n✅ Embeddings Shape: {embeddings.shape}")
-        
+
         except Exception as e:
             print(f"\nError processing callback: {str(e)}", end='')
-            
-        sys.stdout.flush()    
+
+        sys.stdout.flush()

@@ -1,0 +1,3 @@
+[console_scripts]
+rkllama_client = rkllama.client.client:main
+rkllama_server = rkllama.server.app:main

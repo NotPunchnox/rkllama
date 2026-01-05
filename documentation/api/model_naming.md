@@ -48,7 +48,7 @@ RKLLAMA automatically handles conversion between simplified and full names with 
 
 1. **Model Family Detection**:
    - Recognizes common families: `llama`, `llama2`, `llama3`, `mistral`, `qwen`, `qwen2.5`, `deepseek`, `phi`, `phi2`, `phi3`, etc.
-   
+
 2. **Variant Detection**:
    - Extracts variants like `coder`, `math`, `instruct`, `chat`, `vision`, etc.
    - Multiple variants are joined with hyphens (e.g., `coder-instruct`)

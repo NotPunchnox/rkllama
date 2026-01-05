@@ -102,5 +102,5 @@ TEMPERATURE=1.0
 - **Mise à jour automatique** : La commande `rkllama list` recrée l'arborescence pour les modèles existants.
 - **Création du Modelfile** : Si le Modelfile n'est pas présent, utilisez la commande `rkllama run modelname file.rkllm huggingface_repo` pour le générer (cette opération est nécessaire une seule fois pour chaque modèle mis à jour).
 - **Intégration avec HuggingFace** : Le chemin HuggingFace permet d'initialiser automatiquement le tokenizer et le chattemplate.
-  
+
 Prenez en compte ces informations si vous avez des modèles installés avant la version 0.0.3.

@@ -44,8 +44,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/api/ps`
    * `/api/tags`
    * `/api/embed` (and legacy `/api/embeddings`)
-   * `/api/version` 
-   * `/api/pull` 
+   * `/api/version`
+   * `/api/pull`
 - **Partial OpenAI API compatibility** - Support for:
    * `/v1/completions`
    * `/v1/chat/completions`
@@ -62,7 +62,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
     * Load the model after new request (if not in memory already)
     * Unload when model expires after inactivity (default 30 min)
     * Unload the oldest model in memory if new model is required to be loaded and there is not memory available in the server
-    * 
+    *
 - **Inference requests with streaming and non-streaming modes.**
 - **Message history.**
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".
@@ -115,7 +115,7 @@ docker pull ghcr.io/notpunchnox/rkllama:main
 ```
 run server
 ```bash
-docker run -it --privileged -p 8080:8080 -v <local_models_dir>:/opt/rkllama/models ghcr.io/notpunchnox/rkllama:main 
+docker run -it --privileged -p 8080:8080 -v <local_models_dir>:/opt/rkllama/models ghcr.io/notpunchnox/rkllama:main
 ```
 
 *Set up by: [ichlaffterlalu](https://github.com/ichlaffterlalu)*
@@ -151,7 +151,7 @@ rkllama_server --debug --models <models_dir>
 ```bash
 rkllama_client
 ```
-or 
+or
 ```bash
 rkllama_client help
 ```
@@ -314,20 +314,20 @@ Example directory structure for multimodal:
 ### **For Image Generation Installation**
 1. In a temporary folder, clone the repository https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 or https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 from Hugging Face for the desired SD model
 2. Execute the ONNX to RKNN convertion of the models for your needs **WITH RKNN TOOLKIT LIBRARY VERSION 2.3.2**. For example:
-   
+
    For LCM SD 1.5
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 512x512 --components "text_encoder,unet,vae_decoder" --target_platform rk3588
    ```
-   
+
    or
 
    For LCM SSD1B
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 1024x1024 --components "text_encoder,text_encoder_2,unet,vae_decoder" --target_platform rk3588
    ```
-3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** or **lcm-segmind-stable-diffusion** 
-4. Copy the folders: "scheduler, text_encoder, text_encoder_2 (for SSD1B only), unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files. 
+3. Create a folder inside the models directory in RKLLAMA for the Stable Diffusion RKNN models, For example: **lcm-stable-diffusion** or **lcm-segmind-stable-diffusion**
+4. Copy the folders: "scheduler, text_encoder, text_encoder_2 (for SSD1B only), unet, vae_decoder"  from the cloned repo to the new directory model created in RKLLMA. Just copy the *.json and *.rknn files.
 5. The structure of the model **MUST** be like this:
 
    For LCM SD 1.5
@@ -345,7 +345,7 @@ Example directory structure for multimodal:
            └── vae_decoder
               |── config.json
               |── model.rknn
-           
+
    ```
 
    or
@@ -368,7 +368,7 @@ Example directory structure for multimodal:
            └── vae_decoder
               |── config.json
               |── model.rknn
-           
+
    ```
 
 
@@ -379,7 +379,7 @@ Example directory structure for multimodal:
 
 ### **For Speech Generation (TTS) Installation**
 1. Download a voice from https://huggingface.co/danielferr85/piper-checkpoints-rknn from Hugging Face. (You can convert new ones, see below)
-2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **es_AR-daniela-high** 
+2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **es_AR-daniela-high**
 3. Copy the encoder (.onnx), decoder (.rknn) and config (.json) file from the choosed voice to the new directory model created in RKLLMA.
 4. The structure of the model **MUST** be like this:
 
@@ -389,7 +389,7 @@ Example directory structure for multimodal:
            |── encoder.onnx
            └── decoder.rknn
            └── config.json
-          
+
    ```
 
 5. Done! You are ready to test the OpenAI endpoint /v1/audio/speech to generate audio. You can add it to OpenWebUI in the Audio section for TTS.
@@ -413,7 +413,7 @@ Example directory structure for multimodal:
 
 ### **For Transcriptions Generation (STT) Installation**
 1. Download a model from https://huggingface.co/danielferr85/omniASR-ctc-rknn from Hugging Face.
-2. Create a folder inside the models directory in RKLLAMA for the model, For example: **omniasr-ctc:300m** 
+2. Create a folder inside the models directory in RKLLAMA for the model, For example: **omniasr-ctc:300m**
 3. Copy the model (.rknn) and vocabulary (.txt) file from the choosed model to the new directory model created in RKLLMA.
 4. The structure of the model **MUST** be like this:
 
@@ -422,14 +422,14 @@ Example directory structure for multimodal:
        └── omniasr-ctc:300m
            └── model.rknn
            └── vocab.txt
-          
+
    ```
 
 5. Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
 
 **IMPORTANT**
 - The model can have any name but must ended with extension .rknn
-- The vocabulary of the model can have any name but must ended with extension .txt 
+- The vocabulary of the model can have any name but must ended with extension .txt
 - You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
 
 
@@ -463,7 +463,7 @@ See the [Configuration Documentation](documentation/configuration.md) for comple
 
 **Debug Mode**: Optional debugging tools with detailed logs that can be enabled with the `--debug` flag.
 
-**Simplified Model Management**: 
+**Simplified Model Management**:
 - Delete models with one command using the simplified name
 - Pull models directly from Hugging Face with automatic Modelfile creation
 - Custom model configurations through Modelfiles

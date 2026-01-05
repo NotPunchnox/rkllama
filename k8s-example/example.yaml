@@ -1,0 +1,105 @@
+# RKLLama Kubernetes Deployment
+#
+# Deploys RKLLama server on RK3588 NPU nodes with Ollama-compatible API.
+#
+# Prerequisites:
+# 1. Rockchip device plugin installed:
+#    https://github.com/rockchip-linux/rknpu-device-plugin
+#
+# 2. RK3588 node with NPU toleration:
+#    kubectl taint nodes <node> npu=enabled:NoSchedule
+#
+# Usage:
+#   kubectl apply -f rkllama-deployment.yaml
+#   kubectl logs -f deployment/rkllama
+#
+# Test:
+#   kubectl port-forward svc/rkllama 8080:8080
+#   curl http://localhost:8080/api/tags
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rkllama
+  labels:
+    app: rkllama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rkllama
+  template:
+    metadata:
+      labels:
+        app: rkllama
+    spec:
+      containers:
+        - name: rkllama
+          image: ghcr.io/rsjames-ttrpg/rkllama:1.2.3-1
+          command: ["rkllama_server", "--models", "/opt/rkllama/models"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            limits:
+              rockchip.com/npu: 1
+              memory: "8Gi"
+              cpu: "2"
+            requests:
+              memory: "4Gi"
+              cpu: "1"
+          securityContext:
+            privileged: true
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: models
+              mountPath: /opt/rkllama/models
+      restartPolicy: Always
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: rkllama-models
+      tolerations:
+        - key: "npu"
+          operator: "Equal"
+          value: "enabled"
+          effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/arch: arm64
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rkllama-models
+  labels:
+    app: rkllama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rkllama
+  labels:
+    app: rkllama
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: rkllama

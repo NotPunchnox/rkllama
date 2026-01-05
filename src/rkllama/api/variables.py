@@ -14,7 +14,7 @@ model_id = ""
 system = "Tu es un assistant artificiel."
 model_config = {}  # For storing model-specific configuration
 generation_complete = False  # Flag to track completion status
-debug_mode = is_debug_mode()  
+debug_mode = is_debug_mode()
 stream_stats = {
     "total_requests": 0,
     "successful_responses": 0,
