@@ -1,99 +1,126 @@
-name: Docker
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
+name: Release
 
 on:
   push:
-    branches: [ "main", "Rkllama-Docker" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - 'v*.*.*-*'
 
 env:
-  # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
 
-
 jobs:
-  build:
-    runs-on: [self-hosted, Linux, ARM64]
+  release:
+    runs-on: ubuntu-24.04-arm
     permissions:
-      contents: read
+      contents: write
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
+      - name: Get version from tag
+        id: version
+        run: |
+          # Full version: 1.2.3-1
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "full_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+          # Runtime version: 1.2.3
+          RUNTIME_VERSION=$(echo "$TAG_VERSION" | cut -d'-' -f1)
+          echo "runtime_version=$RUNTIME_VERSION" >> $GITHUB_OUTPUT
+
+          # Patch number: 1
+          PATCH=$(echo "$TAG_VERSION" | cut -d'-' -f2)
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          echo "Full version: $TAG_VERSION"
+          echo "Runtime version: $RUNTIME_VERSION"
+          echo "Patch: $PATCH"
+
+      - name: Read VERSION file
+        id: file_version
+        run: |
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "file_version=$FILE_VERSION" >> $GITHUB_OUTPUT
+          echo "File version: $FILE_VERSION"
+
+      - name: Verify version match
+        run: |
+          if [ "${{ steps.version.outputs.full_version }}" != "${{ steps.file_version.outputs.file_version }}" ]; then
+            echo "Error: Tag version (${{ steps.version.outputs.full_version }}) does not match VERSION file (${{ steps.file_version.outputs.file_version }})"
+            exit 1
+          fi
+          echo "Version verified: ${{ steps.version.outputs.full_version }}"
+
       - name: Install cosign
-        if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v3.3.0
         with:
           cosign-release: 'v2.2.3'
 
-      # Set up BuildKit Docker container builder to be able to build
-      # multi-platform images and export cache
-      # https://github.com/docker/setup-buildx-action
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/arm64
-          version: v0.23.0
 
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.full_version }}
+            type=raw,value=${{ steps.version.outputs.runtime_version }}
+            type=raw,value=latest
 
-      # Build and push Docker image with Buildx
-      # https://github.com/docker/build-push-action
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/arm64
 
-      # Sign the resulting Docker image digest except on PRs.
-      # This will only write to the public Rekor transparency log when the Docker
-      # repository is public to avoid leaking data.  If you would like to publish
-      # transparency data even for private images, pass --force to cosign below.
-      # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
         env:
-          # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        # This step uses the identity token to provision an ephemeral certificate
-        # against the sigstore community Fulcio instance.
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RKLlama v${{ steps.version.outputs.full_version }}
+          body: |
+            ## RKLlama v${{ steps.version.outputs.full_version }}
+
+            - **RKLLM Runtime**: v${{ steps.version.outputs.runtime_version }}
+            - **Code Patch**: ${{ steps.version.outputs.patch }}
+
+            ### Docker Image
+            ```bash
+            # Specific version
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.full_version }}
+
+            # Latest for runtime ${{ steps.version.outputs.runtime_version }}
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.runtime_version }}
+            ```
+
+            ### Platforms
+            - linux/arm64 (Rockchip RK3588/RK3576)
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
