@@ -293,15 +293,8 @@ async def pull_model_ollama(
     if not request.model:
         raise HTTPException(status_code=400, detail="Missing model path")
 
-    # Pass all fields to native pull
-    return await pull_model(
-        {
-            "model": request.model,
-            "model_name": request.model_name,
-            "source": request.source.value,
-        },
-        models_path,
-    )
+    # Pass the request directly to native pull
+    return await pull_model(request, models_path)
 
 
 @router.delete("/delete", response_model=DeleteResponse)
@@ -384,7 +377,7 @@ async def generate_ollama(
         logger.debug(f"Generate request for model: {model_name}")
 
     # Get thinking setting from modelfile if not provided
-    enable_thinking = request.enable_thinking
+    enable_thinking = request.think
     if enable_thinking is None:
         model_thinking_enabled = get_property_modelfile(model_name, "ENABLE_THINKING", models_path)
         enable_thinking = strtobool(model_thinking_enabled) if model_thinking_enabled else False
@@ -442,7 +435,7 @@ async def chat_ollama(
                 images.extend(msg.images)
 
     # Get thinking setting
-    enable_thinking = request.enable_thinking
+    enable_thinking = request.think
     if enable_thinking is None:
         model_thinking_enabled = get_property_modelfile(model_name, "ENABLE_THINKING", models_path)
         enable_thinking = strtobool(model_thinking_enabled) if model_thinking_enabled else False
