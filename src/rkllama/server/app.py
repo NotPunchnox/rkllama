@@ -52,6 +52,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting RKLlama server...")
     app.state.worker_manager = WorkerManager()
+
+    # IMPORTANT: Share the same WorkerManager instance with server_utils
+    # This bridges the FastAPI routers with the legacy server_utils code
+    import rkllama.api.variables as variables
+    variables._worker_manager_rkllm = app.state.worker_manager
+
     app.state.model_id = ""
     app.state.system = "You are an AI assistant."
     app.state.model_config = {}
