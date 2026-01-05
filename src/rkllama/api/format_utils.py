@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Tuple, Union, List
 import re
 import uuid
 import time
-from flask import jsonify
 import cv2
 import numpy as np
 import os
@@ -750,11 +749,11 @@ def handle_ollama_response(response, stream=False, is_chat=True):
         # Full JSON response
         ollama_response = json.loads(response.get_data().decode("utf-8"))
 
-        # CHeck if cht or generate response
+        # Check if chat or generate response
         if is_chat:
-            return jsonify(ollama_chat_to_openai_v1_chat_completion(ollama_response))
+            return ollama_chat_to_openai_v1_chat_completion(ollama_response)
         else:
-            return jsonify(ollama_generate_to_openai_v1_completion(ollama_response))
+            return ollama_generate_to_openai_v1_completion(ollama_response)
 
 
 
@@ -766,13 +765,12 @@ def handle_ollama_embedding_response(response):
         response: `requests.Response` object from Ollama.
 
     Returns:
-        dict | generator[str]: OpenAI-compatible embedding esponse.
+        dict: OpenAI-compatible embedding response.
     """
     # Full JSON response
     ollama_response = json.loads(response.get_data().decode("utf-8"))
 
-    # CHeck if cht or generate response
-    return jsonify(ollama_embedding_to_openai_v1_embeddingns(ollama_response))
+    return ollama_embedding_to_openai_v1_embeddingns(ollama_response)
 
 
 def strtobool (val):
