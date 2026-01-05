@@ -150,14 +150,15 @@ class RKLLM(object):
             self.tools = tools
             self.set_function_tools_(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(tools.encode('utf-8')),  ctypes.c_char_p(tool_response_str.encode('utf-8')))
 
-    def run(self, *param):
-
-        # Get the arguments
-        inference_mode, model_input_type, input = param
+    def run(self, inference_mode, model_input_type, input, role=None, enable_thinking=False):
 
         # Define the input object
         rkllm_input = RKLLMInput()
         rkllm_input.input_type = model_input_type
+
+        # Set role and enable_thinking for the input
+        rkllm_input.role = role.encode('utf-8') if role is not None else b"user"
+        rkllm_input.enable_thinking = ctypes.c_bool(enable_thinking if enable_thinking is not None else False)
 
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode

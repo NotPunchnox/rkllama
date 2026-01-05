@@ -214,10 +214,10 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens, role="user", enable_thinking=enable_thinking)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images, role="user", enable_thinking=enable_thinking)
             # Clear the cache to prevent image embedding problems
             variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
@@ -360,10 +360,10 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens, role="user", enable_thinking=enable_thinking)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images, role="user", enable_thinking=enable_thinking)
             # Clear the cache to prevent image embedding problems
             variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
@@ -544,10 +544,10 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens, role="user", enable_thinking=enable_thinking)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images, role="user", enable_thinking=enable_thinking)
             # Clear the cache to prevent image embedding problems
             variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
@@ -631,10 +631,10 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens, role="user", enable_thinking=enable_thinking)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images, role="user", enable_thinking=enable_thinking)
             # Clear the cache to prevent image embedding problems
             variables.worker_manager_rkllm.clear_cache_worker(model_name)
 

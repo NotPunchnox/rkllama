@@ -7,13 +7,29 @@ global_status = -1
 global_text = []
 split_byte_data = bytes(b"")
 last_embeddings = []
+last_perf_stats = None  # Performance stats from last inference
 
 # Definir la fonction de rappel
 def callback_impl(result, userdata, status):
-    global split_byte_data, global_status, global_text, last_embeddings
+    global split_byte_data, global_status, global_text, last_embeddings, last_perf_stats
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
         global_status = status
+
+        # Capture performance stats on completion
+        if result and result.contents:
+            try:
+                perf = result.contents.perf
+                last_perf_stats = {
+                    "prefill_time_ms": perf.prefill_time_ms,
+                    "prefill_tokens": perf.prefill_tokens,
+                    "generate_time_ms": perf.generate_time_ms,
+                    "generate_tokens": perf.generate_tokens,
+                    "memory_usage_mb": perf.memory_usage_mb,
+                }
+            except Exception:
+                last_perf_stats = None
+
         print("\n")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_ERROR:

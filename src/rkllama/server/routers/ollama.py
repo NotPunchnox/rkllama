@@ -362,7 +362,23 @@ async def unload_model_ollama(
     return UnloadResponse(status="success")
 
 
-@router.post("/generate")
+@router.post(
+    "/generate",
+    responses={
+        200: {
+            "description": "Generated response",
+            "content": {
+                "application/x-ndjson": {
+                    "schema": {"$ref": "#/components/schemas/GenerateStreamChunk"},
+                    "example": {"model": "qwen", "response": "Hello", "done": False},
+                },
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/GenerateResponse"},
+                },
+            },
+        }
+    },
+)
 async def generate_ollama(
     request: GenerateRequest,
     req: Request,
@@ -370,7 +386,11 @@ async def generate_ollama(
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
-    """Generate text (Ollama-compatible)."""
+    """Generate text (Ollama-compatible).
+
+    When `stream=true`, returns NDJSON stream (application/x-ndjson).
+    When `stream=false`, returns single JSON response (application/json).
+    """
     model_name = strip_namespace(request.model)
 
     if debug:
@@ -407,7 +427,27 @@ async def generate_ollama(
     )
 
 
-@router.post("/chat")
+@router.post(
+    "/chat",
+    responses={
+        200: {
+            "description": "Chat response",
+            "content": {
+                "application/x-ndjson": {
+                    "schema": {"$ref": "#/components/schemas/ChatStreamChunk"},
+                    "example": {
+                        "model": "qwen",
+                        "message": {"role": "assistant", "content": "Hello"},
+                        "done": False,
+                    },
+                },
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/ChatResponse"},
+                },
+            },
+        }
+    },
+)
 async def chat_ollama(
     request: ChatRequest,
     req: Request,
@@ -415,7 +455,11 @@ async def chat_ollama(
     models_path: str = Depends(get_models_path),
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
-    """Chat with model (Ollama-compatible)."""
+    """Chat with model (Ollama-compatible).
+
+    When `stream=true`, returns NDJSON stream (application/x-ndjson).
+    When `stream=false`, returns single JSON response (application/json).
+    """
     model_name = strip_namespace(request.model)
 
     if debug:

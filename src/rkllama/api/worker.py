@@ -148,7 +148,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
         try:
 
             # Get the instruction to the worker
-            task,inference_mode, model_input_type, model_input = task_queue.get()
+            task, inference_mode, model_input_type, model_input, role, enable_thinking = task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -171,7 +171,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
             elif task == WORKER_TASK_INFERENCE:
                 logger.info(f"Running inference for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
 
                 # Looping until execution of the thread
@@ -200,7 +200,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
             elif task == WORKER_TASK_EMBEDDING:
                 logger.info(f"Running embedding for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
 
                 # Looping until execution of the thread finished
@@ -522,10 +522,10 @@ class WorkerManager:
             # Get the queue of tasks of the worker
 
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_ABORT_INFERENCE,None,None,None))
+            self.workers[model_name].task_q.put((WORKER_TASK_ABORT_INFERENCE, None, None, None, None, None))
 
             # Send the unload task of the model
-            self.workers[model_name].task_q.put((WORKER_TASK_UNLOAD_MODEL,None,None,None))
+            self.workers[model_name].task_q.put((WORKER_TASK_UNLOAD_MODEL, None, None, None, None, None))
 
             # Wait for unload
             self.workers[model_name].process.join()
@@ -554,22 +554,24 @@ class WorkerManager:
         if model_name in self.workers.keys():
             # Get the queue of tasks of the worker
 
-            # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE,None,None,None))
+            # Send the clear cache task
+            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE, None, None, None, None, None))
 
 
-    def inference(self, model_name, model_input):
+    def inference(self, model_name, model_input, role=None, enable_thinking=False):
         """
         Send a inference task to the corresponding model worker
 
         Args:
             model_name (str): Model name to invoke
             model_input (str): Input of the model
+            role (str): Role for the input (e.g., "user", "assistant")
+            enable_thinking (bool): Enable thinking/reasoning mode
 
         """
         if model_name in self.workers.keys():
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input, role, enable_thinking))
 
 
     def embedding(self, model_name, model_input):
@@ -582,21 +584,20 @@ class WorkerManager:
 
         """
         if model_name in self.workers.keys():
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            # Send the embedding task (role and enable_thinking not used for embeddings)
+            self.send_task(model_name, (WORKER_TASK_EMBEDDING, RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input, None, False))
 
 
-    def multimodal(self, model_name, prompt_input, images):
+    def multimodal(self, model_name, prompt_input, images, role=None, enable_thinking=False):
         """
         Send a inference task to the corresponding model worker for multimodal input
 
         Args:
             model_name (str): Model name to invoke
             prompt_input (str): Input of the model
-            image_embed (np.ndarray): Image embedding
-            n_image_tokens (int): Number of image tokens
-            image_width (int): Width of the image
-            image_height (int): Height of the image
+            images (list): List of images
+            role (str): Role for the input (e.g., "user", "assistant")
+            enable_thinking (bool): Enable thinking/reasoning mode
 
         """
 
@@ -628,7 +629,7 @@ class WorkerManager:
             model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images)
 
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input, role, enable_thinking))
 
 
     def get_images_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
@@ -654,8 +655,8 @@ class WorkerManager:
             # Prepare the input for the vision encoder
             model_input = (model_encoder_path, images, image_width, image_height)
 
-            # Send the Encoder task of the image
-            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))
+            # Send the Encoder task of the image (role and enable_thinking not used for vision encoder)
+            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER, None, None, model_input, None, None))
 
             # Wait to confirm output of the image encoder
             image_embed  = self.workers[model_name].result_q.get(timeout=60)  # Timeout after 60 seconds
