@@ -13,6 +13,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
 # Virtual environments
 venv/
 env/
