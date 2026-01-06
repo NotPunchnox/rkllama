@@ -10,3 +10,20 @@ spec:
   resources:
     requests:
       storage: 10Gi
+
+# Option 2: NFS PV (if you have an existing NFS server)
+# Uncomment and configure with your NFS server details
+#
+# apiVersion: v1
+# kind: PersistentVolume
+# metadata:
+#   name: rkllama-models-nfs
+# spec:
+#   capacity:
+#     storage: 50Gi
+#   accessModes:
+#     - ReadWriteMany
+#   nfs:
+#     server: 192.168.1.100  # Your NFS server IP
+#     path: /exports/rkllama-models
+#   persistentVolumeReclaimPolicy: Retain

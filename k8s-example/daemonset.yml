@@ -1,0 +1,91 @@
+# RKLlama DaemonSet for Multi-Node NPU Clusters
+#
+# Deploys one RKLlama instance per NPU node for maximum throughput.
+# Use with the headless service for load balancing across all nodes.
+#
+# For a TuringPi cluster with 8 RK3588 nodes, this gives you 8 independent
+# inference endpoints behind a single service.
+#
+# Prerequisites:
+# 1. Rockchip device plugin: https://github.com/rockchip-linux/rknpu-device-plugin
+# 2. Nodes labeled/tainted for NPU workloads
+#
+# Usage:
+#   kubectl apply -k k8s-example/
+#   curl http://rkllama.your-domain/api/tags
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rkllama
+  labels:
+    app: rkllama
+spec:
+  selector:
+    matchLabels:
+      app: rkllama
+  template:
+    metadata:
+      labels:
+        app: rkllama
+    spec:
+      containers:
+        - name: rkllama
+          image: ghcr.io/rsjames-ttrpg/rkllama:latest
+          imagePullPolicy: Always
+          command: ["rkllama_server", "--models", "/opt/rkllama/models"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              rockchip.com/npu: "1"
+              memory: "8Gi"
+              cpu: "2"
+            requests:
+              memory: "4Gi"
+              cpu: "1"
+          securityContext:
+            privileged: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: models
+              mountPath: /opt/rkllama/models
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: rkllama-models
+        - name: sys
+          hostPath:
+            path: /sys
+            type: Directory
+      tolerations:
+        - key: "npu"
+          operator: "Equal"
+          value: "enabled"
+          effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/arch: arm64
