@@ -558,20 +558,23 @@ class WorkerManager:
             self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE, None, None, None, None, None))
 
 
-    def inference(self, model_name, model_input, role=None, enable_thinking=False):
+    def inference(self, model_name, model_input, role=None, enable_thinking=False, use_prompt_mode=False):
         """
         Send a inference task to the corresponding model worker
 
         Args:
             model_name (str): Model name to invoke
-            model_input (str): Input of the model
+            model_input: Input of the model (token list or string depending on mode)
             role (str): Role for the input (e.g., "user", "assistant")
             enable_thinking (bool): Enable thinking/reasoning mode
+            use_prompt_mode (bool): Use PROMPT mode (string) instead of TOKEN mode
 
         """
         if model_name in self.workers.keys():
+            # Choose input type based on mode
+            input_type = RKLLMInputType.RKLLM_INPUT_PROMPT if use_prompt_mode else RKLLMInputType.RKLLM_INPUT_TOKEN
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input, role, enable_thinking))
+            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, input_type, model_input, role, enable_thinking))
 
 
     def embedding(self, model_name, model_input):

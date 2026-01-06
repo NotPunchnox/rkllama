@@ -164,7 +164,12 @@ class RKLLM(object):
         self.rkllm_infer_params.mode = inference_mode
 
         # Check the model type to construct parameters
-        if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
+        if model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
+            # String prompt mode (recommended by official Rockchip example)
+            prompt_str = input if isinstance(input, str) else str(input)
+            rkllm_input.input_data.prompt_input = ctypes.c_char_p(prompt_str.encode('utf-8'))
+
+        elif model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
             token_input = list(input)  # Copy to avoid mutating original
             # Note: Do NOT append hardcoded EOS token - the tokenizer already handles this
             # via add_generation_prompt=True in apply_chat_template
