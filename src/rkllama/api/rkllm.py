@@ -159,20 +159,27 @@ class RKLLM(object):
         # Set role and enable_thinking for the input
         rkllm_input.role = role.encode('utf-8') if role is not None else b"user"
         rkllm_input.enable_thinking = ctypes.c_bool(enable_thinking if enable_thinking is not None else False)
+        logger.info(f"RKLLMInput: role={role}, enable_thinking={enable_thinking}, input_type={model_input_type}")
 
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
 
         # Check the model type to construct parameters
+        # IMPORTANT: Keep references to ctypes data to prevent garbage collection during rkllm_run
         if model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
             # String prompt mode (recommended by official Rockchip example)
             prompt_str = input if isinstance(input, str) else str(input)
-            rkllm_input.input_data.prompt_input = ctypes.c_char_p(prompt_str.encode('utf-8'))
+            logger.info(f"PROMPT MODE - Input string ({len(prompt_str)} chars): {prompt_str[:500]}...")
+            # Keep reference to encoded bytes to prevent GC
+            prompt_bytes = prompt_str.encode('utf-8')
+            prompt_cstr = ctypes.c_char_p(prompt_bytes)
+            rkllm_input.input_data.prompt_input = prompt_cstr
 
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
             token_input = list(input)  # Copy to avoid mutating original
             # Note: Do NOT append hardcoded EOS token - the tokenizer already handles this
             # via add_generation_prompt=True in apply_chat_template
+            # Keep reference to token array to prevent GC
             token_array = (ctypes.c_int * len(token_input))(*token_input)
 
             rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))

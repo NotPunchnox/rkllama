@@ -436,7 +436,7 @@ class ChatEndpointHandler(EndpointHandler):
            }
 
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return response
+        return response, 200
 
 
 class GenerateEndpointHandler(EndpointHandler):
@@ -759,7 +759,7 @@ class GenerateEndpointHandler(EndpointHandler):
         if DEBUG_MODE and format_data:
             logger.debug(f"Created formatted response with JSON content")
 
-        return response
+        return response, 200
 
 
 
