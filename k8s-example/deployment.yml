@@ -59,12 +59,20 @@ spec:
               cpu: "1"
           securityContext:
             privileged: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/tags
+              path: /health/ready
               port: 8080
-            initialDelaySeconds: 30
+            initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 3
           volumeMounts:
             - name: models
               mountPath: /opt/rkllama/models

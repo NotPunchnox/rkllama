@@ -73,10 +73,12 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from rkllama import __version__
+
     app = FastAPI(
         title="RKLlama",
         description="Ollama-compatible API for Rockchip NPU",
-        version="0.0.54",
+        version=__version__,
         lifespan=lifespan,
     )
 
@@ -102,6 +104,38 @@ def create_app() -> FastAPI:
         return {
             "message": "Welcome to RKLlama with Ollama API compatibility!",
             "github": "https://github.com/notpunhnox/rkllama",
+        }
+
+    @app.get("/health", tags=["Health"])
+    async def health_live():
+        """Liveness probe - is the server process running?"""
+        return {"status": "ok"}
+
+    @app.get("/health/ready", tags=["Health"])
+    async def health_ready():
+        """Readiness probe - is the server ready to accept requests?"""
+        from rkllama import __version__
+
+        checks = {
+            "worker_manager": False,
+            "models_path": False,
+        }
+
+        # Check worker manager is initialized
+        if hasattr(app.state, "worker_manager") and app.state.worker_manager is not None:
+            checks["worker_manager"] = True
+
+        # Check models directory is accessible
+        models_path = rkllama.config.get_path("models")
+        if os.path.exists(models_path) and os.path.isdir(models_path):
+            checks["models_path"] = True
+
+        all_healthy = all(checks.values())
+
+        return {
+            "status": "ok" if all_healthy else "degraded",
+            "version": __version__,
+            "checks": checks,
         }
 
     return app
