@@ -14,6 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import rkllama.config
 from rkllama.api.worker import WorkerManager
 from rkllama.logging import get_logger, setup_logging
+from rkllama.telemetry import (
+    setup_telemetry,
+    instrument_fastapi,
+    shutdown_telemetry,
+)
 
 # Set up structured logging
 DEBUG_MODE = rkllama.config.is_debug_mode()
@@ -22,6 +27,10 @@ setup_logging(
     log_level="DEBUG" if DEBUG_MODE else "INFO",
 )
 logger = get_logger("rkllama.server")
+
+# Telemetry providers (set during startup)
+_tracer_provider = None
+_meter_provider = None
 
 
 def print_color(message: str, color: str) -> None:
@@ -41,8 +50,19 @@ def print_color(message: str, color: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown."""
+    global _tracer_provider, _meter_provider
+
     # Startup
     logger.info("Starting RKLlama server")
+
+    # Initialize telemetry
+    from rkllama import __version__
+    _tracer_provider, _meter_provider = setup_telemetry(
+        service_name="rkllama",
+        service_version=__version__,
+        service_namespace="rkllama",
+    )
+
     app.state.worker_manager = WorkerManager()
 
     # IMPORTANT: Share the same WorkerManager instance with server_utils
@@ -68,6 +88,9 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RKLlama server")
     if hasattr(app.state, "worker_manager"):
         app.state.worker_manager.stop_all()
+
+    # Shutdown telemetry (flush pending spans/metrics)
+    shutdown_telemetry(_tracer_provider, _meter_provider)
     logger.info("Server shutdown complete")
 
 
@@ -137,6 +160,9 @@ def create_app() -> FastAPI:
             "version": __version__,
             "checks": checks,
         }
+
+    # Instrument FastAPI with OpenTelemetry
+    instrument_fastapi(app)
 
     return app
 
