@@ -39,9 +39,9 @@ class RKLLM(object):
         self.rkllm_param.mirostat_tau = float(options.get("mirostat_tau", rkllama.config.get("model", "default_mirostat_tau")))
         self.rkllm_param.mirostat_eta = float(options.get("mirostat_eta", rkllama.config.get("model", "default_mirostat_eta")))
 
-        # Fixme: these parameters are not used in the current implementation, but they are set to default values
+        # Additional RKLLM parameters
         self.rkllm_param.skip_special_token = True
-        self.rkllm_param.n_keep = 0
+        self.rkllm_param.n_keep = int(options.get("n_keep", -1))  # -1 = keep all tokens (official default)
         self.rkllm_param.is_async = False
         self.rkllm_param.use_gpu = True
 

@@ -8,4 +8,4 @@ resources:
 
 images:
   - name: ghcr.io/rsjames-ttrpg/rkllama
-    newTag: latest  # Change to specific version e.g. v0.1.0
+    newTag: 8de7a09  # Change to specific version e.g. v0.1.0
