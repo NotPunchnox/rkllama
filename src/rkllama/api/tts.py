@@ -37,7 +37,7 @@ class PiperVoiceRKNN(PiperVoice):
 
     session_rknn = RKNNLite
     """RKNN session."""
-    
+
     config: PiperConfig
     """Piper voice configuration."""
 
@@ -97,7 +97,7 @@ class PiperVoiceRKNN(PiperVoice):
         # Load RKNN
         decoder_rknn = RKNNLite(verbose=False)
         decoder_rknn.load_rknn(decoder)
-        
+
         return PiperVoiceRKNN(
             config=PiperConfig.from_dict(config_dict),
             session=onnxruntime.InferenceSession(
@@ -150,15 +150,15 @@ class PiperVoiceRKNN(PiperVoice):
 
             if include_alignments and audio_chunk.phoneme_alignments:
                 alignments.extend(audio_chunk.phoneme_alignments)
-        
+
         # Release RKNNLite resources before return
         self.session_rknn.release()
-        
+
         if include_alignments:
             return alignments
 
         return None
-    
+
     def phoneme_ids_to_audio(
         self,
         phoneme_ids: list[int],
@@ -224,17 +224,17 @@ class PiperVoiceRKNN(PiperVoice):
             None,
             args,
         )
-        
+
         # Get the encoder outputs
         if speaker_id is not None:
             z, y_mask, _ = encoder_output
         else:
             z, y_mask = encoder_output
 
-        
+
         # Get the input time expected by the RKNN model for chunk processing
         static_input_value_rknn = self.session_rknn.rknn_runtime.get_tensor_attr(0).dims[2]
-   
+
 
         # Chunk z and y_mask into smaller pieces
         z_chunks, _ = self.chunk_tensor(z, chunk_size=static_input_value_rknn, overlap=0)
@@ -246,10 +246,10 @@ class PiperVoiceRKNN(PiperVoice):
 
             # Get the current input time of the chunk
             input_value_chunk = zc.shape[2]
-            
+
             # Pad zc and y_maskc if needed for the expected input size of RKNN
             if input_value_chunk < static_input_value_rknn:
-                
+
                 padded_z = np.zeros((zc.shape[0], zc.shape[1], static_input_value_rknn), dtype=np.float32)
                 padded_z[:, :, :input_value_chunk] = zc
                 zc = padded_z
@@ -266,14 +266,14 @@ class PiperVoiceRKNN(PiperVoice):
 
             # Check if current tensor was padded to remove the generated junk final audio by the decoder
             if input_value_chunk < static_input_value_rknn:
-                result = self.fix_rknn_output(result, input_value_chunk, static_input_value_rknn)        
+                result = self.fix_rknn_output(result, input_value_chunk, static_input_value_rknn)
 
             # Add the output of the current chunk decoder to the list
-            audio_chunks.append(result)    
-        
-        # Concatenate all audio chunks        
+            audio_chunks.append(result)
+
+        # Concatenate all audio chunks
         audio = np.concatenate(audio_chunks, axis=-1)
-        
+
         # Continue original Piper logic
         audio = audio.squeeze()
         if not include_alignments:
@@ -293,7 +293,7 @@ class PiperVoiceRKNN(PiperVoice):
 
     def fix_rknn_output(self, result, sz, static_t):
         """
-        Remove the generated silence sound because the final padding zeros in the input of the decoder 
+        Remove the generated silence sound because the final padding zeros in the input of the decoder
         """
         # Generated Shape by the decoder
         tensor = result[0]
@@ -315,7 +315,7 @@ class PiperVoiceRKNN(PiperVoice):
     def chunk_tensor(self, t, chunk_size=55, overlap=10):
         """
         Split a tensor (1, C, T) in chunks with overlapping.
-        
+
         - t: numpy array shape (1, C, T)
         - chunk_size: fixed size required by decoder RKNN
         - overlap: Overlap between chunks
@@ -351,7 +351,7 @@ def generate_speech(model_piper_path,input,voice,response_format,stream_format,v
 
     # Load the Piper instance for RKNN
     piperTTS = PiperVoiceRKNN.load(model_path=model_piper_path)
-    
+
     # Generate a temp output wav file
     temp_output_path = f"{model_piper_path}/{uuid.uuid4()}.wav"
 
@@ -373,14 +373,14 @@ def generate_speech(model_piper_path,input,voice,response_format,stream_format,v
         if normalize_audio:
             syn_config.normalize_audio = normalize_audio
         if voice and voice in piperTTS.config.speaker_id_map:
-            syn_config.speaker_id = piperTTS.config.speaker_id_map.get(voice)    
+            syn_config.speaker_id = piperTTS.config.speaker_id_map.get(voice)
 
-        # Generate the speech    
+        # Generate the speech
         piperTTS.synthesize_wav(input, wav_file, syn_config=syn_config)
 
         # Return the audio in bytes format
-        return convert_wav_to_bytes(temp_output_path, response_format) 
-        
+        return convert_wav_to_bytes(temp_output_path, response_format)
+
 
 def convert_wav_to_bytes(wav_path: str, output_format: str) -> tuple[bytes, str]:
     """
@@ -398,7 +398,7 @@ def convert_wav_to_bytes(wav_path: str, output_format: str) -> tuple[bytes, str]
 
     # Load WAV
     audio = AudioSegment.from_wav(wav_path)
-    
+
     # Delete file from filesystem. ALready loaded in memory AudioSegment
     os.remove(wav_path)
 
@@ -469,10 +469,10 @@ def find_model_files(dir_path: str) -> Tuple[str, str, str]:
         elif ext == ".json":
             if not config_json:
                 config_json = path
-        
+
         if encoder_onnx and decoder_rknn and config_json:
             # All files found. Exit loop
             break
 
-    # Return the files    
+    # Return the files
     return ( encoder_onnx, decoder_rknn, config_json)

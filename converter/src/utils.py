@@ -25,7 +25,7 @@ class ModelMetadata:
 def save_model_metadata(metadata: ModelMetadata, output_path: str) -> None:
     """
     Save model metadata to a JSON file.
-    
+
     Args:
         metadata: The model metadata to save
         output_path: The directory to save the metadata in
@@ -41,12 +41,12 @@ def save_model_metadata(metadata: ModelMetadata, output_path: str) -> None:
             "system_prompt": metadata.system_prompt,
             "temperature": metadata.temperature
         }
-        
+
         # Save to JSON file
         metadata_path = os.path.join(output_path, "metadata.json")
         with open(metadata_path, "w") as f:
             json.dump(metadata_dict, f, indent=2)
-        
+
         logger.info(f"Metadata saved to {metadata_path}")
     except Exception as e:
         logger.error(f"Error saving metadata: {str(e)}")
@@ -55,17 +55,17 @@ def save_model_metadata(metadata: ModelMetadata, output_path: str) -> None:
 def load_model_metadata(metadata_path: str) -> ModelMetadata:
     """
     Load model metadata from a JSON file.
-    
+
     Args:
         metadata_path: Path to the metadata JSON file
-        
+
     Returns:
         The loaded model metadata
     """
     try:
         with open(metadata_path, "r") as f:
             metadata_dict = json.load(f)
-        
+
         return ModelMetadata(
             name=metadata_dict["name"],
             architecture=metadata_dict["architecture"],
@@ -106,4 +106,4 @@ def validate_model_path(path: str) -> bool:
 def get_model_architecture(model_path: str) -> Optional[str]:
     """Detect the model architecture from the model file."""
     # TODO: Implement architecture detection
-    pass 
+    pass

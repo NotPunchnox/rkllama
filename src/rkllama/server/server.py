@@ -15,7 +15,7 @@ import rkllama.api.variables as variables
 from rkllama.api.debug_utils import check_response_format
 from rkllama.api.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
 from rkllama.api.model_utils import (
-    extract_model_details, 
+    extract_model_details,
     get_huggingface_model_info,
     get_property_modelfile, get_model_full_options, find_rkllm_model_name
 )
@@ -109,29 +109,29 @@ MIROSTAT_ETA={rkllama.config.get("model", "default_mirostat_eta")}
 
 
 def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None):
-    
+
     # Use config for models path
     model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
-    
+
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
-    
+
     if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
         return None, f"Modelfile not found in '{model_name}' directory."
     elif huggingface_path is not None and From is not None:
         create_modelfile(huggingface_path=huggingface_path, From=From, system=system, model_name=model_name)
         time.sleep(0.1)
-    
+
     # Load modelfile
     load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
-    
+
     from_value = os.getenv("FROM")
     huggingface_path = os.getenv("HUGGINGFACE_PATH")
     vision_encoder = os.getenv("VISION_ENCODER")
 
     # View config Vars
     print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
-    
+
     if not from_value or not huggingface_path:
         return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
 
@@ -172,7 +172,7 @@ CORS(app)
 def list_models():
     # Return the list of available models using config path
     models_dir = rkllama.config.get_path("models")
-    
+
     if not os.path.exists(models_dir):
         return jsonify({"error": f"The models directory {models_dir} is not found."}), 500
 
@@ -181,11 +181,11 @@ def list_models():
     for model in direct_models:
         model_name = os.path.splitext(model)[0]
         model_dir = os.path.join(models_dir, model_name)
-        
+
         os.makedirs(model_dir, exist_ok=True)
-        
+
         shutil.move(os.path.join(models_dir, model), os.path.join(model_dir, model))
-    
+
     model_dirs = []
     for subdir in os.listdir(models_dir):
         subdir_path = os.path.join(models_dir, subdir)
@@ -211,16 +211,16 @@ def rm_model():
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
     # Check if model is currently loaded
-    if variables.worker_manager_rkllm.exists_model_loaded(model_name):   
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):
         if DEBUG_MODE:
             logger.debug(f"Unloading model '{model_name}' before deletion")
         unload_model(model_name)
-    
+
     try:
         if DEBUG_MODE:
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
-        
+
         return jsonify({"message": f"The model has been successfully deleted!"}), 200
     except Exception as e:
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
@@ -302,14 +302,14 @@ def pull_model():
 # Route for loading a model into the NPU
 @app.route('/load_model', methods=['POST'])
 def load_model_route():
-    
+
     data = request.get_json(force=True)
     model_name = data.get('model_name', None)
     if model_name is None:
         return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
-    
+
     # Check if a model is currently loaded
-    if variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):
         return jsonify({"error": "A model is already loaded. Nothing to do."}), 200
 
     # Check if other params like "from" or "huggingface_path" for create modelfile
@@ -326,13 +326,13 @@ def load_model_route():
 # Route to unload a model from the NPU
 @app.route('/unload_model', methods=['POST'])
 def unload_model_route():
-    
+
     data = request.get_json(force=True)
     model_name = data.get('model_name', None)
     if model_name is None:
         return jsonify({"error": "Please enter the name of the model to be unloaded."}), 400
-    
-    if not variables.worker_manager_rkllm.exists_model_loaded(model_name):   
+
+    if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
         return jsonify({"error": f"No model {model_name} are currently loaded."}), 400
 
     unload_model(model_name)
@@ -349,7 +349,7 @@ def unload_models_route():
 @app.route('/current_models', methods=['GET'])
 @app.route('/api/ps', methods=['GET'])
 def get_current_models():
-    
+
     # Get the models info from Modelfile and HF
     models_dir = rkllama.config.get_path("models")
     models_info = {}
@@ -359,10 +359,10 @@ def get_current_models():
             for file in os.listdir(subdir_path):
                 if file.endswith(".rkllm"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
-                    
+
                     # Extract parameter size and quantization details if available
                     model_details = extract_model_details(file)
-                    
+
                     models_info[subdir] = {
                         "name": subdir,        # Use simplified name like qwen:3b
                         "model": subdir,       # Match Ollama's format
@@ -407,8 +407,8 @@ def get_current_models():
         models_running.append(model_info)
 
     return jsonify({ "models" : models_running}), 200
-    
-    
+
+
 
 # Route to make a request to the model
 @app.route('/generate', methods=['POST'])
@@ -431,12 +431,12 @@ def recevoir_message():
 def list_openai_models():
     # Return models in OpenAI API format
     models_dir = rkllama.config.get_path("models")
-    
+
     # Check if models exists
     if not os.path.exists(models_dir):
         return jsonify({"object": "list", "data": []}), 200
 
-    # Loop over the available models 
+    # Loop over the available models
     models = []
     for subdir in os.listdir(models_dir):
         subdir_path = os.path.join(models_dir, subdir)
@@ -444,8 +444,8 @@ def list_openai_models():
             for file in os.listdir(subdir_path):
                 if file.endswith(".rkllm") or file.endswith(".rknn") or file == "unet": # Include Stable Diffusion models and Piper Voices
                     models.append({
-                        "id": subdir,      
-                        "object": "model",      
+                        "id": subdir,
+                        "object": "model",
                         "created": int(datetime.datetime.fromtimestamp(
                             os.path.getmtime(os.path.join(subdir_path, file))
                         ).timestamp()),
@@ -459,10 +459,10 @@ def list_openai_models():
 # Default route
 @app.route('/v1/models/<model_name>', methods=['GET'])
 def list_openai_model(model_name):
-    
+
     # Return models in OpenAI API format
     models_dir = rkllama.config.get_path("models")
-    
+
     # Check if models exists
     if not os.path.exists(models_dir):
         return jsonify({"error": f"Model '{model_name}' not found"}), 404
@@ -475,14 +475,14 @@ def list_openai_model(model_name):
                 if file.endswith(".rkllm") or file == "unet": # Include Stable Diffusion models
                     if subdir == model_name:
                        return jsonify({
-                          "id": subdir,      
-                          "object": "model",      
+                          "id": subdir,
+                          "object": "model",
                           "created": int(datetime.datetime.fromtimestamp(
                             os.path.getmtime(os.path.join(subdir_path, file))
                            ).timestamp()),
                           "owned_by": "rkllama"
-                    }), 200     
-                    
+                    }), 200
+
     return jsonify({"error": f"Model '{model_name}' not found"}), 404
 
 
@@ -492,7 +492,7 @@ def list_openai_model(model_name):
 def list_ollama_models():
     # Return models in Ollama API format
     models_dir = rkllama.config.get_path("models")
-    
+
     if not os.path.exists(models_dir):
         return jsonify({"models": []}), 200
 
@@ -503,10 +503,10 @@ def list_ollama_models():
             for file in os.listdir(subdir_path):
                 if file.endswith(".rkllm"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
-                    
+
                     # Extract parameter size and quantization details if available
                     model_details = extract_model_details(file)
-                    
+
                     models.append({
                         "name": subdir,        # Use simplified name like qwen:3b
                         "model": subdir,       # Match Ollama's format
@@ -531,7 +531,7 @@ def show_model_info():
 
     ##### Github Copilot Start Workaround
     request_data = request.get_data().decode('UTF-8')
-    request_data = request_data.replace("\'", "\"")  
+    request_data = request_data.replace("\'", "\"")
     data = json.loads(request_data) if request_data else {}
     model_name = data.get('name') if "name" in data else data.get('model')
     ##### # Github Copilot End
@@ -541,10 +541,10 @@ def show_model_info():
 
     if DEBUG_MODE:
         logger.debug(f"API show request data: {data}")
-    
+
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
-    
+
     model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     model_rkllm = find_rkllm_model_name(model_dir)
 
@@ -558,31 +558,31 @@ def show_model_info():
     template = "{{ .Prompt }}"
     license_text = ""
     huggingface_path = None
-    
+
     if os.path.exists(modelfile_path):
         with open(modelfile_path, "r") as f:
             modelfile_content = f.read()
-            
+
             # Extract system prompt if available
             system_match = re.search(r'SYSTEM="(.*?)"', modelfile_content, re.DOTALL)
             if system_match:
                 system_prompt = system_match.group(1).strip()
-            
+
             # Check for template pattern
             template_match = re.search(r'TEMPLATE="(.*?)"', modelfile_content, re.DOTALL)
             if template_match:
                 template = template_match.group(1).strip()
-            
+
             # Check for LICENSE pattern (some modelfiles have this)
             license_match = re.search(r'LICENSE="(.*?)"', modelfile_content, re.DOTALL)
             if license_match:
                 license_text = license_match.group(1).strip()
-            
+
             # Extract HuggingFace path for API access
             hf_path_match = re.search(r'HUGGINGFACE_PATH="(.*?)"', modelfile_content, re.DOTALL)
             if hf_path_match:
                 huggingface_path = hf_path_match.group(1).strip()
-            
+
             # Extract temperature if available
             temp_match = re.search(r'TEMPERATURE=(\d+\.?\d*)', modelfile_content)
             if temp_match:
@@ -590,37 +590,37 @@ def show_model_info():
                     temperature = float(temp_match.group(1))
                 except ValueError:
                     pass
-    
+
     # Find the .rkllm file
     model_file = None
     for file in os.listdir(model_dir):
         if file.endswith(".rkllm"):
             model_file = file
             break
-    
+
     if not model_file:
         return jsonify({"error": f"Model file not found in '{model_name}' directory"}), 404
-    
+
     file_path = os.path.join(model_dir, model_file)
     size = os.path.getsize(file_path)
-    
+
     # Extract model details
     model_details = extract_model_details(model_rkllm)
     parameter_size = model_details.get("parameter_size", "Unknown")
     quantization_level = model_details.get("quantization_level", "Unknown")
-    
+
     # Determine model family based on name patterns
     family = "llama"  # default family
     families = ["llama"]
-    
+
     # Try to get enhanced information from Hugging Face API
     hf_metadata = get_huggingface_model_info(huggingface_path) if huggingface_path else None
-    
+
     # Use HF metadata to improve model info if available
     if hf_metadata:
         # Extract tags from HF metadata
         tags = hf_metadata.get('tags', [])
-        
+
         # Better determine model family based on HF tags or architecture field
         if hf_metadata.get('architecture') == 'qwen' or 'qwen' in tags or 'qwen2' in tags:
             family = "qwen2"
@@ -646,10 +646,10 @@ def show_model_info():
         elif any('llama-2' in tag for tag in tags) or any('llama2' in tag for tag in tags):
             family = "llama2"
             families = ["llama2", "llama"]
-        
+
         # Extract model card metadata
         model_card = hf_metadata.get('cardData', {})
-        
+
         # Better parameter size from HF metadata
         parameter_count = None
         if 'params' in model_card:
@@ -663,11 +663,11 @@ def show_model_info():
                 parameter_count = None
         else:
             parameter_count = None
-        
+
         # Extract quantization info
         if 'quantization' in hf_metadata:
             quantization_level = hf_metadata['quantization']
-        
+
         # Better license information
         if 'license' in hf_metadata and not license_text:
             license_text = hf_metadata['license']
@@ -697,18 +697,18 @@ def show_model_info():
         elif re.search(r'(?i)Llama[-_]?2', model_name):
             family = "llama2"
             families = ["llama2", "llama"]
-        
+
         parameter_count = None
-    
+
     # Convert modelfile to Ollama-compatible format
     ollama_modelfile = f"# Modelfile generated by \"ollama show\"\n"
     ollama_modelfile += f"# To build a new Modelfile based on this, replace FROM with:\n"
     ollama_modelfile += f"# FROM {model_name}\n\n"
-    
+
     # Change this section to use a more compatible FROM format
     # Instead of absolute paths, use the model file name which is more compatible with Ollama
     # Original: model_blob_path = f"{model_dir}/{model_file}"
-    
+
     if DEBUG_MODE:
         # In debug mode, use absolute paths to help with troubleshooting
         model_blob_path = f"{model_dir}/{model_file}"
@@ -716,32 +716,32 @@ def show_model_info():
     else:
         # In normal mode, use the simplified name format that Ollama clients expect
         ollama_modelfile += f"FROM {model_name}\n"
-    
+
     if template != "{{ .Prompt }}":
         ollama_modelfile += f'TEMPLATE """{template}"""\n'
-    
+
     if system_prompt:
         ollama_modelfile += f'SYSTEM "{system_prompt}"\n'
-    
+
     if license_text:
         ollama_modelfile += f'LICENSE """{license_text}"""\n'
-    
+
     # Additional model info from HF
     model_description = ""
     repo_url = None
     if hf_metadata:
         model_description = hf_metadata.get('description', '').strip()
-        
+
         # Add description comment to modelfile if available
         if model_description:
             desc_lines = model_description.split('\n')
             desc_comment = '\n'.join([f"# {line}" for line in desc_lines[:5]])  # First 5 lines only
             ollama_modelfile = desc_comment + "\n\n" + ollama_modelfile
-        
+
         # Extract repo URL if available
         if huggingface_path:
             repo_url = f"https://huggingface.co/{huggingface_path}"
-    
+
     # Parse parameter size into numeric format
     numeric_param_size = None
     if parameter_size != "Unknown":
@@ -752,7 +752,7 @@ def show_model_info():
                 numeric_param_size = int(size_in_billions * 1_000_000_000)
             except ValueError:
                 pass
-    
+
     # Use parameter_count from HF metadata if available, otherwise use parsed value
     if parameter_count is None and numeric_param_size is not None:
         parameter_count = numeric_param_size
@@ -766,17 +766,17 @@ def show_model_info():
             parameter_count = 1500000000
         else:
             parameter_count = 0
-    
+
     # Extract base model name (without fine-tuning suffixes)
     base_name = model_name.split('-')[0]
-    
+
     # Determine finetune type if present
     finetune = None
     if "instruct" in model_name.lower():
         finetune = "Instruct"
     elif "chat" in model_name.lower():
         finetune = "Chat"
-    
+
     # Build a more complete model_info dict with architecture details
     model_info = {
         "general.architecture": family,
@@ -791,21 +791,21 @@ def show_model_info():
         "general.type": "model",
         "tokenizer.ggml.pre": family
     }
-    
+
     # Add repo URL if available
     if repo_url:
         model_info["general.base_model.0.repo_url"] = repo_url
         model_info["general.base_model.count"] = 1
-    
+
     # Add finetune info if available
     if finetune:
         model_info["general.finetune"] = finetune
-    
+
     # Add license info if available
     if license_text:
         license_name = "other"
         license_link = ""
-        
+
         # Try to detect common licenses
         if "apache" in license_text.lower():
             license_name = "apache-2.0"
@@ -813,22 +813,22 @@ def show_model_info():
             license_name = "mit"
         elif "qwen research" in license_text.lower():
             license_name = "qwen-research"
-        
+
         if huggingface_path:
             license_link = f"https://huggingface.co/{huggingface_path}/blob/main/LICENSE"
-        
+
         model_info["general.license"] = license_name
         if license_link:
             model_info["general.license.link"] = license_link
         model_info["general.license.name"] = license_name
-    
+
     # Add language info if we can detect it
     if hf_metadata and 'languages' in hf_metadata:
         model_info["general.languages"] = hf_metadata['languages']
     else:
         # Default to English
         model_info["general.languages"] = ["en"]
-    
+
     # Add architecture-specific parameters based on model family
     if family == "qwen2":
         model_info.update({
@@ -862,12 +862,12 @@ def show_model_info():
             "mistral.embedding_length": 4096,
             "mistral.feed_forward_length": 14336
         })
-    
+
     # Calculate modified timestamp
     modified_at = datetime.datetime.fromtimestamp(
         os.path.getmtime(file_path)
     ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    
+
     # Format parameters string nicely
     parameters_str = parameter_size
     if parameters_str == "Unknown" and parameter_count:
@@ -875,12 +875,12 @@ def show_model_info():
             parameters_str = f"{parameter_count/1_000_000_000:.1f}B".replace('.0B', 'B')
         else:
             parameters_str = f"{parameter_count/1_000_000:.1f}M".replace('.0M', 'M')
-    
+
     # Capabilities based on model family. ### Github Copilot requires this
     capabilities = ["completion"]
     if family in ["qwen2", "phi", "llama3", "mistral"]:
         capabilities.append("tools")
-	
+
     # Prepare response with enhanced metadata
     response = {
         "license": license_text or "Unknown",
@@ -902,7 +902,7 @@ def show_model_info():
         "capabilities": capabilities,
         "modified_at": modified_at
     }
-    
+
     # Add Hugging Face specific fields if available
     if hf_metadata:
         response["huggingface"] = {
@@ -912,7 +912,7 @@ def show_model_info():
             "downloads": hf_metadata.get('downloads', 0),
             "likes": hf_metadata.get('likes', 0)
         }
-    
+
     return jsonify(response), 200
 
 @app.route('/api/create', methods=['POST'])
@@ -920,7 +920,7 @@ def create_model():
     data = request.get_json(force=True)
     model_name = data.get('name')
     modelfile = data.get('modelfile', '')
-    
+
     # Remove possible namespace in model name. Ollama API allows namespace/model
     model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -929,25 +929,25 @@ def create_model():
 
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
-    
+
     model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     os.makedirs(model_dir, exist_ok=True)
-    
+
     with open(os.path.join(model_dir, "Modelfile"), "w") as f:
         f.write(modelfile)
-    
+
     # Parse the modelfile to extract parameters
     modelfile_lines = modelfile.strip().split('\n')
     from_line = next((line for line in modelfile_lines if line.startswith('FROM=')), None)
     huggingface_path = next((line for line in modelfile_lines if line.startswith('HUGGINGFACE_PATH=')), None)
-    
+
     if not from_line or not huggingface_path:
         return jsonify({"error": "Invalid Modelfile: missing FROM or HUGGINGFACE_PATH"}), 400
-    
+
     # Extract values
     from_value = from_line.split('=')[1].strip('"\'')
     huggingface_path = huggingface_path.split('=')[1].strip('"\'')
-    
+
     # For compatibility with existing implementation
     return jsonify({"status": "success", "model": model_name}), 200
 
@@ -956,7 +956,7 @@ def pull_model_ollama():
     # TODO: Implement the pull model
     data = request.get_json(force=True)
     model = data.get('name',data.get('model'))
-    
+
     if DEBUG_MODE:
         logger.debug(f"API pull request data: {data}")
 
@@ -987,16 +987,16 @@ def delete_model_ollama():
         return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
 
     # Check if model is currently loaded
-    if variables.worker_manager_rkllm.exists_model_loaded(model_name):   
+    if variables.worker_manager_rkllm.exists_model_loaded(model_name):
         if DEBUG_MODE:
             logger.debug(f"Unloading model '{model_name}' before deletion")
         unload_model(model_name)
-    
+
     try:
         if DEBUG_MODE:
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
-        
+
         return jsonify({"message": f"The model has been successfully deleted!"}), 200
     except Exception as e:
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
@@ -1006,7 +1006,7 @@ def delete_model_ollama():
 @app.route('/api/generate', methods=['POST'])
 @app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
-    
+
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
 
@@ -1024,11 +1024,11 @@ def generate_ollama():
         stream = data.get('stream', True)
         enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
         images = data.get('images', None)  # For multimodal inputs
-        
+
         # Support format options for structured JSON output
         format_spec = data.get('format')
         options = data.get('options', {})
-        
+
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -1047,18 +1047,18 @@ def generate_ollama():
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
         # Get all model options
-        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options)
 
         # Load model if needed
-        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
             _, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        
+
         # Acquire lock before processing
         variables.verrou.acquire()
         lock_acquired = True
-        
+
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
@@ -1086,25 +1086,25 @@ def generate_ollama():
 @app.route('/api/chat', methods=['POST'])
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_ollama():
-    
+
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/chat/completions')
-        
+
     try:
         data = request.get_json(force=True)
-        
+
         if is_openai_request:
            if DEBUG_MODE:
               logger.debug(f"API OpenAI chat request data: {data}")
            data = openai_to_ollama_chat_request(data)
-        
+
         model_name = data.get('model')
         messages = data.get('messages', [])
         system = data.get('system', '')
         stream = data.get('stream', True)
         tools = data.get('tools', None)
         enable_thinking = data.get('enable_thinking', (data.get('think', None))) # Ollama now uses 'think' in some versions
-        
+
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -1114,29 +1114,29 @@ def chat_ollama():
 
         if DEBUG_MODE:
             logger.debug(f"API Ollama chat request data: {data}")
-        
+
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
             model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', rkllama.config.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(model_thinking_enabled) else False # Disabled by default
 
         # Get all model options
-        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options)
 
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
         is_new_conversation = not any(msg.get('role') == 'assistant' for msg in messages)
-        
+
         # Always reset system prompt for new conversations
         if is_new_conversation:
             variables.system = ""
             if DEBUG_MODE:
                 logger.debug("New conversation detected, resetting system prompt")
-        
+
         # Extract system message from messages array if present
         system_in_messages = False
         filtered_messages = []
-        
+
         for message in messages:
             if message.get('role') == 'system':
                 system = message.get('content', '')
@@ -1149,7 +1149,7 @@ def chat_ollama():
                     if 'images' not in data:
                         data['images'] = []
                     data['images'].extend(message['images'])
-        
+
         # Review the images in messages
         images = data.get('images', None)
 
@@ -1159,10 +1159,10 @@ def chat_ollama():
             messages = filtered_messages
             if DEBUG_MODE:
                 logger.debug(f"Using system message: {system}")
-        
+
         # Load model if needed
-        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
-            
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
+
             if DEBUG_MODE:
                 logger.debug(f"Loading model: {model_name}")
             _, error = load_model(model_name, request_options=options)
@@ -1173,7 +1173,7 @@ def chat_ollama():
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
         #else:
-        #    
+        #
         #    rkllm_loaded = get_model_loaded_by_name(loaded_models,model_name)
         #    rkllm_model_request = rkllm_loaded.model_rkllm
         #    # If model is already loaded, check its options are the same for the current request
@@ -1188,13 +1188,13 @@ def chat_ollama():
         #        or rkllm_model_request.rkllm_param.mirostat != int(options.get("mirostat")) \
         #        or round(rkllm_model_request.rkllm_param.mirostat_tau,2) != round(float(options.get("mirostat_tau")),2) \
         #        or round(rkllm_model_request.rkllm_param.mirostat_eta,2) != round(float(options.get("mirostat_eta")),2):
-        #    
+        #
         #        # Update model parameters if they differ
         #        if DEBUG_MODE:
         #            logger.debug(f"Updating model parameters for {model_name} with options: {options}")
-        #        
+        #
         #        unload_model(model_name)
-        #        
+        #
         #        if DEBUG_MODE:
         #            logger.debug(f"Reoading model: {model_name}")
         #        modele_instance, error = load_model(model_name, request_options=options)
@@ -1205,16 +1205,16 @@ def chat_ollama():
         #        rkllm_model_request = modele_instance
         #        if DEBUG_MODE:
         #            logger.debug(f"Model {model_name} reloaded successfully")
-                
+
         # Store format settings in model instance
         #if rkllm_model_request:
         #    rkllm_model_request.format_schema = format_spec
         #    rkllm_model_request.format_options = options
-        
+
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Create custom request for processing
         custom_req = type('obj', (object,), {
             'json': {
@@ -1230,11 +1230,11 @@ def chat_ollama():
             },
             'path': '/api/chat'
         })
-        
+
         # Set a flag on the custom request to indicate it should not release the lock
         # as we'll handle it here
         custom_req.handle_lock = False
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
@@ -1252,7 +1252,7 @@ def chat_ollama():
     except Exception as e:
         logger.exception("Error in chat_ollama")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
         if lock_acquired and variables.verrou.locked():
@@ -1268,9 +1268,9 @@ if DEBUG_MODE:
         """Endpoint to diagnose streaming issues"""
         data = request.get_json(force=True)
         stream_data = data.get('stream_data', '')
-        
+
         issues = check_response_format(stream_data)
-        
+
         if issues:
             return jsonify({
                 "status": "error",
@@ -1287,24 +1287,24 @@ if DEBUG_MODE:
 @app.route('/api/embed', methods=['POST'])
 @app.route('/v1/embeddings', methods=['POST'])
 def embeddings_ollama():
-    
+
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/embeddings')
 
     try:
         data = request.get_json(force=True)
-        
+
         if is_openai_request:
            if DEBUG_MODE:
               logger.debug(f"API OpenAI embedding request data: {data}")
               # Parameter from OpenAI "encoding_format" not supported in Ollama
-        
+
         model_name = data.get('model')
         input_text = data.get('input', data.get('prompt', None)) # Include legacy deprecated api/embedding with prompt
         truncate = data.get('truncate', True)
         keep_alive = data.get('keep_alive', False)
         options = data.get('options', {})
-        
+
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -1318,16 +1318,16 @@ def embeddings_ollama():
             return jsonify({"error": "Missing input"}), 400
 
         # Get all model options
-        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options) 
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options)
 
         # Load model if needed
-        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
             _, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
         variables.verrou.acquire()
         lock_acquired = True
-        
+
         # DIRECTLY use the EmbedEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import EmbedEndpointHandler
         return EmbedEndpointHandler.handle_request(
@@ -1359,16 +1359,16 @@ def ollama_version():
 
 @app.route('/v1/images/generations', methods=['POST'])
 def generate_image_openai():
-    
+
     lock_acquired = False  # Track lock status
 
     try:
         data = request.get_json(force=True)
-        
+
         # Supported OpenAI parameters by RKNN
         prompt = data.get('prompt')
         model_name = data.get('model', None)
-        size = data.get('size', "512x512")        
+        size = data.get('size', "512x512")
         stream = data.get('stream', False)
         output_format = data.get('output_format', 'png')
         num_images = data.get('n', 1)
@@ -1387,19 +1387,19 @@ def generate_image_openai():
         seed = data.get('seed', random.randint(1, 99))
         num_inference_steps = data.get('num_inference_steps', 4)
         guidance_scale = data.get('guidance_scale', 7.5)
-        
-        
+
+
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
-        
+
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Image request data: {data}")
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateImageEndpointHandler
         return GenerateImageEndpointHandler.handle_request(
@@ -1417,7 +1417,7 @@ def generate_image_openai():
     except Exception as e:
         logger.exception("Error in generate_image_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
         if lock_acquired and variables.verrou.locked():
@@ -1429,7 +1429,7 @@ def generate_image_openai():
 # Default route
 @app.route('/files/<model_name>/images/<file_name>', methods=['GET'])
 def get_generated_image(model_name, file_name):
-    
+
     # Get the model directory
     model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
 
@@ -1442,20 +1442,20 @@ def get_generated_image(model_name, file_name):
 
 @app.route('/v1/audio/speech', methods=['POST'])
 def generate_speech_openai():
-    
+
     lock_acquired = False  # Track lock status
 
     try:
         data = request.get_json(force=True)
-        
+
         # Supported OpenAI parameters by RKNN
         input = data.get('input')
         model_name = data.get('model', None)
-        voice = data.get('voice', None)        
+        voice = data.get('voice', None)
         response_format = data.get('response_format', 'mp3')
         stream_format = data.get('stream_format', 'audio')
         speed = data.get('speed', None)
-        
+
         # Non supported OpenAI parameters by Piper
         instructions = data.get('instructions', None)
 
@@ -1465,7 +1465,7 @@ def generate_speech_openai():
         noise_scale = data.get('noise_scale', None)
         noise_w_scale = data.get('noise_w_scale', None)
         normalize_audio = data.get('normalize_audio', None)
-        
+
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -1479,7 +1479,7 @@ def generate_speech_openai():
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateSpeechEndpointHandler
         return GenerateSpeechEndpointHandler.handle_request(
@@ -1497,7 +1497,7 @@ def generate_speech_openai():
     except Exception as e:
         logger.exception("Error in generate_speech_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
         if lock_acquired and variables.verrou.locked():
@@ -1508,7 +1508,7 @@ def generate_speech_openai():
 
 @app.route('/v1/audio/transcriptions', methods=['POST'])
 def generate_transcriptions_openai():
-    
+
     lock_acquired = False  # Track lock status
 
     try:
@@ -1517,14 +1517,14 @@ def generate_transcriptions_openai():
         # CHeck the file uploaded file
         if "file" not in request.files:
             return jsonify({"error": "file field missing"}), 400
-        
+
         # Supported OpenAI parameters by RKNN
         file = request.files["file"]
         model_name = form.get('model', None)
-        language = form.get('language', None)        
+        language = form.get('language', None)
         response_format = form.get('response_format', 'text')
         stream = form.get('stream', False)
-        
+
         # Non supported OpenAI parameters by Piper
         chunking_strategy = form.get('chunking_strategy', None)
         known_speaker_names = form.get('known_speaker_names', None)
@@ -1547,7 +1547,7 @@ def generate_transcriptions_openai():
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateTranscriptionsEndpointHandler
         return GenerateTranscriptionsEndpointHandler.handle_request(
@@ -1560,7 +1560,7 @@ def generate_transcriptions_openai():
     except Exception as e:
         logger.exception("Error in generate_transcriptions_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
         if lock_acquired and variables.verrou.locked():
@@ -1592,7 +1592,7 @@ def main():
 
     # Validate directories for running
     rkllama.config.validate()
-    
+
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
     DEBUG_MODE = rkllama.config.is_debug_mode()
@@ -1601,7 +1601,7 @@ def main():
         print_color("Debug mode enabled", "yellow")
         rkllama.config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
-  
+
     # Get port from config
     port = rkllama.config.get("server", "port", "8080")
 

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile
 from .classes import *
 from .callback import *
-    
+
 from operator import attrgetter
 
 
@@ -46,7 +46,7 @@ def run_encoder(model_input, rknn_queue):
 
     # Run the visionencder to get the image embedding
     image_embeddings = run_vision_encoder(model_encoder_path, images_source, image_width, image_height)
-    
+
     # Send the encoded image to the main process
     rknn_queue.put(image_embeddings)
 
@@ -69,7 +69,7 @@ def run_image_generator(model_input, rknn_queue):
 
     # Run the visionencder to get the image embedding
     image = generate_image(model_name, prompt, size, seed, num_inference_steps, guidance_scale)
-    
+
     # Send the encoded image to the main process
     rknn_queue.put(image)
 
@@ -91,7 +91,7 @@ def run_speech_generator(model_input, rknn_queue):
 
     # Run the piper
     audio = generate_speech(model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
-    
+
     # Send the audio bytes to the main process
     rknn_queue.put(audio)
 
@@ -113,15 +113,15 @@ def run_transcription_generator(model_input, rknn_queue):
 
     # Run the omniasr
     audio = generate_transcription(model_omniasr_path,file,language)
-    
+
     # Send the text transcription to the main process
     rknn_queue.put(audio)
 
 
 
-# RKLLM Worker 
+# RKLLM Worker
 def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
-    
+
     # Initialize individual callback for each worker to prevent error from RKLLM
     from .callback import callback_impl, global_status, global_text,split_byte_data, last_embeddings
     from .rkllm import RKLLM
@@ -132,7 +132,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
     # Define the model used by the worker
     try:
         model_rkllm = RKLLM(callback, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id)
-    
+
         # Announce the creation of the RKLLM model failed
         result_queue.put(WORKER_TASK_FINISHED)
 
@@ -148,7 +148,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
         try:
 
             # Get the instruction to the worker
-            task,inference_mode, model_input_type, model_input = task_queue.get()
+            task, inference_mode, model_input_type, model_input, role, enable_thinking = task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -157,7 +157,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
 
                 # Exit the loop of the worker to finish the process
                 break
-            
+
             elif task == WORKER_TASK_ABORT_INFERENCE:
                 logger.info(f"Aborting inference for model {name}...")
                 # Abort the inference of the model
@@ -171,9 +171,9 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
             elif task == WORKER_TASK_INFERENCE:
                 logger.info(f"Running inference for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
-                
+
                 # Looping until execution of the thread
                 thread_finished = False
                 while not thread_finished:
@@ -183,10 +183,10 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                         token = global_text.pop(0)
                         result_queue.put(token)
 
-                    # Update status of the thread    
+                    # Update status of the thread
                     thread_model.join(timeout=0.005)
                     thread_finished = not thread_model.is_alive()
-                    
+
                     # If inference not started yet, wait some time to start.
                     if not tokens_processed:
                         time.sleep(0.01)
@@ -200,20 +200,20 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
             elif task == WORKER_TASK_EMBEDDING:
                 logger.info(f"Running embedding for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
-                
+
                 # Looping until execution of the thread finished
                 thread_finished = False
                 while not thread_finished:
-                    # Update status of the thread    
+                    # Update status of the thread
                     thread_model.join(timeout=0.005)
                     thread_finished = not thread_model.is_alive()
 
                 if last_embeddings:
                     # Send the embedding shapes of the input
                     result_queue.put(last_embeddings[0])
-            
+
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
                 # Run the vision encoder to get the image embedding
@@ -223,7 +223,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 rknn_process = Process(target=run_encoder, args=(model_input,rknn_queue,))
 
                 # Start the encoder worker
-                rknn_process.start() 
+                rknn_process.start()
 
                 # Get the encoded image from the queue
                 img_encoded = rknn_queue.get(timeout=60)  # Timeout after 60 seconds
@@ -231,7 +231,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 # Terminate the process encoder after use
                 rknn_process.terminate()
 
-                # Send the encoded image 
+                # Send the encoded image
                 result_queue.put(img_encoded)
 
             else:
@@ -246,9 +246,9 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
 
 
 
-# RKNN Process 
+# RKNN Process
 def run_rknn_process(name, task, model_input, result_queue: Queue):
-    
+
     try:
 
         if task == WORKER_TASK_GENERATE_IMAGE:
@@ -260,7 +260,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             rknn_process = Process(target=run_image_generator, args=(model_input,rknn_queue,))
 
             # Start the encoder worker
-            rknn_process.start() 
+            rknn_process.start()
 
             # Get the encoded image from the queue
             img = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
@@ -268,7 +268,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             # Terminate the process encoder after use
             rknn_process.terminate()
 
-            # Send the image 
+            # Send the image
             result_queue.put(img)
 
         elif task == WORKER_TASK_GENERATE_SPEECH:
@@ -280,7 +280,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             rknn_process = Process(target=run_speech_generator, args=(model_input,rknn_queue,))
 
             # Start the piper worker
-            rknn_process.start() 
+            rknn_process.start()
 
             # Get the audio from the queue
             audio = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
@@ -288,7 +288,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             # Terminate the process piper after use
             rknn_process.terminate()
 
-            # Send the audio 
+            # Send the audio
             result_queue.put(audio)
 
         elif task == WORKER_TASK_GENERATE_TRANSCRIPTION:
@@ -300,7 +300,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             rknn_process = Process(target=run_transcription_generator, args=(model_input,rknn_queue,))
 
             # Start the omniasr worker
-            rknn_process.start() 
+            rknn_process.start()
 
             # Get the text from the queue
             text = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
@@ -308,7 +308,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             # Terminate the process omniasr after use
             rknn_process.terminate()
 
-            # Send the text 
+            # Send the text
             result_queue.put(text)
 
         else:
@@ -335,7 +335,7 @@ class WorkerManager:
     def start_models_monitor(self, interval=60):
         """
         Start a threat to monitor expired models to unload them from memory
-        
+
         Args:
             interval: Interval between check
         """
@@ -348,20 +348,20 @@ class WorkerManager:
                     time.sleep(interval)  # Check every 60 seconds expired models
                 except Exception as e:
                     logger.error(f"Exception in monitor models: {e}")
- 
+
         # Iniciar el hilo como daemon (no bloquea al final del programa)
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
         logger.info("Models Monitor running.")
 
-    
+
     def unload_expired_models(self) -> int | None:
         """
         Unload/stop workers for expired models
         """
         # Get all expired models
         expired_models = [ model for model in self.workers.keys() if datetime.now() > self.workers[model].worker_model_info.expires_at ]
-        
+
         # Unload/stop the expired model
         for model_name in expired_models:
             logger.info(f"Detected expired model: {model_name}")
@@ -376,7 +376,7 @@ class WorkerManager:
 
         Args:
             reverse_order (bool): If true, search from the highest to the lowest.
-        
+
         Returns:
             int | None: The available base_domain_id or None if all are taken.
         """
@@ -390,9 +390,9 @@ class WorkerManager:
             # CHeck fir available from the highest to the lowest
             candidates_range = range(max_domain_id, 0, -1)
         else:
-            # CHeck first available from the lowest to the highest  
+            # CHeck first available from the lowest to the highest
             candidates_range = range(1, max_domain_id)
-        
+
         # CHeck fir available
         for candidate in candidates_range:
             if candidate not in used_base_domain_ids:
@@ -405,7 +405,7 @@ class WorkerManager:
         Check if a model with the given model_name exists in the dict of workers
         Args:
             model_name (str): Model name to check if already loaded in memory.
-        
+
         """
         return model_name in self.workers.keys()
 
@@ -413,7 +413,7 @@ class WorkerManager:
     def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
         """
         Add a process worker to run inferences call from a specific model
-        
+
         Args:
             model_name (str): model name to load in memory
         """
@@ -437,7 +437,7 @@ class WorkerManager:
             if not model_loaded:
                 # Error loading the model
                 return False
-            else:    
+            else:
                 # Add the worker to the dictionary of workers
                 self.workers[model_name] = worker_model
                 logger.info(f"Worker for model {model_name} created and running...")
@@ -462,7 +462,7 @@ class WorkerManager:
             # Wait a second to refresh memory system
             time.sleep(1)
 
-            # CHeck if now memory available for the new model to load 
+            # CHeck if now memory available for the new model to load
             if self.is_memory_available_for_model(memory_required):
                 break
 
@@ -474,18 +474,18 @@ class WorkerManager:
             model_size (int) -> Size of the model to load
         """
         return (psutil.virtual_memory().available + psutil.virtual_memory().free) > (model_size * 1.20) # Include 20% more memory required than the model size
-    
+
 
     def send_task(self, model_name, task):
         """
         Send a task to execute for the RKLLM model
         Args:
             model_name (str): Worker name to send the task.
-            task (tuple (name_task,args)): Task to send to the worker 
+            task (tuple (name_task,args)): Task to send to the worker
 
         """
         if model_name in self.workers:
-            # Send the TASK to the model with the communication queue of the model 
+            # Send the TASK to the model with the communication queue of the model
             self.workers[model_name].task_q.put(task)
 
             # Update the worker model info with the invocation
@@ -497,7 +497,7 @@ class WorkerManager:
     def get_result(self, model_name):
         """
         Get the result of a task executed for the RKLLM model
-        
+
         Args:
             model_name (str): Worker name to get the response.
 
@@ -513,7 +513,7 @@ class WorkerManager:
     def stop_worker(self, model_name):
         """
         Stop/Unload a model worker
-        
+
         Args:
             model_name (str): Workers to unload.
 
@@ -522,10 +522,10 @@ class WorkerManager:
             # Get the queue of tasks of the worker
 
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_ABORT_INFERENCE,None,None,None))
+            self.workers[model_name].task_q.put((WORKER_TASK_ABORT_INFERENCE, None, None, None, None, None))
 
             # Send the unload task of the model
-            self.workers[model_name].task_q.put((WORKER_TASK_UNLOAD_MODEL,None,None,None))
+            self.workers[model_name].task_q.put((WORKER_TASK_UNLOAD_MODEL, None, None, None, None, None))
 
             # Wait for unload
             self.workers[model_name].process.join()
@@ -546,7 +546,7 @@ class WorkerManager:
     def clear_cache_worker(self, model_name):
         """
         Clear the KV chache of a model worker
-        
+
         Args:
             model_name (str): Workers to clear cache.
 
@@ -554,49 +554,53 @@ class WorkerManager:
         if model_name in self.workers.keys():
             # Get the queue of tasks of the worker
 
-            # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE,None,None,None))
+            # Send the clear cache task
+            self.workers[model_name].task_q.put((WORKER_TASK_CLEAR_CACHE, None, None, None, None, None))
 
 
-    def inference(self, model_name, model_input):
+    def inference(self, model_name, model_input, role=None, enable_thinking=False, use_prompt_mode=False):
         """
         Send a inference task to the corresponding model worker
-        
+
         Args:
             model_name (str): Model name to invoke
-            model_input (str): Input of the model
+            model_input: Input of the model (token list or string depending on mode)
+            role (str): Role for the input (e.g., "user", "assistant")
+            enable_thinking (bool): Enable thinking/reasoning mode
+            use_prompt_mode (bool): Use PROMPT mode (string) instead of TOKEN mode
 
         """
         if model_name in self.workers.keys():
+            # Choose input type based on mode
+            input_type = RKLLMInputType.RKLLM_INPUT_PROMPT if use_prompt_mode else RKLLMInputType.RKLLM_INPUT_TOKEN
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, input_type, model_input, role, enable_thinking))
 
-    
+
     def embedding(self, model_name, model_input):
         """
         Send a prepare embedding task to the corresponding model worker
-        
+
         Args:
             model_name (str): Model name to invoke
             model_input (str): Input of the model
 
         """
         if model_name in self.workers.keys():
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))        
-            
-    
-    def multimodal(self, model_name, prompt_input, images):
+            # Send the embedding task (role and enable_thinking not used for embeddings)
+            self.send_task(model_name, (WORKER_TASK_EMBEDDING, RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input, None, False))
+
+
+    def multimodal(self, model_name, prompt_input, images, role=None, enable_thinking=False):
         """
         Send a inference task to the corresponding model worker for multimodal input
-        
+
         Args:
             model_name (str): Model name to invoke
             prompt_input (str): Input of the model
-            image_embed (np.ndarray): Image embedding
-            n_image_tokens (int): Number of image tokens
-            image_width (int): Width of the image
-            image_height (int): Height of the image
+            images (list): List of images
+            role (str): Role for the input (e.g., "user", "assistant")
+            enable_thinking (bool): Enable thinking/reasoning mode
 
         """
 
@@ -611,9 +615,9 @@ class WorkerManager:
                 raise RuntimeError(f"No encoder model (.rknn) found for : {model_name}")
 
             # Get properties of the encoder model
-            image_width = int(get_property_modelfile(model_name, 'IMAGE_WIDTH', rkllama.config.get_path("models"))) 
-            image_height = int(get_property_modelfile(model_name, 'IMAGE_HEIGHT', rkllama.config.get_path("models"))) 
-            n_image_tokens = int(get_property_modelfile(model_name, 'N_IMAGE_TOKENS', rkllama.config.get_path("models"))) 
+            image_width = int(get_property_modelfile(model_name, 'IMAGE_WIDTH', rkllama.config.get_path("models")))
+            image_height = int(get_property_modelfile(model_name, 'IMAGE_HEIGHT', rkllama.config.get_path("models")))
+            n_image_tokens = int(get_property_modelfile(model_name, 'N_IMAGE_TOKENS', rkllama.config.get_path("models")))
             num_images = len(images)
 
             # Prepare the image input embed for multimodal
@@ -623,18 +627,18 @@ class WorkerManager:
             if image_embed is None:
                 # Error encoding the image. Return
                 raise RuntimeError(f"Unexpected error encoding image for model : {model_name}")
-            
+
             # Prepare all the inputs for the multimodal inference
             model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images)
-            
+
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+            self.send_task(model_name, (WORKER_TASK_INFERENCE, RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input, role, enable_thinking))
 
 
     def get_images_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
         """
         Send a vision encoder task to the corresponding model worker
-        
+
         Args:
             model_name (str): Model name to invoke
             model_encoder_path (str): Path of the vision encoder model
@@ -643,7 +647,7 @@ class WorkerManager:
             image_height (int): Height of the image
         """
         if model_name in self.workers.keys():
-            
+
             # Get model encoder size
             model_encoder_size = os.path.getsize(model_encoder_path)
             # Check if available meory in server for encoder
@@ -654,8 +658,8 @@ class WorkerManager:
             # Prepare the input for the vision encoder
             model_input = (model_encoder_path, images, image_width, image_height)
 
-            # Send the Encoder task of the image
-            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
+            # Send the Encoder task of the image (role and enable_thinking not used for vision encoder)
+            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER, None, None, model_input, None, None))
 
             # Wait to confirm output of the image encoder
             image_embed  = self.workers[model_name].result_q.get(timeout=60)  # Timeout after 60 seconds
@@ -663,16 +667,16 @@ class WorkerManager:
             if isinstance(image_embed, str) and image_embed ==  WORKER_TASK_ERROR:
                 # Error ENcoding the image. Return
                 return None
-     
+
             # Return the image encoded
-            return image_embed;       
+            return image_embed;
 
 
 
     def generate_image(self, model_name,model_dir, prompt, size, num_images, seed, num_inference_steps, guidance_scale) -> None:
         """
         Send a generate image task to the corresponding model worker
-        
+
         Args:
             model_name (str): Worker name to send the task.
             model_dir (str): Model directory name to invoke
@@ -702,9 +706,9 @@ class WorkerManager:
             result_queue = Queue()
 
             # Send the Encoder task of the image
-            run_rknn_process(model_name, WORKER_TASK_GENERATE_IMAGE,model_input,result_queue)  
+            run_rknn_process(model_name, WORKER_TASK_GENERATE_IMAGE,model_input,result_queue)
 
-            # Wait to confirm output of the image 
+            # Wait to confirm output of the image
             image_base  = result_queue.get(timeout=300)  # Timeout after 60 seconds
 
             if isinstance(image_base, str) and image_base ==  WORKER_TASK_ERROR:
@@ -712,20 +716,20 @@ class WorkerManager:
                 return None
 
             # Add the image to the list
-            image_list.append(image_base)    
-    
+            image_list.append(image_base)
+
         # Return the image
-        return image_list;   
+        return image_list;
 
 
     def generate_speech(self, model_name, model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio) -> None:
         """
         Send a generate speech task to the corresponding model worker
-        
+
         Args:
             model_name (str): Worker name to send the task.
             model_dir (str): Model directory name to invoke
- 
+
         """
 
         # Prepare the input for piper
@@ -735,9 +739,9 @@ class WorkerManager:
         result_queue = Queue()
 
         # Send the Encoder task of the Speech
-        run_rknn_process(model_name, WORKER_TASK_GENERATE_SPEECH,model_input,result_queue)  
+        run_rknn_process(model_name, WORKER_TASK_GENERATE_SPEECH,model_input,result_queue)
 
-        # Wait to confirm output of the image 
+        # Wait to confirm output of the image
         audio  = result_queue.get(timeout=300)  # Timeout after 60 seconds
 
         if isinstance(audio, str) and audio ==  WORKER_TASK_ERROR:
@@ -746,15 +750,15 @@ class WorkerManager:
 
         # Return the audio
         return audio
-    
+
     def generate_transcription(self, model_name, model_dir, file, language, response_format) -> None:
         """
         Send a generate transcription task to the corresponding model worker
-        
+
         Args:
             model_name (str): Worker name to send the task.
             model_dir (str): Model directory name to invoke
- 
+
         """
 
         # Prepare the input for omniasr
@@ -764,9 +768,9 @@ class WorkerManager:
         result_queue = Queue()
 
         # Send the inference task of the Transcription
-        run_rknn_process(model_name, WORKER_TASK_GENERATE_TRANSCRIPTION,model_input,result_queue)  
+        run_rknn_process(model_name, WORKER_TASK_GENERATE_TRANSCRIPTION,model_input,result_queue)
 
-        # Wait to confirm output of the image 
+        # Wait to confirm output of the image
         text  = result_queue.get(timeout=300)  # Timeout after 60 seconds
 
         if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
@@ -775,17 +779,17 @@ class WorkerManager:
 
         # Return the transcription
         return text
-    
+
 
     def get_finished_inference_token(self):
         """
         Return the finish token for inference task
-        
+
         Returns:
             str: Token for finished inference.
         """
         return WORKER_TASK_FINISHED
-                
+
 
 
 # Class to manage the information for running RKLLM models
@@ -797,8 +801,8 @@ class WorkerModelInfo:
         self.loaded_at = datetime.now()
         self.base_domain_id = base_domain_id
         self.last_call = datetime.now()
-                        
-      
+
+
 # Class to manage the information for running RKLLM models
 class Worker:
     def __init__(self, model_name, base_domain_id):
@@ -817,16 +821,15 @@ class Worker:
         self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.task_q, self.result_q, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
 
         # Start the worker
-        self.process.start() 
+        self.process.start()
 
         # Wait to confirm initialization
-        creation_status = self.result_q.get(timeout=60)  # Timeout after 60 seconds
+        creation_status = self.result_q.get(timeout=300)  # Timeout after 5 minutes for large models
 
         if creation_status == WORKER_TASK_ERROR:
             # Error loading the RKLLM Model. Wait for the worker to exit
             self.process.terminate()
             return False
-        
+
         # Success loading the model
         return True
-        

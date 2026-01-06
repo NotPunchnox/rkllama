@@ -2,7 +2,7 @@ models/**/*
 src/__pycache__
 *.log
 config/config.env
-tests
+
 
 # macOS system files
 .DS_Store
@@ -12,6 +12,11 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
 
 # Virtual environments
 venv/
@@ -25,3 +30,7 @@ ENV/
 # Converter directory
 # Uncomment if you want to ignore it
 # converter/
+
+# Test artifacts
+
+.coverage

@@ -156,29 +156,29 @@ class RKNN2Model:
     """ Wrapper for running RKNPU2 models """
 
     def __init__(self, model_dir : str, unload_after_first_call : bool = True):
-        
+
         # Ensure the model exists
         assert os.path.exists(model_dir) and os.path.exists(os.path.join(model_dir, "model.rknn"))
-        
+
         # Save the model path and config
         self.model_dir = os.path.join(model_dir, "model.rknn")
         self.config = json.load(open(os.path.join(model_dir, "config.json")))
         self.modelname = self.model_dir.split("/")[-1]
-        
+
         # Only cretae the RKNNLite object without loading it
         self.rknnlite = RKNNLite()
-        
+
         # Variables to control the load of the model (to save memory in the pipeline)
         self.loaded = False
         self.unload_after_first_call = unload_after_first_call
 
 
     def __call__(self, **kwargs) -> List[np.ndarray]:
-       
+
         # Load the model if not yet loaded
         if not self.loaded:
-            self.load_model()      
-        
+            self.load_model()
+
        # Construct the list of input and transform them to Numpy if needed
         input_list = [value for key, value in kwargs.items()]
         input_list_np = []
@@ -195,50 +195,50 @@ class RKNN2Model:
         results = self.rknnlite.inference(inputs=input_list_np, data_format='nchw')
         for res in results:
             print(f"Output shape: {res.shape}")
-        
+
         # Unload the model automatically if requried
         if self.unload_after_first_call:
            self.unload_model()
-        
+
         # Return the result
         return results
 
-    
+
     def load_model(self):
-        
+
         logger.info(f"Loading model: {self.model_dir}")
-        
+
         # Take the init time
         start = time.time()
-        
+
         # Load the model and run time of RKNN
         self.rknnlite.load_rknn(self.model_dir)
         self.rknnlite.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-        
+
         # Take the finish time
         load_time = time.time() - start
-        
+
         logger.info(f"Load Done. Took {load_time:.1f} seconds.")
-        
+
         # Set the loaded flag
         self.loaded = True
 
-    
+
     def unload_model(self):
-        
+
         logger.info(f"Unloading model: {self.model_dir}")
-        
+
         # Take the init time
         start = time.time()
-        
+
         # Unload the model
         self.rknnlite.release()
-        
+
         # Take the finish time
         load_time = time.time() - start
-        
+
         logger.info(f"Unload Done. Took {load_time:.1f} seconds.")
-        
+
         # Set the loaded flag
         self.loaded = False
 
@@ -278,7 +278,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
         tokenizer_2 (`CLIPTokenizer`):
             Second Tokenizer of class
             [CLIPTokenizer](https://huggingface.co/docs/transformers/v4.21.0/en/model_doc/clip#transformers.CLIPTokenizer).
-    
+
     """
 
     model_cpu_offload_seq = "text_encoder->text_encoder_2->unet->vae"
@@ -307,7 +307,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
             tokenizer_2 = tokenizer_2,
             text_encoder_2 = text_encoder_2,
         )
-        
+
         self.unet = unet
         self.vae_decoder = vae_decoder
         self.tokenizer = tokenizer
@@ -392,12 +392,12 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                     "The following part of your input was truncated because CLIP can only handle sequences up to"
                     f" {self.tokenizer.model_max_length} tokens: {removed_text}"
                 )
-       
+
             prompt_embeds = self.text_encoder(input_ids=text_input_ids.to(device).numpy().astype(np.float32))
 
             # Initialize the optional second embeds
             text_embeds = None
-            
+
             if self.text_encoder_2:
                 # tokenizer_2 and  text_encoder_2
                 text_inputs_2 = self.tokenizer_2(
@@ -420,7 +420,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                         "The following part of your input was truncated because CLIP can only handle sequences up to"
                         f" {self.tokenizer_2.model_max_length} tokens: {removed_text_2}"
                     )
-        
+
                 text_embeds = self.text_encoder_2(input_ids=text_input_ids_2.to(device).numpy().astype(np.float32))
 
         # Return the two embeddings
@@ -538,7 +538,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
         latents = latents * np.float64(self.scheduler.init_noise_sigma)
         return latents
 
-    
+
     def get_guidance_scale_embedding(self, w, embedding_dim=512, dtype=None):
         """
         See https://github.com/google-research/vdm/blob/dc27b98a554f65cdc654b800da5aa1846545d41b/model_vdm.py#L298
@@ -850,11 +850,11 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
         )
         encode_prompt_time = time.time() - start_time
         logger.debug(f"Prompt encoding time: {encode_prompt_time:.2f}s")
-        
+
         prompt_embeds = prompt_embeds_np[0]
         text_embeds = text_embeds_np[0] if text_embeds_np else None
-        
-          
+
+
         # 4. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler, num_inference_steps, device, timesteps, original_inference_steps=original_inference_steps
@@ -872,7 +872,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
             generator,
             latents,
         )
-	    
+
         bs = batch_size * num_images_per_prompt
 
         # Adapted from diffusers to extend it for other runtimes than ORT
@@ -899,7 +899,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
         # 8. LCM MultiStep Sampling Loop:
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
-        
+
         # Begin image generation
         inference_start = time.time()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
@@ -921,9 +921,9 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                       encoder_hidden_states=hidden_state,
                       timestep_cond=w_embedding,
                       time_ids=time_ids,
-                      text_embeds=text_embeds,  
+                      text_embeds=text_embeds,
                    )[0]
-                
+
                 else:
                    # LCM SSD 1.5
 
@@ -934,7 +934,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                       encoder_hidden_states=prompt_embeds,
                       timestep_cond=w_embedding
                    )[0]
-                
+
                 # compute the previous noisy sample x_t -> x_t-1
                 latents, denoised = self.scheduler.step(torch.from_numpy(model_pred), t, torch.from_numpy(latents), return_dict=False)
                 latents, denoised = latents.numpy(), denoised.numpy()
@@ -944,7 +944,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
-        
+
         inference_time = time.time() - inference_start
         logger.debug(f"Inference time: {inference_time:.2f}s")
 
@@ -1003,13 +1003,13 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                 pil_images = [Image.fromarray(image) for image in images]
 
             return pil_images
-        
+
         def denormalize(images: np.ndarray):
             """
             Denormalize an image array to [0,1].
             """
             return np.clip(images / 2 + 0.5, 0, 1)
-    
+
         if not isinstance(image, np.ndarray):
             raise ValueError(
                 f"Input for postprocessing is in incorrect format: {type(image)}. We only support np array"
@@ -1024,7 +1024,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
 
         if output_type == "latent":
             return image
-        
+
         if do_denormalize is None:
             raise ValueError("do_denormalize is required for postprocessing")
 

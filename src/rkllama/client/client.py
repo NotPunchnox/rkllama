@@ -141,7 +141,7 @@ def send_message(model, message):
     try:
         if STREAM_MODE:
             with requests.post(API_URL + "v1/chat/completions", json=payload, stream=True) as response:
-                
+
                 if response.status_code == 200:
                     print(f"{CYAN}{BOLD}Assistant:{RESET} ", end="")
                     assistant_message = ""
@@ -157,8 +157,8 @@ def send_message(model, message):
                             try:
                                 json_line_striped = line.removeprefix("data: ").strip()
                                 if json_line_striped != "[DONE]":
-                                    response_json = json.loads(json_line_striped) 
-                                    
+                                    response_json = json.loads(json_line_striped)
+
                                     final_json = response_json
 
                                     if len(response_json["choices"]) > 0 and "delta" in response_json["choices"][0].keys():
@@ -186,7 +186,7 @@ def send_message(model, message):
         else:
             response = requests.post(API_URL + "v1/chat/completions", json=payload)
             if response.status_code == 200:
-                
+
                 response_json = response.json()
                 assistant_message = response_json["choices"][0]["message"]["content"]
                 print(f"{CYAN}{BOLD}Assistant:{RESET} {assistant_message}")
@@ -196,7 +196,7 @@ def send_message(model, message):
                         completion_tokens = final_json["usage"]["completion_tokens"]
                         print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
                         print(f"{GREEN}Number of Tokens  {RESET}: {completion_tokens}")
-                        
+
                 HISTORY.append({"role": "assistant", "content": assistant_message})
             else:
                 print(f"{RED}Query error: {response.status_code} - {response.text}{RESET}")
@@ -240,18 +240,41 @@ def pull_model(model):
             sys.stdout.write(text)
             sys.stdout.flush()
 
-        # Progress bar
-        for line in response.iter_lines(decode_unicode=True):
+        # Progress bar - parse NDJSON responses
+        for line in response.iter_lines():
             if line:
+                # Decode bytes to string if needed
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8')
                 line = line.strip()
-                if line.endswith('%'):  # Checks if the line contains a percentage
-                    try:
-                        progress = int(line.strip('%'))
-                        update_progress(progress)
-                    except ValueError:
-                        print(f"\n{line}")  # Displays non-numeric messages
-                else:
-                    print(f"\n{line}")  # Displays other messages
+
+                try:
+                    # Try to parse as JSON (new format)
+                    data = json.loads(line)
+                    status = data.get('status', '')
+
+                    if status == 'downloading':
+                        completed = data.get('completed', 0)
+                        total = data.get('total', 1)
+                        if total > 0:
+                            progress = (completed / total) * 100
+                            update_progress(progress)
+                    elif status == 'error':
+                        print(f"\n{RED}Error: {data.get('error', 'Unknown error')}{RESET}")
+                    elif status == 'success':
+                        pass  # Will print complete message after loop
+                    elif status:
+                        print(f"\n{CYAN}{status}{RESET}")
+                except json.JSONDecodeError:
+                    # Fallback: old format with percentage
+                    if line.endswith('%'):
+                        try:
+                            progress = int(line.strip('%'))
+                            update_progress(progress)
+                        except ValueError:
+                            print(f"\n{line}")
+                    else:
+                        print(f"\n{line}")
 
         print(f"\n{GREEN}Download complete.{RESET}")
     except requests.RequestException as e:
@@ -263,7 +286,7 @@ def chat(model):
     global VERBOSE, STREAM_MODE, HISTORY, PREFIX_MESSAGE
     os.system("clear")
     print_help_chat()
-    
+
     while True:
         user_input = input(f"{CYAN}You:{RESET} ")
 
@@ -299,12 +322,12 @@ def chat(model):
 
 def update():
     setup_path = os.path.join(rkllama.config.get_path(), 'setup.sh')
-    
+
     # Check if setup.sh exists
     if not os.path.exists(setup_path):
         print("setup.sh not found. Downloading the setup script...")
         url = "https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/setup.sh"
-        
+
         # Download setup.sh
         try:
             urllib.request.urlretrieve(url, setup_path)
@@ -322,13 +345,13 @@ def show_model_info(model_name):
     try:
         # Préparer les données pour la requête POST
         data = {"name": model_name}
-        
+
         # Envoyer la requête POST à l'endpoint /api/show
         response = requests.post(API_URL + "api/show", json=data)
-        
+
         if response.status_code == 200:
             model_info = response.json()
-            
+
             # Afficher les informations du modèle de manière formatée
             print(f"{GREEN}{BOLD}Model Information: {model_info['name']}{RESET}")
             print(f"{'-' * 50}")
@@ -340,7 +363,7 @@ def show_model_info(model_name):
             print(f"{BOLD}License:{RESET} {model_info['license']}")
             print(f"{BOLD}System Prompt:{RESET} {model_info['system'] or 'None'}")
             print(f"{BOLD}Template:{RESET} {model_info['template']}")
-            
+
             # Afficher les informations Hugging Face si disponibles
             if "huggingface" in model_info:
                 print(f"{BOLD}Hugging Face Info:{RESET}")
@@ -349,19 +372,19 @@ def show_model_info(model_name):
                 print(f"  Tags: {', '.join(model_info['huggingface']['tags'][:5])}")
                 print(f"  Downloads: {model_info['huggingface']['downloads']}")
                 print(f"  Likes: {model_info['huggingface']['likes']}")
-            
+
             # Afficher les informations avancées du modèle
             print(f"{BOLD}Advanced Model Info:{RESET}")
             for key, value in model_info['model_info'].items():
                 print(f"  {key}: {value}")
-            
+
         elif response.status_code == 400:
             print(f"{RED}Error: Missing model name{RESET}")
         elif response.status_code == 404:
             print(f"{RED}Error: Model '{model_name}' not found{RESET}")
         else:
             print(f"{RED}Error retrieving model info: {response.status_code} - {response.text}{RESET}")
-            
+
     except requests.RequestException as e:
         print(f"{RED}Query error: {e}{RESET}")
 
@@ -375,7 +398,7 @@ def main():
     # Parse host and port from command line arguments
     host = "127.0.0.1"  # default host
     filtered_args = []
-    
+
     for arg in sys.argv:
         if arg.startswith("--host="):
             host = arg.split("=")[1]
@@ -383,7 +406,7 @@ def main():
             PORT = arg.split("=")[1]
         else:
             filtered_args.append(arg)
-    
+
     # Update sys.argv with filtered arguments
     sys.argv = filtered_args
 
@@ -439,16 +462,16 @@ def main():
         elif len(sys.argv) == 3:
             if load_model(sys.argv[2]):
                 chat(sys.argv[2])
-            
+
     elif command == "rm":
         if len(sys.argv) < 3:
             print(f"{RED}Error: You must specify the model name.{RESET}")
         else:
             remove_model(sys.argv[2])
-    
+
     elif command == "pull":
         pull_model(sys.argv[2] if len(sys.argv) > 2 else "")
-    
+
     elif command == "info":
         if len(sys.argv) < 3:
             print(f"{RED}Error: You must specify the model name.{RESET}")

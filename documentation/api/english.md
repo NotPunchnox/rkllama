@@ -10,13 +10,13 @@ http://localhost:8080/
 
 ## **Quick Reference**
 ### Key Commands:
-- **List available models**: `GET /models`  
-- **Load a model**: `POST /load_model`  
-- **Unload the current model**: `POST /unload_model`  
-- **Get the current loaded model**: `GET /current_model`  
-- **Generate output**: `POST /generate`  
-- **Download a model from Hugging Face**: `POST /pull`  
-- **Delete a model**: `POST /rm`  
+- **List available models**: `GET /models`
+- **Load a model**: `POST /load_model`
+- **Unload the current model**: `POST /unload_model`
+- **Get the current loaded model**: `GET /current_model`
+- **Generate output**: `POST /generate`
+- **Download a model from Hugging Face**: `POST /pull`
+- **Delete a model**: `POST /rm`
 
 ---
 
@@ -305,7 +305,7 @@ curl -X DELETE http://localhost:8080/rm \
 RKLLama supports comprehensive tool calling functionality with full Ollama API compatibility. Tools allow models to call external functions with structured parameters.
 
 ### **Supported Endpoints**
-- **`/api/chat`** - Full tool calling support  
+- **`/api/chat`** - Full tool calling support
 - **`/api/generate`** - Tool detection in generated text
 
 ### **Basic Tool Call Request**
@@ -414,12 +414,12 @@ curl -X GET http://localhost:8080/
 ---
 
 ## **Error Handling**
-- **400**: Bad Request due to incorrect parameters.  
-- **404**: Resource not found.  
+- **400**: Bad Request due to incorrect parameters.
+- **404**: Resource not found.
 - **500**: Internal server error.
 
 ---
 
 ## **Practical Tips**
-- **Parameter Validation**: Always double-check model names and file paths.  
+- **Parameter Validation**: Always double-check model names and file paths.
 - **Troubleshooting**: Check server logs for more details on internal errors.

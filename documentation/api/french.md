@@ -10,12 +10,12 @@ http://localhost:8080/
 
 ## **Mémo rapide**
 ### Commandes principales :
-- **Lister les modèles disponibles** : `GET /models`  
-- **Charger un modèle** : `POST /load_model`  
-- **Décharger le modèle** : `POST /unload_model`  
-- **Obtenir le modèle chargé** : `GET /current_model`  
-- **Générer une sortie** : `POST /generate`  
-- **Télécharger un modèle depuis Hugging Face** : `POST /pull`  
+- **Lister les modèles disponibles** : `GET /models`
+- **Charger un modèle** : `POST /load_model`
+- **Décharger le modèle** : `POST /unload_model`
+- **Obtenir le modèle chargé** : `GET /current_model`
+- **Générer une sortie** : `POST /generate`
+- **Télécharger un modèle depuis Hugging Face** : `POST /pull`
 - **Supprimer un modèle** : `POST /rm`
 
 ---
@@ -305,7 +305,7 @@ curl -X DELETE http://localhost:8080/rm \
 RKLLama prend en charge une fonctionnalité complète d'appel d'outils avec une compatibilité totale avec l'API Ollama. Les outils permettent aux modèles d'appeler des fonctions externes avec des paramètres structurés.
 
 ### **Endpoints Supportés**
-- **`/api/chat`** - Support complet des appels d'outils  
+- **`/api/chat`** - Support complet des appels d'outils
 - **`/api/generate`** - Détection d'outils dans le texte généré
 
 ### **Requête Basique d'Appel d'Outil**
@@ -414,12 +414,12 @@ curl -X GET http://localhost:8080/
 ---
 
 ## **Gestion des erreurs**
-- **400** : Erreur liée à une mauvaise requête.  
-- **404** : Ressource introuvable.  
+- **400** : Erreur liée à une mauvaise requête.
+- **404** : Ressource introuvable.
 - **500** : Erreur interne au serveur.
 
 ---
 
 ## **Conseils pratiques**
-- **Validation des paramètres** : Vérifiez toujours les noms des modèles et les chemins des fichiers.  
+- **Validation des paramètres** : Vérifiez toujours les noms des modèles et les chemins des fichiers.
 - **Dépannage** : Consultez les journaux du serveur pour plus de détails sur les erreurs internes.

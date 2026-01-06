@@ -18,7 +18,7 @@ def GetModels():
         for file in files:
             if file.endswith(".rkllm"):
                 models_list.append(file)
-    
+
     print("Number of valid models:", len(models_list), "\n")
 
     return models_list

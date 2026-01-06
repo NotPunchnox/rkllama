@@ -7,7 +7,7 @@ RKLLama provides comprehensive tool/function calling capabilities with full Olla
 Tool calling allows your language models to interact with external functions and APIs in a structured way. RKLLama's implementation supports:
 
 - **Multiple LLM formats** (Qwen, Llama 3.2+, others)
-- **Ollama API compatibility** 
+- **Ollama API compatibility**
 - **Streaming and non-streaming modes**
 - **Robust JSON extraction and validation**
 - **Automatic format normalization**
@@ -427,7 +427,7 @@ def call_with_tools(prompt, tools):
         'messages': [{'role': 'user', 'content': prompt}],
         'tools': tools
     })
-    
+
     data = response.json()
     if 'tool_calls' in data.get('message', {}):
         return data['message']['tool_calls']
@@ -466,7 +466,7 @@ async function callWithTools(prompt, tools) {
             messages: [{role: 'user', content: prompt}],
             tools: tools
         });
-        
+
         if (response.data.message?.tool_calls) {
             return response.data.message.tool_calls;
         }

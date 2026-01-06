@@ -23,35 +23,35 @@ QUANT_MAPPING = {
 def get_huggingface_model_info(model_path):
     """
     Fetch model metadata from Hugging Face API if available.
-    
+
     Args:
         model_path: HuggingFace repository path (e.g., 'c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4')
-        
+
     Returns:
         Dictionary with enhanced model metadata or None if not available
     """
     try:
         if not model_path or '/' not in model_path:
             return None
-        
+
         # Get DEBUG_MODE from configuration
         debug_mode = rkllama.config.is_debug_mode()
-        
+
         # Extract repo_id from HUGGINGFACE_PATH
         url = f"https://huggingface.co/api/models/{model_path}"
         response = requests.get(url, timeout=5)
-        
+
         if response.status_code == 200:
             data = response.json()
-            
+
             # Process and enhance the metadata
             if 'tags' not in data:
                 data['tags'] = []
-            
+
             # Extract additional info from readme if available
             if 'cardData' not in data:
                 data['cardData'] = {}
-            
+
             # Try to extract parameter size from model name if not in cardData
             if 'params' not in data['cardData']:
                 # Look for patterns like "7b", "3B", "1.5B" in model name or description
@@ -62,7 +62,7 @@ def get_huggingface_model_info(model_path):
                     # Convert to billions if needed
                     if size_unit == 'b':
                         data['cardData']['params'] = int(size_value * 1_000_000_000)
-            
+
             # Extract important information from the description
             description = data.get('description', '')
             if description:
@@ -70,7 +70,7 @@ def get_huggingface_model_info(model_path):
                 quant_pattern = re.search(r'([qQ]\d+_\d+|int4|int8|fp16|4bit|8bit)', description)
                 if quant_pattern:
                     data['quantization'] = quant_pattern.group(1)
-                
+
                 # Check for mentions of specific architectures
                 architectures = {
                     'llama': 'llama',
@@ -82,13 +82,13 @@ def get_huggingface_model_info(model_path):
                     'baichuan': 'baichuan',
                     'yi': 'yi'
                 }
-                
+
                 for arch_name, arch_value in architectures.items():
                     if arch_name.lower() in description.lower():
                         data['architecture'] = arch_value
                         if arch_name.lower() not in data['tags']:
                             data['tags'].append(arch_name.lower())
-            
+
             # Try to extract language information
             languages = []
             language_patterns = {
@@ -100,7 +100,7 @@ def get_huggingface_model_info(model_path):
                 'spanish': 'es',
                 'japanese': 'ja'
             }
-            
+
             for lang_name, lang_code in language_patterns.items():
                 if lang_name.lower() in description.lower() or lang_name.lower() in ' '.join(data['tags']).lower():
                     if lang_name == 'multilingual':
@@ -108,14 +108,14 @@ def get_huggingface_model_info(model_path):
                         languages.extend(['en', 'zh', 'fr', 'de', 'es', 'ja'])
                     elif lang_code and lang_code not in languages:
                         languages.append(lang_code)
-            
+
             # If we found languages, add them
             if languages:
                 data['languages'] = list(set(languages))  # Remove duplicates
             elif 'en' not in data.get('languages', []):
                 # Default to English if no languages detected
                 data['languages'] = ['en']
-            
+
             # Add RK tags if they exist
             rk_patterns = ['rk3588', 'rk3576', 'rkllm', 'rockchip']
             for pattern in rk_patterns:
@@ -124,14 +124,14 @@ def get_huggingface_model_info(model_path):
                         data['tags'].append('rockchip')
                     if pattern not in data['tags'] and pattern != 'rockchip':
                         data['tags'].append(pattern)
-            
+
             # Add metadata about model capabilities
             if 'sibling_models' in data:
                 for sibling in data.get('sibling_models', []):
                     if sibling.get('rfilename', '').endswith('.rkllm'):
                         data['has_rkllm'] = True
                         break
-            
+
             # Extract license information
             if 'license' in data and data['license']:
                 # Map HF license IDs to human-readable names
@@ -143,14 +143,14 @@ def get_huggingface_model_info(model_path):
                     'cc-by-nc-4.0': 'Creative Commons Attribution-NonCommercial 4.0',
                     'cc-by-nc-sa-4.0': 'Creative Commons Attribution-NonCommercial-ShareAlike 4.0'
                 }
-                
+
                 license_id = data['license'].lower()
                 data['license_name'] = license_mapping.get(license_id, data['license'])
                 data['license_url'] = f"https://huggingface.co/{model_path}/blob/main/LICENSE"
-            
+
             if debug_mode:
                 logger.debug(f"Enhanced model info from HF API: {model_path}")
-            
+
             return data
         else:
             if debug_mode:
@@ -166,10 +166,10 @@ def get_huggingface_model_info(model_path):
 def find_rkllm_model_name(model_dir):
     """
     Find the RKLLM model name based on the model dir.
-    
+
     Args:
         model_dir: Directory of the model (can be simplified or full path)
-        
+
     Returns:
         The name to the RKLLM model or None if not found
     """
@@ -182,10 +182,10 @@ def find_rkllm_model_name(model_dir):
 def extract_model_details(model_name):
     """
     Extract model parameter size and quantization type from model name
-    
+
     Args:
         model_name: Model name or file path
-        
+
     Returns:
         Dictionary with parameter_size and quantization_level
     """
@@ -194,13 +194,13 @@ def extract_model_details(model_name):
         "parameter_size": "Unknown",
         "quantization_level": "Unknown"
     }
-    
+
     # Remove path and extension if present
     if isinstance(model_name, str):
         basename = os.path.basename(model_name).replace('.rkllm', '')
     else:
         basename = str(model_name)
-    
+
     # Extract parameter size (e.g., 3B, 7B, 13B)
     param_size_match = re.search(r'(\d+\.?\d*)(b|B)', basename)
     if param_size_match:
@@ -212,7 +212,7 @@ def extract_model_details(model_name):
         else:
             # For sizes like 3B, 7B
             details["parameter_size"] = f"{size}B"
-    
+
     # Extract quantization type
     # Look for common quantization patterns
     quant_patterns = [
@@ -225,7 +225,7 @@ def extract_model_details(model_name):
         ('w8a8_g256', r'w8a8_g256'),
         ('w8a8_g512', r'w8a8_g512')
     ]
-    
+
     # Mapping to Ollama-style quantization names
     quant_mapping = {
         'w4a16': 'Q4_0',
@@ -237,42 +237,42 @@ def extract_model_details(model_name):
         'w8a8_g256': 'Q8_K_M',
         'w8a8_g512': 'Q8_K_M'
     }
-    
+
     for quant_type, pattern in quant_patterns:
         if re.search(pattern, basename, re.IGNORECASE):
             # Use Ollama-style quantization name if available
             details["quantization_level"] = quant_mapping.get(quant_type, quant_type)
             break
-            
+
     return details
 
 
 #def get_simplified_model_name_example(full_name, check_collision_map=True):
     #"""
     #Convert a full model name to a simplified Ollama-style name
-#    
+#
     #Args:
         #full_name: The full model name/path
         #check_collision_map: If True, check if there's already a collision-aware name
-#        
+#
     #Returns:
         #A simplified name like "qwen2.5-coder:7b"
     #"""
     ## Handle paths - extract just the directory name
     #if os.path.sep in full_name:
         #full_name = os.path.basename(os.path.normpath(full_name))
-#        
+#
     ## First check if we already have a collision-resolved name for this model
     #if check_collision_map and full_name in FULL_TO_SIMPLE_MAP:
         #return FULL_TO_SIMPLE_MAP[full_name]
-#    
+#
     ## Remove any file extension
     #full_name = os.path.splitext(full_name)[0]
-#    
+#
     ## Extract model family
     #model_family = ""
     #model_variants = []
-#    
+#
     ## First, check for model variants throughout the name
     ## We'll do this first to ensure we capture all variants regardless of position
     #variant_patterns = [
@@ -286,11 +286,11 @@ def extract_model_details(model_name):
         #('medium', r'(?i)(^|[-_\s])medium($|[-_\s])'),
         #('large', r'(?i)(^|[-_\s])large($|[-_\s])'),
     #]
-#    
+#
     #for variant_name, pattern in variant_patterns:
         #if re.search(pattern, full_name) and variant_name not in model_variants:
             #model_variants.append(variant_name)
-#    
+#
     ## Now handle model family identification
     #if re.search(r'(?i)deepseek', full_name):
         #model_family = 'deepseek'
@@ -324,7 +324,7 @@ def extract_model_details(model_name):
         ## Default to the first part of the name as family
         ## Example: "Phi-2" becomes "phi"
         #model_family = re.split(r'[-_\d]', full_name)[0].lower()
-#    
+#
     ## Extract parameter size
     #param_size = ""
     ## Try to find a pattern like "7B" or "3b"
@@ -338,7 +338,7 @@ def extract_model_details(model_name):
             #size = size_match.group(1)
             #if len(size) <= 2:  # Likely a small number like 3, 7
                 #param_size = size + 'b'
-#    
+#
     ## Combine family, variant, and size with the new naming convention
     #if model_family:
         ## When multiple variants are present, join them with hyphens
@@ -346,7 +346,7 @@ def extract_model_details(model_name):
         #if model_variants:
             #variant_part = "-".join(model_variants)
             #base_part = f"{model_family}-{variant_part}"
-#            
+#
         #if param_size:
             #return f"{base_part}:{param_size}"
         #else:
@@ -357,7 +357,7 @@ def extract_model_details(model_name):
 #
 #
 
-  
+
 
 import os
 import re
@@ -403,12 +403,12 @@ def get_property_modelfile(model_name: str, property: str, models_path: str = "m
 def get_model_full_options(model_name: str, models_path: str = "models", request_options: dict = None) -> dict:
     """
     Get model options from Modelfile or return default options if not found.
-    
+
     Args:
         model_name: The name of the model directory
         models_path: The base path where models are stored
         request_options: The options provided in the request (optional)
-    
+
     Returns:
         A dictionary of model options
     """
@@ -430,7 +430,7 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
 
     # Get the Modelfile of the model
     modelfile = os.path.join(models_path, model_name, "Modelfile")
-    
+
     # First overrride default values with the ModelFile Parameters
     if os.path.isfile(modelfile):
        # Try to read the Modelfile
@@ -443,7 +443,7 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
                     key, value = line.split('=', 1)
                     if value is not None and str(value).strip() != "":
                         default_options[key.lower().strip()] = str(value).strip()
-    
+
     # Override with request options if provided
     if request_options and isinstance(request_options, dict):
         for option, value in request_options.items():
@@ -454,8 +454,8 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
 
     # Return the options dictionary
     return default_options
-            
-    
+
+
 def get_model_size(model_name) -> int:
     """
     Get the size of a model
@@ -468,14 +468,14 @@ def get_model_size(model_name) -> int:
     # Get the models directory
     models_dir = rkllama.config.get_path("models")
     model_path = os.path.join(models_dir, model_name)
-    
+
     # check for the RKLLM file to get his size
     if os.path.isdir(model_path):
         for file in os.listdir(model_path):
             if file.endswith(".rkllm"):
                 size = os.path.getsize(os.path.join(model_path, file))
                 return size
-    
+
     return None
 
 
@@ -485,12 +485,12 @@ def read_data_from_file(path: str) -> bytes:
     Args:
        path: The path to the file
     Returns:
-       The binary data read from the file 
+       The binary data read from the file
     """
     # Ensure the file exists
     if not os.path.isfile(path):
         raise FileNotFoundError(f"File not found: {path}")
-    
+
     # Read and return the binary data
     with open(path, "rb") as f:
         return f.read()
@@ -500,17 +500,17 @@ def read_data_from_file(path: str) -> bytes:
 def get_encoder_model_path(model_name: str) -> Union[str, None]:
     """
     Get the path of the vision encoder model if exists.
-    
+
     Args:
         model_name: The name of the model directory
-    
+
     Returns:
         The path to the vision encoder model or None if not found
     """
     # Get the models directory
     models_dir = rkllama.config.get_path("models")
     model_path = os.path.join(models_dir, model_name)
-    
+
     # check for the RKNN file
     encoder_filename = None
     if os.path.isdir(model_path):
@@ -519,7 +519,7 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
                 size = os.path.getsize(os.path.join(model_path, file))
                 encoder_filename = file
                 break
-    
+
     # Return the full path if found
     if encoder_filename:
         return os.path.join(model_path, encoder_filename)

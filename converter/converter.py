@@ -26,14 +26,14 @@ def parse_args():
     parser.add_argument('--dtype', default='float16', help='Model data type (float16 or float32)')
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use for conversion')
     parser.add_argument('--token', help='Hugging Face token for private models')
-    
+
     return parser.parse_args()
 
 def main():
     """Main function."""
     try:
         args = parse_args()
-        
+
         # Create configuration
         config = ConversionConfig(
             model_id=args.model_id,
@@ -44,16 +44,16 @@ def main():
             device=args.device,
             token=args.token
         )
-        
+
         # Create converter and run conversion
         converter = HuggingFaceToRKLLMConverter(config)
         converter.convert()
-        
+
         return 0
-        
+
     except Exception as e:
         logger.error(f"Error during conversion: {str(e)}")
         return 1
 
 if __name__ == '__main__':
-    sys.exit(main()) 
+    sys.exit(main())

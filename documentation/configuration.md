@@ -131,7 +131,7 @@ Paths are automatically resolved relative to the application root directory. The
 
 - Absolute paths
 - Environment variable expansion (`$HOME/data`)
-- User home expansion (`~/models`) 
+- User home expansion (`~/models`)
 
 Resolved paths are cached for performance, particularly for frequently accessed paths.
 

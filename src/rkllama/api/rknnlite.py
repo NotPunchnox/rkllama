@@ -4,7 +4,7 @@ import logging
 import cv2
 import base64
 import requests
-from rknnlite.api.rknn_lite import RKNNLite    
+from rknnlite.api.rknn_lite import RKNNLite
 import os
 
 logger = logging.getLogger("rkllama.rknnlite")
@@ -22,7 +22,7 @@ def run_vision_encoder(model_encoder_path, images_source, image_width, image_hei
     Returns:
         np.ndarray: Image embedding
     """
-    
+
     # Prepare the image
     prepared_images = [prepare_image(image_source, image_width, image_height) for image_source in images_source]
 
@@ -57,11 +57,11 @@ def load_image(source: str):
       - image as numpy array (BGR) or None if fails
     """
     img = None
-    
+
     # Case 1: local file
     if os.path.exists(source):
         img = cv2.imread(source)
-    
+
     # Case 2: URL
     elif source.startswith("http://") or source.startswith("https://"):
         try:
@@ -71,7 +71,7 @@ def load_image(source: str):
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
             logger.error("Error loading from URL:", e)
-    
+
     # Case 3: Base64
     else:
         try:
@@ -83,11 +83,11 @@ def load_image(source: str):
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
             logger.error("Error loading from Base64:", e)
-    
+
     # Convert BGR → RGB (Color fix)
     if img is not None:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
+
     return img
 
 
@@ -104,12 +104,11 @@ def prepare_image(image_source, image_width, image_height) -> np.ndarray:
     img = load_image(image_source)  # BGR
     if img is None:
         raise FileNotFoundError(image_source)
-    
-    # Preprocess Image 
+
+    # Preprocess Image
     resized = cv2.resize(img, (image_width, image_height))
     resized = resized.astype(np.float32)
     resized = resized[np.newaxis, :, :, :]
-    
+
     # Return the image
     return resized
-
