@@ -30,3 +30,7 @@ ENV/
 # Converter directory
 # Uncomment if you want to ignore it
 # converter/
+
+# Test artifacts
+
+.coverage
