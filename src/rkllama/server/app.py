@@ -164,11 +164,13 @@ def main():
     print_color(f"Starting RKLlama API at http://{host}:{port}", "blue")
 
     # Run with uvicorn
+    # Disable uvicorn's default access log - we handle logging via structlog
     uvicorn.run(
         app,
         host=host,
         port=port,
         log_level="debug" if DEBUG_MODE else "info",
+        access_log=False,  # Disable default access log format
     )
 
 
