@@ -1,5 +1,5 @@
 # Import libs
-import sys, os, subprocess, resource, argparse, shutil, time, requests, json, datetime, logging
+import sys, os, subprocess, resource, argparse, shutil, time, requests, json, datetime
 import re
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
@@ -20,6 +20,7 @@ from rkllama.api.model_utils import (
     get_property_modelfile, get_model_full_options, find_rkllm_model_name
 )
 from rkllama.api.worker import WorkerManager
+from rkllama.logging import get_logger
 
 # Import the config module
 import rkllama.config
@@ -27,21 +28,8 @@ import rkllama.config
 # Check for debug mode using the improved method
 DEBUG_MODE = rkllama.config.is_debug_mode()
 
-# Ensure logs directory exists before configuring logging
-logs_dir = rkllama.config.get_path("logs")
-os.makedirs(logs_dir, exist_ok=True)
-
-# Set up logging with appropriate level based on debug mode
-logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
-logging.basicConfig(
-    level=logging_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(logs_dir, "rkllama_server.log"))
-    ]
-)
-logger = logging.getLogger("rkllama.server")
+# Configure logger
+logger = get_logger("rkllama.server")
 
 def print_color(message, color):
     # Function for displaying color messages
@@ -213,17 +201,17 @@ def rm_model():
     # Check if model is currently loaded
     if variables.worker_manager_rkllm.exists_model_loaded(model_name):
         if DEBUG_MODE:
-            logger.debug(f"Unloading model '{model_name}' before deletion")
+            logger.debug("Unloading model before deletion", model=model_name)
         unload_model(model_name)
 
     try:
         if DEBUG_MODE:
-            logger.debug(f"Deleting model directory: {model_path}")
+            logger.debug("Deleting model directory", path=model_path)
         shutil.rmtree(model_path)
 
         return jsonify({"message": f"The model has been successfully deleted!"}), 200
     except Exception as e:
-        logger.error(f"Failed to delete model '{model_name}': {str(e)}")
+        logger.error("Failed to delete model", model=model_name, error=str(e))
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
     # os.remove(model_path)
@@ -540,7 +528,7 @@ def show_model_info():
     model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
     if DEBUG_MODE:
-        logger.debug(f"API show request data: {data}")
+        logger.debug("API show request", data=data)
 
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
@@ -925,7 +913,7 @@ def create_model():
     model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
     if DEBUG_MODE:
-        logger.debug(f"API create request data: {data}")
+        logger.debug("API create request", data=data)
 
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
@@ -958,7 +946,7 @@ def pull_model_ollama():
     model = data.get('name',data.get('model'))
 
     if DEBUG_MODE:
-        logger.debug(f"API pull request data: {data}")
+        logger.debug("API pull request", data=data)
 
     if not model:
         return jsonify({"error": "Missing model name"}), 400
@@ -977,7 +965,7 @@ def delete_model_ollama():
     model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
     if DEBUG_MODE:
-        logger.debug(f"API delete request data: {data}")
+        logger.debug("API delete request", data=data)
 
     if not model_name:
         return jsonify({"error": "Missing model name"}), 400
@@ -989,17 +977,17 @@ def delete_model_ollama():
     # Check if model is currently loaded
     if variables.worker_manager_rkllm.exists_model_loaded(model_name):
         if DEBUG_MODE:
-            logger.debug(f"Unloading model '{model_name}' before deletion")
+            logger.debug("Unloading model before deletion", model=model_name)
         unload_model(model_name)
 
     try:
         if DEBUG_MODE:
-            logger.debug(f"Deleting model directory: {model_path}")
+            logger.debug("Deleting model directory", path=model_path)
         shutil.rmtree(model_path)
 
         return jsonify({"message": f"The model has been successfully deleted!"}), 200
     except Exception as e:
-        logger.error(f"Failed to delete model '{model_name}': {str(e)}")
+        logger.error("Failed to delete model", model=model_name, error=str(e))
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
 
@@ -1015,7 +1003,7 @@ def generate_ollama():
 
         if is_openai_request:
            if DEBUG_MODE:
-              logger.debug(f"API OpenAI completions request data: {data}")
+              logger.debug("API OpenAI completions request", data=data)
            data = openai_to_ollama_generate_request(data)
 
         model_name = data.get('model')
@@ -1033,7 +1021,7 @@ def generate_ollama():
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
         if DEBUG_MODE:
-            logger.debug(f"API generate request data: {data}")
+            logger.debug("API generate request", data=data)
 
         if not model_name:
             return jsonify({"error": "Missing model name"}), 400
@@ -1074,7 +1062,7 @@ def generate_ollama():
         )
     except Exception as e:
         if DEBUG_MODE:
-            logger.exception(f"Error in generate_ollama: {str(e)}")
+            logger.exception("Error in generate_ollama", error=str(e))
         return jsonify({"error": str(e)}), 500
     finally:
         # Only release if we acquired it
@@ -1095,7 +1083,7 @@ def chat_ollama():
 
         if is_openai_request:
            if DEBUG_MODE:
-              logger.debug(f"API OpenAI chat request data: {data}")
+              logger.debug("API OpenAI chat request", data=data)
            data = openai_to_ollama_chat_request(data)
 
         model_name = data.get('model')
@@ -1113,7 +1101,7 @@ def chat_ollama():
         options = data.get('options', {})
 
         if DEBUG_MODE:
-            logger.debug(f"API Ollama chat request data: {data}")
+            logger.debug("API Ollama chat request", data=data)
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
@@ -1158,20 +1146,20 @@ def chat_ollama():
             variables.system = system
             messages = filtered_messages
             if DEBUG_MODE:
-                logger.debug(f"Using system message: {system}")
+                logger.debug("Using system message", system=system)
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
 
             if DEBUG_MODE:
-                logger.debug(f"Loading model: {model_name}")
+                logger.debug("Loading model", model=model_name)
             _, error = load_model(model_name, request_options=options)
             if error:
                 if DEBUG_MODE:
-                    logger.error(f"Failed to load model {model_name}: {error}")
+                    logger.error("Failed to load model", model=model_name, error=error)
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             if DEBUG_MODE:
-                logger.debug(f"Model {model_name} loaded successfully")
+                logger.debug("Model loaded successfully", model=model_name)
         #else:
         #
         #    rkllm_loaded = get_model_loaded_by_name(loaded_models,model_name)
@@ -1296,7 +1284,7 @@ def embeddings_ollama():
 
         if is_openai_request:
            if DEBUG_MODE:
-              logger.debug(f"API OpenAI embedding request data: {data}")
+              logger.debug("API OpenAI embedding request", data=data)
               # Parameter from OpenAI "encoding_format" not supported in Ollama
 
         model_name = data.get('model')
@@ -1309,7 +1297,7 @@ def embeddings_ollama():
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
         if DEBUG_MODE:
-            logger.debug(f"API embedding request data: {data}")
+            logger.debug("API embedding request", data=data)
 
         if not model_name:
             return jsonify({"error": "Missing model name"}), 400
@@ -1340,7 +1328,7 @@ def embeddings_ollama():
         )
     except Exception as e:
         if DEBUG_MODE:
-            logger.exception(f"Error in embeddings_ollama: {str(e)}")
+            logger.exception("Error in embeddings_ollama", error=str(e))
         return jsonify({"error": str(e)}), 500
     finally:
         # Only release if we acquired it
@@ -1394,7 +1382,7 @@ def generate_image_openai():
 
 
         if DEBUG_MODE:
-            logger.debug(f"API OpenAI Generate Image request data: {data}")
+            logger.debug("API OpenAI Generate Image request", data=data)
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -1474,7 +1462,7 @@ def generate_speech_openai():
             length_scale = 1 / speed
 
         if DEBUG_MODE:
-            logger.debug(f"API OpenAI Generate Speech request data: {data}")
+            logger.debug("API OpenAI Generate Speech request", data=data)
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -1542,7 +1530,7 @@ def generate_transcriptions_openai():
         stream = strtobool(stream) if bool(stream) else False # Disabled by default
 
         if DEBUG_MODE:
-            logger.debug(f"API OpenAI Generate Transcription request data: {form}")
+            logger.debug("API OpenAI Generate Transcription request", data=form)
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -1597,7 +1585,6 @@ def main():
     global DEBUG_MODE
     DEBUG_MODE = rkllama.config.is_debug_mode()
     if DEBUG_MODE:
-        logger.setLevel(logging.DEBUG)
         print_color("Debug mode enabled", "yellow")
         rkllama.config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency

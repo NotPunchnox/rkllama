@@ -1,18 +1,17 @@
 import os
 import json
 import datetime
-import logging
 import threading
 import time
 from rkllama.config import is_debug_mode
+from rkllama.logging import get_logger
 
 
 # Check for debug mode
 DEBUG_MODE = is_debug_mode()
 
 # Configure logger
-logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
-logger = logging.getLogger("rkllama.debug_utils")
+logger = get_logger("rkllama.debug_utils")
 
 class StreamDebugger:
     """Utility class for debugging streaming responses"""
@@ -25,7 +24,7 @@ class StreamDebugger:
         """Add a chunk to the debug log"""
         self.chunks.append(chunk)
         if DEBUG_MODE:
-            logger.debug(f"Stream '{self.stream_name}' chunk {len(self.chunks)}: {chunk[:50]}...")
+            logger.debug("Stream chunk received", stream_name=self.stream_name, chunk_num=len(self.chunks), preview=chunk[:50])
 
     def get_summary(self):
         """Get a summary of the stream"""

@@ -3,11 +3,11 @@ from transformers import AutoTokenizer
 from flask import Flask, request, jsonify, Response
 import rkllama.api.variables as variables
 import datetime
-import logging
 from rkllama.config import is_debug_mode  # Import the config module
+from rkllama.logging import get_logger
 from .format_utils import create_format_instruction, validate_format_response
 
-logger = logging.getLogger("rkllama.process")
+logger = get_logger("rkllama.process")
 
 # Get DEBUG_MODE from config instead of environment variable
 DEBUG_MODE = is_debug_mode()
@@ -124,7 +124,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                         original_content = messages[last_user_msg_idx]["content"]
                         messages[last_user_msg_idx]["content"] = original_content + format_instruction
                         if DEBUG_MODE:
-                            logger.debug(f"Added format instruction: {format_instruction}")
+                            logger.debug("Added format instruction", format_instruction=format_instruction)
 
             # Setup tokenizer
             tokenizer = load_tokenizer(modelfile, variables.model_id)
@@ -383,7 +383,7 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                 if format_spec and complete_text:
                     # Updated to unpack the additional cleaned_json return value
                     success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                    logger.debug(f"Format validation: success={success}, error={error}")
+                    logger.debug("Format validation completed", success=success, error=error)
 
                 # Prepare appropriate response based on request type
                 if is_ollama_request:

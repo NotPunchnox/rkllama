@@ -1,6 +1,5 @@
 """Modelfile CRUD API routes."""
 
-import logging
 import os
 import re
 from typing import Any
@@ -16,9 +15,10 @@ from rkllama.api.schemas.modelfile import (
     validate_property_name,
     validate_property_value,
 )
+from rkllama.logging import get_logger
 from rkllama.server.dependencies import get_debug_mode, get_models_path
 
-logger = logging.getLogger("rkllama.server.modelfile")
+logger = get_logger("rkllama.server.modelfile")
 
 router = APIRouter()
 
@@ -123,7 +123,7 @@ async def get_modelfile(
         raise HTTPException(status_code=404, detail=f"Modelfile not found for model '{model}'")
 
     if debug:
-        logger.debug(f"Reading Modelfile for model: {model}")
+        logger.debug("Reading Modelfile", model=model)
 
     properties = parse_modelfile(modelfile_path)
 
@@ -152,7 +152,7 @@ async def get_modelfile_property(
         raise HTTPException(status_code=404, detail=f"Modelfile not found for model '{model}'")
 
     if debug:
-        logger.debug(f"Reading property '{property_name.value}' for model: {model}")
+        logger.debug("Reading property", model=model, property=property_name.value)
 
     properties = parse_modelfile(modelfile_path)
 
@@ -187,7 +187,7 @@ async def update_modelfile(
         raise HTTPException(status_code=404, detail=f"Modelfile not found for model '{model}'")
 
     if debug:
-        logger.debug(f"Updating Modelfile for model: {model} with properties: {request.properties}")
+        logger.debug("Updating Modelfile", model=model, properties=request.properties)
 
     # Validate all properties before applying any changes
     errors = []
@@ -266,7 +266,7 @@ async def delete_modelfile_property(
         )
 
     if debug:
-        logger.debug(f"Deleting property '{property_name.value}' for model: {model}")
+        logger.debug("Deleting property", model=model, property=property_name.value)
 
     properties = parse_modelfile(modelfile_path)
 

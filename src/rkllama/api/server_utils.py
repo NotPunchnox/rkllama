@@ -1,30 +1,30 @@
-import json
-import time
 import datetime
-import logging
-import os
-import re  # Add import for regex used in JSON extraction
-import rkllama.api.variables as variables
+import json
+import re
+import time
+
+from fastapi.responses import Response, StreamingResponse
 from transformers import AutoTokenizer
-from fastapi.responses import StreamingResponse, Response
-from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
-from .model_utils import get_property_modelfile
+
+import rkllama.api.variables as variables
 import rkllama.config
+from rkllama.logging import get_logger
+
+from .format_utils import (
+    create_format_instruction,
+    get_base64_image_from_pil,
+    get_tool_calls,
+    get_url_image_from_pil,
+    handle_ollama_embedding_response,
+    handle_ollama_response,
+    validate_format_response,
+)
+from .model_utils import get_property_modelfile
 
 # Check for debug mode using the improved method from config
 DEBUG_MODE = rkllama.config.is_debug_mode()
 
-# Set up logging based on debug mode
-logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
-logging.basicConfig(
-    level=logging_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(rkllama.config.get_path("logs"),'rkllama_debug.log')) if DEBUG_MODE else logging.NullHandler()
-    ]
-)
-logger = logging.getLogger("rkllama.server_utils")
+logger = get_logger("rkllama.server_utils")
 
 
 class RequestWrapper:
@@ -190,7 +190,7 @@ class ChatEndpointHandler(EndpointHandler):
 
             else:
                 if DEBUG_MODE:
-                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+                    logger.debug("Multimodal request detected, skipping tokenization")
 
                 for message in messages:
                     if "images" in message:
@@ -502,8 +502,8 @@ class GenerateEndpointHandler(EndpointHandler):
             variables.system = system
 
         if DEBUG_MODE:
-            logger.debug(f"GenerateEndpointHandler: processing request for {model_name}")
-            logger.debug(f"Format spec: {format_spec}")
+            logger.debug("GenerateEndpointHandler processing request", model=model_name)
+            logger.debug("Format spec", format_spec=format_spec)
 
         try:
             variables.global_status = -1
@@ -512,7 +512,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 format_instruction = create_format_instruction(format_spec)
                 if format_instruction and messages:
                     if DEBUG_MODE:
-                        logger.debug(f"Adding format instruction to prompt: {format_instruction}")
+                        logger.debug("Adding format instruction to prompt", instruction=format_instruction)
                     messages[0]["content"] += format_instruction
 
 
@@ -524,7 +524,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 tokenizer, prompt_input, prompt_token_count = cls.prepare_prompt(model_name=model_name, messages=messages, system=system, enable_thinking=enable_thinking, tokenize=False)
             else:
                 if DEBUG_MODE:
-                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+                    logger.debug("Multimodal request detected, skipping tokenization")
                 prompt_input = f"<image>{prompt}"
                 prompt_token_count = 0
 
@@ -685,9 +685,9 @@ class GenerateEndpointHandler(EndpointHandler):
         format_data = None
         if format_spec and complete_text:
             if DEBUG_MODE:
-                logger.debug(f"Validating format for complete text: {complete_text[:300]}...")
+                logger.debug("Validating format for complete text", preview=complete_text[:300])
                 if isinstance(format_spec, str):
-                    logger.debug(f"Format is string type: {format_spec}")
+                    logger.debug("Format is string type", format_spec=format_spec)
 
             success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
 
@@ -705,14 +705,14 @@ class GenerateEndpointHandler(EndpointHandler):
                         test_parsed = json.loads(fixed)
                         success, parsed_data, error, cleaned_json = True, test_parsed, None, fixed
                         if DEBUG_MODE:
-                            logger.debug(f"Extracted valid JSON using additional methods: {cleaned_json}")
+                            logger.debug("Extracted valid JSON using additional methods", cleaned_json=cleaned_json)
                         break
                     except:
                         continue
 
             elif not success and isinstance(format_spec, dict) and format_spec.get('type') == 'object':
                 if DEBUG_MODE:
-                    logger.debug(f"Initial validation failed: {error}. Trying to fix JSON...")
+                    logger.debug("Initial validation failed, trying to fix JSON", error=error)
 
                 json_pattern = r'\{[\s\S]*?\}'
                 matches = re.findall(json_pattern, complete_text)
@@ -730,17 +730,17 @@ class GenerateEndpointHandler(EndpointHandler):
                             success, parsed_data, error, cleaned_json = validate_format_response(fixed, format_spec)
                             if success:
                                 if DEBUG_MODE:
-                                    logger.debug(f"Fixed JSON validation succeeded: {cleaned_json}")
+                                    logger.debug("Fixed JSON validation succeeded", cleaned_json=cleaned_json)
                                 break
                     except:
                         continue
 
             if DEBUG_MODE:
-                logger.debug(f"Format validation result: success={success}, error={error}")
+                logger.debug("Format validation result", success=success, error=error)
                 if cleaned_json and success:
-                    logger.debug(f"Cleaned JSON: {cleaned_json}")
+                    logger.debug("Cleaned JSON", cleaned_json=cleaned_json)
                 elif not success:
-                    logger.debug(f"JSON validation failed, response will not include parsed data")
+                    logger.debug("JSON validation failed, response will not include parsed data")
 
             if success and parsed_data:
                 if isinstance(format_spec, str):
@@ -757,7 +757,7 @@ class GenerateEndpointHandler(EndpointHandler):
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
 
         if DEBUG_MODE and format_data:
-            logger.debug(f"Created formatted response with JSON content")
+            logger.debug("Created formatted response with JSON content")
 
         return response, 200
 
@@ -784,7 +784,7 @@ class EmbedEndpointHandler(EndpointHandler):
         """Process a generate request with proper format handling"""
 
         if DEBUG_MODE:
-            logger.debug(f"EmbedEndpointHandler: processing request for {model_name}")
+            logger.debug("EmbedEndpointHandler processing request", model=model_name)
 
         variables.global_status = -1
 
@@ -867,7 +867,7 @@ class GenerateImageEndpointHandler(EndpointHandler):
         """Process a generate request with proper format handling"""
 
         if DEBUG_MODE:
-            logger.debug(f"GenerateImageEndpointHandler: processing request for {model_name}")
+            logger.debug("GenerateImageEndpointHandler processing request", model=model_name)
 
         # Check if streaming or not
         if not stream:
@@ -948,7 +948,7 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
                 yield data[i:i + chunk_size]
 
         if DEBUG_MODE:
-            logger.debug(f"GenerateSpeechEndpointHandler: processing request for {model_name}")
+            logger.debug("GenerateSpeechEndpointHandler processing request", model=model_name)
 
         # Check if streaming or not
         if stream_format == "sse":
@@ -1017,7 +1017,7 @@ class GenerateTranscriptionsEndpointHandler(EndpointHandler):
         """Process a generate request with proper format handling"""
 
         if DEBUG_MODE:
-            logger.debug(f"GenerateTranscriptionsEndpointHandler: processing request for {model_name}")
+            logger.debug("GenerateTranscriptionsEndpointHandler processing request", model=model_name)
 
         # Check if streaming or not
         if stream:

@@ -1,7 +1,6 @@
 """Ollama API compatible routes."""
 
 import datetime
-import logging
 import os
 import re
 from typing import Any
@@ -37,10 +36,11 @@ from rkllama.api.schemas.ollama import (
     VersionResponse,
 )
 from rkllama.api.worker import WorkerManager
+from rkllama.logging import get_logger
 from rkllama.server.dependencies import get_debug_mode, get_models_path, get_worker_manager
 from rkllama.server.routers.native import load_model, unload_model
 
-logger = logging.getLogger("rkllama.server.ollama")
+logger = get_logger("rkllama.server.ollama")
 
 router = APIRouter()
 
@@ -163,7 +163,7 @@ async def show_model_info(
     model_name = strip_namespace(model_name)
 
     if debug:
-        logger.debug(f"API show request for model: {model_name}")
+        logger.debug("API show request", model=model_name)
 
     model_dir = os.path.join(models_path, model_name)
     if not os.path.exists(model_dir):
@@ -316,7 +316,7 @@ async def delete_model_ollama(
 
     if wm.exists_model_loaded(model_name):
         if debug:
-            logger.debug(f"Unloading model '{model_name}' before deletion")
+            logger.debug("Unloading model before deletion", model=model_name)
         unload_model(model_name, wm)
 
     try:
@@ -325,7 +325,7 @@ async def delete_model_ollama(
         shutil.rmtree(model_path)
         return DeleteResponse(status="success", message="The model has been successfully deleted!")
     except Exception as e:
-        logger.error(f"Failed to delete model '{model_name}': {e}")
+        logger.error("Failed to delete model", model=model_name, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {e}")
 
 
@@ -394,7 +394,7 @@ async def generate_ollama(
     model_name = strip_namespace(request.model)
 
     if debug:
-        logger.debug(f"Generate request for model: {model_name}")
+        logger.debug("Generate request", model=model_name)
 
     # Get thinking setting from modelfile if not provided
     enable_thinking = request.think
@@ -463,7 +463,7 @@ async def chat_ollama(
     model_name = strip_namespace(request.model)
 
     if debug:
-        logger.debug(f"Chat request for model: {model_name}")
+        logger.debug("Chat request", model=model_name)
 
     # Extract system message from messages
     system = request.system or ""

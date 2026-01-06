@@ -1,5 +1,4 @@
 import json
-import logging
 from typing import Any, Dict, Optional, Tuple, Union, List
 import re
 import uuid
@@ -13,6 +12,7 @@ from PIL import Image
 import io
 
 import rkllama.config
+from rkllama.logging import get_logger
 
 try:
     from pydantic import BaseModel, ValidationError, create_model
@@ -30,7 +30,7 @@ except ImportError:
     def create_model(*args, **kwargs):
         return None
 
-logger = logging.getLogger("rkllama.format_utils")
+logger = get_logger("rkllama.format_utils")
 
 def get_pydantic_type(json_type_name: str):
     """Convert JSON schema type to Python/Pydantic type"""
@@ -82,7 +82,7 @@ def create_pydantic_model(format_spec: Dict) -> Optional[type]:
         model = create_model(model_name, **fields)
         return model
     except Exception as e:
-        logger.error(f"Error creating Pydantic model from schema: {str(e)}")
+        logger.error("Error creating Pydantic model from schema", error=str(e))
         return None
 
 def create_format_instruction(format_spec):
@@ -853,7 +853,7 @@ def get_tool_calls_generic(response):
 }
     """
 
-    logger.debug(f"Searching tools with generic method: get_tool_calls_generic")
+    logger.debug("Searching tools with generic method", method="get_tool_calls_generic")
 
     # Get all the json objects
     json_tool_list = list(extract_json_tools_from_text(response))
@@ -879,7 +879,7 @@ def get_tool_calls_standard(response):
         Only work if the chat template of the LLM uses <tool_call></tool_call> tags (Like Qwen models)
     """
 
-    logger.debug(f"Searching tools with standard method: get_tool_calls_standard")
+    logger.debug("Searching tools with standard method", method="get_tool_calls_standard")
 
     tool_calls = []
     for tools in re.findall("<tool_call>(.*?)</tool_call>", response, re.DOTALL):

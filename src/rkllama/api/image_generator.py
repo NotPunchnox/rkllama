@@ -65,10 +65,8 @@ else:
     XLA_AVAILABLE = False
 
 
-import logging
-logging.basicConfig()
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+from rkllama.logging import get_logger
+logger = get_logger("rkllama.image_generator")
 
 from rknnlite.api import RKNNLite
 
@@ -206,7 +204,7 @@ class RKNN2Model:
 
     def load_model(self):
 
-        logger.info(f"Loading model: {self.model_dir}")
+        logger.info("Loading model", model_dir=self.model_dir)
 
         # Take the init time
         start = time.time()
@@ -218,7 +216,7 @@ class RKNN2Model:
         # Take the finish time
         load_time = time.time() - start
 
-        logger.info(f"Load Done. Took {load_time:.1f} seconds.")
+        logger.info("Load done", load_time_seconds=round(load_time, 1))
 
         # Set the loaded flag
         self.loaded = True
@@ -226,7 +224,7 @@ class RKNN2Model:
 
     def unload_model(self):
 
-        logger.info(f"Unloading model: {self.model_dir}")
+        logger.info("Unloading model", model_dir=self.model_dir)
 
         # Take the init time
         start = time.time()
@@ -237,7 +235,7 @@ class RKNN2Model:
         # Take the finish time
         load_time = time.time() - start
 
-        logger.info(f"Unload Done. Took {load_time:.1f} seconds.")
+        logger.info("Unload done", time_seconds=round(load_time, 1))
 
         # Set the loaded flag
         self.loaded = False
@@ -849,7 +847,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
             clip_skip=self.clip_skip,
         )
         encode_prompt_time = time.time() - start_time
-        logger.debug(f"Prompt encoding time: {encode_prompt_time:.2f}s")
+        logger.debug("Prompt encoding complete", time_seconds=round(encode_prompt_time, 2))
 
         prompt_embeds = prompt_embeds_np[0]
         text_embeds = text_embeds_np[0] if text_embeds_np else None
@@ -946,7 +944,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                         callback(step_idx, t, latents)
 
         inference_time = time.time() - inference_start
-        logger.debug(f"Inference time: {inference_time:.2f}s")
+        logger.debug("Inference complete", time_seconds=round(inference_time, 2))
 
         # Unload the UNET model for memory saving
         self.unet.unload_model()
@@ -1019,7 +1017,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
                 f"the output_type {output_type} is outdated and has been set to `np`. Please make sure to set it to one of these instead: "
                 "`pil`, `np`, `pt`, `latent`"
             )
-            logger.warning(deprecation_message)
+            logger.warning("Deprecated output type", message=deprecation_message)
             output_type = "np"
 
         if output_type == "latent":
@@ -1040,7 +1038,7 @@ class RKNNLatentConsistencyModelPipeline(DiffusionPipeline):
 
 
 def generate_image(model_dir, prompt, size, seed, num_inference_steps, guidance_scale):
-    logger.info(f"Setting random seed to {seed}")
+    logger.info("Setting random seed", seed=seed)
 
     # load scheduler from /scheduler/scheduler_config.json
     scheduler_config_path = os.path.join(model_dir, "scheduler/scheduler_config.json")
@@ -1048,10 +1046,10 @@ def generate_image(model_dir, prompt, size, seed, num_inference_steps, guidance_
         scheduler_config = json.load(f)
     user_specified_scheduler = LCMScheduler.from_config(scheduler_config)
 
-    logger.debug("user_specified_scheduler", user_specified_scheduler)
+    logger.debug("Scheduler loaded", scheduler=str(user_specified_scheduler))
 
     if os.path.exists(os.path.join(model_dir, "text_encoder_2")):
-        logger.info(f"Running LCM SSD1B")
+        logger.info("Running LCM SSD1B")
         pipe = RKNNLatentConsistencyModelPipeline(
 	        scheduler=user_specified_scheduler,
             vae_decoder=RKNN2Model(os.path.join(model_dir, "vae_decoder")),
@@ -1062,7 +1060,7 @@ def generate_image(model_dir, prompt, size, seed, num_inference_steps, guidance_
 	        tokenizer_2=CLIPTokenizer.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", subfolder="tokenizer_2"),
         )
     else:
-        logger.info(f"Running LCM SD 1.5")
+        logger.info("Running LCM SD 1.5")
         pipe = RKNNLatentConsistencyModelPipeline(
             scheduler=user_specified_scheduler,
             vae_decoder=RKNN2Model(os.path.join(model_dir, "vae_decoder")),
@@ -1073,7 +1071,7 @@ def generate_image(model_dir, prompt, size, seed, num_inference_steps, guidance_
             tokenizer_2=None,
         )
 
-    logger.info("Beginning image generation.")
+    logger.info("Beginning image generation")
     image = pipe(
         prompt=prompt,
         height=int(size.split("x")[0]),

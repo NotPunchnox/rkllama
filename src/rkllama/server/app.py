@@ -1,7 +1,6 @@
 """FastAPI application for RKLlama server."""
 
 import argparse
-import logging
 import os
 import resource
 import subprocess
@@ -14,22 +13,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import rkllama.config
 from rkllama.api.worker import WorkerManager
+from rkllama.logging import get_logger, setup_logging
 
-# Set up logging
+# Set up structured logging
 DEBUG_MODE = rkllama.config.is_debug_mode()
-logs_dir = rkllama.config.get_path("logs")
-os.makedirs(logs_dir, exist_ok=True)
-
-logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
-logging.basicConfig(
-    level=logging_level,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(logs_dir, "rkllama_server.log")),
-    ],
+setup_logging(
+    json_logs=not DEBUG_MODE,  # JSON in production, console in debug
+    log_level="DEBUG" if DEBUG_MODE else "INFO",
 )
-logger = logging.getLogger("rkllama.server")
+logger = get_logger("rkllama.server")
 
 
 def print_color(message: str, color: str) -> None:
@@ -50,7 +42,7 @@ def print_color(message: str, color: str) -> None:
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown."""
     # Startup
-    logger.info("Starting RKLlama server...")
+    logger.info("Starting RKLlama server")
     app.state.worker_manager = WorkerManager()
 
     # IMPORTANT: Share the same WorkerManager instance with server_utils
@@ -73,7 +65,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down RKLlama server...")
+    logger.info("Shutting down RKLlama server")
     if hasattr(app.state, "worker_manager"):
         app.state.worker_manager.stop_all()
     logger.info("Server shutdown complete")
@@ -139,7 +131,7 @@ def main():
     global DEBUG_MODE
     DEBUG_MODE = rkllama.config.is_debug_mode()
     if DEBUG_MODE:
-        logger.setLevel(logging.DEBUG)
+        setup_logging(json_logs=False, log_level="DEBUG")
         print_color("Debug mode enabled", "yellow")
         rkllama.config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"

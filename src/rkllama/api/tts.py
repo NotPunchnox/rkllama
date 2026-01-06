@@ -1,6 +1,5 @@
 import json
 import os
-import logging
 from pathlib import Path
 from typing import Any, Optional, Tuple, Union, Sequence
 import wave
@@ -15,13 +14,11 @@ from piper import PiperVoice, SynthesisConfig, PiperConfig
 from dataclasses import dataclass
 
 from rknnlite.api import RKNNLite
+from rkllama.logging import get_logger
 
-_LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.INFO)
+_LOGGER = get_logger("rkllama.tts")
 
 _DEFAULT_SYNTHESIS_CONFIG = SynthesisConfig()
-
-_LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class PhonemeAlignment:
@@ -72,7 +69,7 @@ class PiperVoiceRKNN(PiperVoice):
 
         if config_path is None:
             config_path = f"{model_path}.json"
-            _LOGGER.debug("Guessing voice config path: %s", config_path)
+            _LOGGER.debug("Guessing voice config path", config_path=config_path)
 
         providers: list[Union[str, tuple[str, dict[str, Any]]]]
         if use_cuda:

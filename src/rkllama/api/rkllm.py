@@ -1,19 +1,19 @@
 import ctypes
-import logging
-import multiprocessing
 
 import numpy as np
 
 import rkllama.config
+from rkllama.logging import get_logger
+
 from .classes import *
 
-logger = logging.getLogger("rkllama.rkllm")
+logger = get_logger("rkllama.rkllm")
 
 # Define the RKLLM class, which includes initialization, inference, and release operations for the RKLLM model in the dynamic library
 class RKLLM(object):
     def __init__(self, callback, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 1):
 
-        logger.debug(f"Initializing RKLLM model from {model_path} with options: {options}")
+        logger.debug("Initializing RKLLM model", model_path=model_path, options=options)
 
         # Custom Attributes
         self.format_schema = None
@@ -159,7 +159,7 @@ class RKLLM(object):
         # Set role and enable_thinking for the input
         rkllm_input.role = role.encode('utf-8') if role is not None else b"user"
         rkllm_input.enable_thinking = ctypes.c_bool(enable_thinking if enable_thinking is not None else False)
-        logger.info(f"RKLLMInput: role={role}, enable_thinking={enable_thinking}, input_type={model_input_type}")
+        logger.info("RKLLMInput prepared", role=role, enable_thinking=enable_thinking, input_type=model_input_type)
 
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
@@ -169,7 +169,7 @@ class RKLLM(object):
         if model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
             # String prompt mode (recommended by official Rockchip example)
             prompt_str = input if isinstance(input, str) else str(input)
-            logger.info(f"PROMPT MODE - Input string ({len(prompt_str)} chars): {prompt_str[:500]}...")
+            logger.info("PROMPT MODE - Input string", length=len(prompt_str), preview=prompt_str[:500])
             # Keep reference to encoded bytes to prevent GC
             prompt_bytes = prompt_str.encode('utf-8')
             prompt_cstr = ctypes.c_char_p(prompt_bytes)
@@ -197,7 +197,7 @@ class RKLLM(object):
 
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_MULTIMODAL:
             prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images = input
-            logger.debug(f"Running multimodal inference with {num_images} images, each of size {image_width}x{image_height}, and {n_image_tokens} image tokens.")
+            logger.debug("Running multimodal inference", num_images=num_images, image_width=image_width, image_height=image_height, n_image_tokens=n_image_tokens)
 
             # Prompt
             rkllm_input.input_data.multimodal_input.prompt = prompt_input.encode("utf-8")
