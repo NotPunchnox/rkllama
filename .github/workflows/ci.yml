@@ -94,6 +94,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get PR head SHA
+        if: github.event_name == 'pull_request'
+        run: echo "PR_HEAD_SHA=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_ENV
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -104,8 +108,10 @@ jobs:
             type=ref,event=branch
             # PR number
             type=ref,event=pr
-            # Short SHA
+            # Short SHA (merge commit for PRs)
             type=sha,prefix=
+            # PR branch HEAD SHA (actual commit, not merge commit)
+            type=raw,value=head-${{ env.PR_HEAD_SHA }},enable=${{ github.event_name == 'pull_request' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6

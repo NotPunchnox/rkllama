@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rkllama
+  namespace: rkllama
+  annotations:
+    # Pi-hole DNS registration
+    pihole.io/register: "true"
+    # TLS certificate
+    cert-manager.io/cluster-issuer: "ca-issuer"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Timeout settings for model loading (can take 60-300s)
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - rkllama.home
+      secretName: rkllm-tls
+  rules:
+    - host: rkllama.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rkllama
+                port:
+                  number: 8080
