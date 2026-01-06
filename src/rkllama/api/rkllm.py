@@ -163,11 +163,11 @@ class RKLLM(object):
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
 
-        # CHeck the model type to construct parameters
+        # Check the model type to construct parameters
         if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
-            token_input = input
-            if token_input[-1] != 2:
-                token_input.append(2)
+            token_input = list(input)  # Copy to avoid mutating original
+            # Note: Do NOT append hardcoded EOS token - the tokenizer already handles this
+            # via add_generation_prompt=True in apply_chat_template
             token_array = (ctypes.c_int * len(token_input))(*token_input)
 
             rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))
