@@ -10,4 +10,4 @@ resources:
 
 images:
   - name: ghcr.io/rsjames-ttrpg/rkllama
-    newTag: 1ddfb1f
+    newTag: 1.2.3-1
