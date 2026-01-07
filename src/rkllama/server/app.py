@@ -182,7 +182,7 @@ def create_app() -> FastAPI:
             access_logger.info(
                 f"Request started: {request.method} {request.url.path}",
                 http={"method": request.method, "path": request.url.path, "request_id": request_id},
-                event="request_started",
+                event_type="request_started",
             )
 
         start_time = time.perf_counter_ns()
