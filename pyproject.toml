@@ -240,3 +240,8 @@ replace = '__version__ = "{new_version}"'
 filename = "k8s-example/kustomization.yml"
 search = "newTag: {current_version}"
 replace = "newTag: {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "README.md"
+search = "### [Version: {current_version}](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v{current_version})"
+replace = "### [Version: {new_version}](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v{new_version})"
