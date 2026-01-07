@@ -1,6 +1,6 @@
 [project]
 name = "rkllama"
-version = "1.2.3-1"
+version = "1.2.3-2"
 authors = [
     { name="NotPunchnox", email="punchnoxpro@gmail.com" },
     { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
@@ -205,7 +205,7 @@ exclude_lines = [
 #   bump-my-version bump lib_major  # 1.2.3-1 → 2.0.0-0 (sync with toolkit major)
 
 [tool.bumpversion]
-current_version = "1.2.3-1"
+current_version = "1.2.3-2"
 parse = "(?P<lib_major>\\d+)\\.(?P<lib_minor>\\d+)\\.(?P<lib_patch>\\d+)-(?P<release>\\d+)"
 serialize = ["{lib_major}.{lib_minor}.{lib_patch}-{release}"]
 commit = true
