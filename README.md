@@ -72,6 +72,9 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
 - **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN.
 - **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC running the model with RKNN.
+- **OpenTelemetry Observability** - Opt-in distributed tracing and metrics with OTLP export to Grafana Alloy, Jaeger, or any OTLP-compatible backend.
+- **Health Check Endpoints** - Kubernetes-ready `/health` (liveness) and `/health/ready` (readiness) probes that remain responsive during inference.
+- **Structured Access Logging** - JSON-formatted request logs with correlation IDs for production debugging and monitoring.
 
 
 ## Documentation
@@ -451,9 +454,29 @@ See the [Configuration Documentation](documentation/configuration.md) for comple
 
 ---
 
-# New-Version
+# Changelog
 
-**Ollama API Compatibility**: RKLLAMA now implements key Ollama API endpoints, with primary focus on `/api/chat` and `/api/generate`, allowing integration with many Ollama clients. Additional endpoints are in various stages of implementation.
+## 1.2.3-2
+
+**OpenTelemetry Observability**: Opt-in distributed tracing and metrics collection. Enable by setting `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to export traces and metrics to Grafana Alloy, Jaeger, or any OTLP-compatible backend.
+
+**Health Check Endpoints**: Added Kubernetes-ready health probes:
+- `/health` - Liveness probe (is the server running?)
+- `/health/ready` - Readiness probe (is the server ready to accept requests?)
+- Health probes remain responsive even during long-running inference requests
+
+**Structured Access Logging**: Production-ready JSON-formatted request logs with:
+- Correlation IDs for request tracing (`X-Request-ID` header)
+- Request timing metrics (`X-Process-Time` header)
+- Automatic health check log filtering to reduce noise
+
+**Improved Request Handling**: Inference endpoints now run in thread pools, preventing blocking of the async event loop during long inference operations.
+
+---
+
+## Previous Releases
+
+**Ollama API Compatibility**: RKLLAMA implements key Ollama API endpoints, with primary focus on `/api/chat` and `/api/generate`, allowing integration with many Ollama clients.
 
 **Enhanced Model Naming**: Simplified model naming convention allows using models with familiar names like "qwen2.5:3b" or "llama3-instruct:8b" while handling the full file paths internally.
 
