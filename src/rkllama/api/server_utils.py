@@ -213,7 +213,7 @@ class ChatEndpointHandler(EndpointHandler):
                 # Return Ollama streaming response
                 return ollama_chunk
             else:
-                ollama_response, code =  cls.handle_complete(model_name, prompt_input,
+                ollama_response = cls.handle_complete(model_name, prompt_input,
                                          prompt_token_count, format_spec, tools, enable_thinking,images)
 
                 if is_openai_request:
@@ -221,7 +221,7 @@ class ChatEndpointHandler(EndpointHandler):
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=True)
 
                 # Return Ollama response
-                return ollama_response, code
+                return ollama_response
 
         finally:
             variables.system = original_system
@@ -436,7 +436,7 @@ class ChatEndpointHandler(EndpointHandler):
            }
 
         response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return response, 200
+        return response
 
 
 class GenerateEndpointHandler(EndpointHandler):
@@ -543,7 +543,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 # Return Ollama streaming response
                 return ollama_chunk
             else:
-                ollama_response, code =  cls.handle_complete(model_name, prompt_input,
+                ollama_response = cls.handle_complete(model_name, prompt_input,
                                          prompt_token_count, format_spec, enable_thinking, images)
 
                 if is_openai_request:
@@ -551,7 +551,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=False)
 
                 # Return Ollama response
-                return ollama_response, code
+                return ollama_response
 
         finally:
             variables.system = original_system
@@ -759,8 +759,7 @@ class GenerateEndpointHandler(EndpointHandler):
         if DEBUG_MODE and format_data:
             logger.debug("Created formatted response with JSON content")
 
-        return response, 200
-
+        return response
 
 
 class EmbedEndpointHandler(EndpointHandler):
@@ -792,14 +791,14 @@ class EmbedEndpointHandler(EndpointHandler):
         _, prompt_tokens, prompt_token_count = cls.prepare_prompt(model_name=model_name, messages=input_text)
 
         # Ollama request handling
-        ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, prompt_token_count)
+        ollama_response = cls.handle_complete(model_name, prompt_tokens, prompt_token_count)
 
         if is_openai_request:
             # Convert Ollama response to OpenAI format
             ollama_response = handle_ollama_embedding_response(ollama_response)
 
         # Return Ollama response
-        return ollama_response, code
+        return ollama_response
 
 
     @classmethod
@@ -872,10 +871,10 @@ class GenerateImageEndpointHandler(EndpointHandler):
         # Check if streaming or not
         if not stream:
             # Ollama request handling
-            ollama_response, code =  cls.handle_complete(model_name, prompt, size, response_format, output_format, num_images, seed, num_inference_steps, guidance_scale)
+            ollama_response = cls.handle_complete(model_name, prompt, size, response_format, output_format, num_images, seed, num_inference_steps, guidance_scale)
 
             # Return Ollama response
-            return ollama_response, code
+            return ollama_response
         else:
             # Streaming not supported for image generation
             return Response(content="Streaming not supported yet for image generation", status_code=400)

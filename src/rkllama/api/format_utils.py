@@ -722,8 +722,9 @@ def handle_ollama_response(response, stream=False, is_chat=True):
     - an iterable of SSE chunks (streaming).
 
     Args:
-        response: `requests.Response` object from Ollama.
+        response: dict or StreamingResponse from Ollama endpoint handler.
         stream (bool): Whether streaming was requested.
+        is_chat (bool): Whether this is a chat or generate endpoint.
 
     Returns:
         dict | generator[str]: OpenAI-compatible response (full or streaming).
@@ -746,8 +747,8 @@ def handle_ollama_response(response, stream=False, is_chat=True):
 
         return stream_chunks()
     else:
-        # Full JSON response
-        ollama_response = json.loads(response.get_data().decode("utf-8"))
+        # Full JSON response - response is now a dict directly
+        ollama_response = response
 
         # Check if chat or generate response
         if is_chat:
@@ -762,15 +763,13 @@ def handle_ollama_embedding_response(response):
     Handles an Ollama response and converts it into a single OpenAI-compatible JSON object
 
     Args:
-        response: `requests.Response` object from Ollama.
+        response: dict from Ollama endpoint handler.
 
     Returns:
         dict: OpenAI-compatible embedding response.
     """
-    # Full JSON response
-    ollama_response = json.loads(response.get_data().decode("utf-8"))
-
-    return ollama_embedding_to_openai_v1_embeddingns(ollama_response)
+    # Response is now a dict directly
+    return ollama_embedding_to_openai_v1_embeddingns(response)
 
 
 def strtobool (val):
