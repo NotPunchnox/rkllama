@@ -5,18 +5,23 @@ import os
 import resource
 import subprocess
 import sys
+import time
 from contextlib import asynccontextmanager
 from importlib import resources as importlib_resources
 
-from fastapi import FastAPI
+import structlog
+from asgi_correlation_id import CorrelationIdMiddleware
+from asgi_correlation_id.context import correlation_id
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.protocols.utils import get_path_with_query_string
 
 import rkllama.config
 from rkllama.api.worker import WorkerManager
 from rkllama.logging import get_logger, setup_logging
 from rkllama.telemetry import (
-    setup_telemetry,
     instrument_fastapi,
+    setup_telemetry,
     shutdown_telemetry,
 )
 
@@ -27,7 +32,7 @@ setup_logging(
     log_level="DEBUG" if DEBUG_MODE else "INFO",
 )
 logger = get_logger("rkllama.server")
-
+access_logger = structlog.stdlib.get_logger("api.access")
 # Telemetry providers (set during startup)
 _tracer_provider = None
 _meter_provider = None
@@ -163,6 +168,57 @@ def create_app() -> FastAPI:
 
     # Instrument FastAPI with OpenTelemetry
     instrument_fastapi(app)
+
+    # Add logging middleware
+    @app.middleware("http")
+    async def logging_middleware(request: Request, call_next) -> Response:
+        structlog.contextvars.clear_contextvars()
+        # These context vars will be added to all log entries emitted during the request
+        request_id = correlation_id.get()
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+
+        start_time = time.perf_counter_ns()
+        response = Response(status_code=500)
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            structlog.stdlib.get_logger("api.error").exception(
+                "Uncaught exception",
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                request_path=str(request.url.path),
+                request_method=request.method,
+            )
+            raise
+        finally:
+            process_time_ns = time.perf_counter_ns() - start_time
+            process_time_ms = process_time_ns / 1_000_000
+            status_code = response.status_code
+            url = get_path_with_query_string(request.scope)  # type: ignore[arg-type]
+            client_host = request.client.host if request.client else "unknown"
+            client_port = request.client.port if request.client else 0
+            http_method = request.method
+            http_version = request.scope["http_version"]
+
+            access_logger.info(
+                f'{client_host}:{client_port} - "{http_method} {url} HTTP/{http_version}" {status_code}',
+                http={
+                    "url": str(request.url),
+                    "status_code": status_code,
+                    "method": http_method,
+                    "request_id": request_id,
+                    "version": http_version,
+                },
+                network={"client": {"ip": client_host, "port": client_port}},
+                duration_ms=process_time_ms,
+            )
+
+            response.headers["X-Request-ID"] = request_id or ""
+            response.headers["X-Process-Time"] = str(process_time_ms)
+        return response
+
+    # Add correlation ID middleware (must be after logging middleware)
+    app.add_middleware(CorrelationIdMiddleware)
 
     return app
 
