@@ -7,19 +7,11 @@ to RKLLM format for Rockchip NPU deployment.
 
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
 from rich.table import Table
 
 from . import __version__
@@ -104,12 +96,12 @@ def convert(
         typer.Option("--device", help="Compute device: cuda, rocm, cpu, or auto"),
     ] = CliDeviceType.auto,
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--token", "-t", help="HuggingFace token for private models", envvar="HF_TOKEN"),
     ] = None,
     # Modelfile options
     system_prompt: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--system", "-s", help="System prompt for the model"),
     ] = None,
     temperature: Annotated[
@@ -189,53 +181,54 @@ def convert(
         num_npu_core=num_npu_core,
     )
 
-    # Run conversion with progress
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("[cyan]Converting model...", total=4)
+    # Run conversion
+    import time
+    start_time = time.time()
 
-        try:
-            converter = HuggingFaceToRKLLMConverter(config)
+    try:
+        converter = HuggingFaceToRKLLMConverter(config)
 
-            # Create output directory
-            Path(config.output_path).mkdir(parents=True, exist_ok=True)
+        # Create output directory
+        Path(config.output_path).mkdir(parents=True, exist_ok=True)
 
-            progress.update(task, description="[cyan]Downloading/preparing model...")
+        # Step 1: Download/prepare model
+        console.print("[bold]Phase 1: Model Preparation[/]\n")
+        with console.status("[cyan]Downloading/preparing model...[/]", spinner="dots"):
             converter._prepare_model()
-            progress.advance(task)
+        console.print("[green]✓[/] Model prepared\n")
 
-            progress.update(task, description="[cyan]Converting to RKLLM (this may take a while)...")
-            converter._generate_rkllm_file()
-            progress.advance(task)
+        # Step 2: Convert to RKLLM (this has its own detailed progress)
+        console.print("[bold]Phase 2: RKLLM Conversion[/]")
+        console.print("[dim]This step may take several minutes depending on model size...[/]\n")
+        converter._generate_rkllm_file()
 
-            progress.update(task, description="[cyan]Creating Modelfile...")
-            # Use our enhanced Modelfile generation
-            modelfile_config = ModelfileConfig(
-                model_file=f"{model_name}.rkllm",
-                huggingface_path=model_id,
-                system=system_prompt or "You are a helpful AI assistant.",
-                temperature=temperature,
-                num_ctx=max_context,
-                top_k=top_k,
-                top_p=top_p,
-                enable_thinking=enable_thinking,
-            )
-            save_modelfile(modelfile_config, config.output_path)
-            progress.advance(task)
+        # Step 3: Create Modelfile
+        console.print("\n[bold]Phase 3: Finalization[/]\n")
+        console.print("[cyan]Creating Modelfile...[/]")
+        modelfile_config = ModelfileConfig(
+            model_file=f"{model_name}.rkllm",
+            huggingface_path=model_id,
+            system=system_prompt or "You are a helpful AI assistant.",
+            temperature=temperature,
+            num_ctx=max_context,
+            top_k=top_k,
+            top_p=top_p,
+            enable_thinking=enable_thinking,
+        )
+        save_modelfile(modelfile_config, config.output_path)
+        console.print("[green]✓[/] Modelfile created")
 
-            progress.update(task, description="[cyan]Saving metadata...")
-            converter._save_metadata(config.output_path)
-            progress.advance(task)
+        # Step 4: Save metadata
+        console.print("[cyan]Saving metadata...[/]")
+        converter._save_metadata(config.output_path)
+        console.print("[green]✓[/] Metadata saved")
 
-        except Exception as e:
-            console.print(f"\n[red bold]Error:[/] {e}")
-            raise typer.Exit(1)
+        total_time = time.time() - start_time
+        console.print(f"\n[dim]Total time: {total_time:.1f}s[/]")
+
+    except Exception as e:
+        console.print(f"\n[red bold]Error:[/] {e}")
+        raise typer.Exit(1) from None
 
     # Success message
     console.print()
@@ -261,7 +254,7 @@ def info(
         typer.Argument(help="HuggingFace model ID to inspect"),
     ],
     token: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--token", "-t", help="HuggingFace token", envvar="HF_TOKEN"),
     ] = None,
 ) -> None:
@@ -303,7 +296,7 @@ def info(
 
     except Exception as e:
         console.print(f"[red]Error fetching model info:[/] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @app.command(name="list-quants")
@@ -378,7 +371,7 @@ def list_devices() -> None:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--version", "-v", callback=version_callback, is_eager=True, help="Show version"),
     ] = None,
 ) -> None:

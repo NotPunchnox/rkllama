@@ -12,7 +12,7 @@ Uses the official [rkllm-toolkit](https://github.com/airockchip/rknn-llm) from R
 - NPU core configuration
 - Automatic Modelfile generation
 - Rich CLI with progress display
-- CUDA, ROCm, and CPU support
+- CUDA and CPU support (ROCm untested)
 
 ## Prerequisites
 
@@ -25,28 +25,13 @@ Uses the official [rkllm-toolkit](https://github.com/airockchip/rknn-llm) from R
 ```bash
 cd converter
 
-# WORKAROUND
-# 1. Create venv and install torch first
-uv venv
-uv pip install torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu
-
-# 2. Install rkllm-toolkit deps manually (skip auto-gptq)
-uv pip install transformers accelerate datasets tiktoken sentencepiece colorlog gekko
-
-# 3. Install the local wheel
-uv pip install lib/rkllm_toolkit-1.2.3-cp312-cp312-linux_x86_64.whl --no-deps
-
-# 4. Install the converter package
-uv pip install -e .
-
-
 # CPU (works on any system)
 uv sync --extra cpu --index pytorch-cpu
 
 # NVIDIA GPU (CUDA 12.1)
 uv sync --extra cuda --index pytorch-cu121
 
-# AMD GPU (ROCm 6.2)
+# AMD GPU (ROCm 6.2) - untested, may work
 uv sync --extra rocm --index pytorch-rocm62
 ```
 

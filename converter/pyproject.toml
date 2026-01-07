@@ -49,6 +49,12 @@ dev = [
     "ruff>=0.8.0",
 ]
 
+# Exclude auto-gptq (requires CUDA to build, not actually used by rkllm)
+[tool.uv]
+override-dependencies = [
+    "auto-gptq ; sys_platform == 'never'",
+]
+
 # RKLLM toolkit from local wheels (x86_64 Linux only)
 [tool.uv.sources]
 rkllm-toolkit = [

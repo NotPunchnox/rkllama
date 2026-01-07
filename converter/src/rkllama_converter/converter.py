@@ -9,7 +9,6 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 import torch
 from huggingface_hub import snapshot_download
@@ -95,7 +94,7 @@ class HuggingFaceToRKLLMConverter:
             logger.info(f"Using local model at {self._model_path}")
         else:
             # Download from HuggingFace
-            logger.info(f"Downloading model from HuggingFace...")
+            logger.info("Downloading model from HuggingFace...")
             self._model_path = snapshot_download(
                 self.config.model_id,
                 token=self.config.token,
@@ -108,7 +107,7 @@ class HuggingFaceToRKLLMConverter:
 
         model_name = self.config.model_name
         output_file = os.path.join(self.config.output_path, f"{model_name}.rkllm")
-
+        assert self._model_path
         # Create RKLLM config
         rkllm_config = RKLLMConfig(
             model_path=self._model_path,

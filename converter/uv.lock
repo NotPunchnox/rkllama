@@ -10,6 +10,9 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'linux'",
 ]
 
+[manifest]
+overrides = [{ name = "auto-gptq", marker = "sys_platform == 'never'" }]
+
 [[package]]
 name = "accelerate"
 version = "1.5.2"
@@ -183,29 +186,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6b/5c/685e6633917e101e5dcb62b9dd76946cbb57c26e133bae9e0cd36033c0a9/attrs-25.4.0.tar.gz", hash = "sha256:16d5969b87f0859ef33a48b35d55ac1be6e42ae49d5e853b597db70c35c57e11", size = 934251, upload-time = "2025-10-06T13:54:44.725Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/2a/7cc015f5b9f5db42b7d48157e23356022889fc354a2813c15934b7cb5c0e/attrs-25.4.0-py3-none-any.whl", hash = "sha256:adcf7e2a1fb3b36ac48d97835bb6d8ade15b8dcce26aba8bf1d14847b57a3373", size = 67615, upload-time = "2025-10-06T13:54:43.17Z" },
-]
-
-[[package]]
-name = "auto-gptq"
-version = "0.7.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "accelerate", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "datasets", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "gekko", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "peft", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "rouge", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "safetensors", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "sentencepiece", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "torch", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "transformers", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/90/e5/b22697903982284fe284568fb2663a2196694a8eee637f5cf4ccfe435a38/auto_gptq-0.7.1.tar.gz", hash = "sha256:5c61ad380e9b4c603757c254765e9083a90a820cd0aff1b5d2c6f7fd96c85e80", size = 126148, upload-time = "2024-03-01T13:09:30.998Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/a6/0d099a45b2f09dfc7dbd97c97b478d4db488f9168a019aa841b714b82fd7/auto_gptq-0.7.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:84efeb9527b2d49f3555b2ba9451018c5ff41722c0b0e2fde74f5183ba0c008d", size = 23481371, upload-time = "2024-03-01T13:09:00.364Z" },
-    { url = "https://files.pythonhosted.org/packages/97/32/7cc2f3bd401021fe9af085e78c2b8c24d6521bec324918c8c5660c650074/auto_gptq-0.7.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a372d81d523b8d2f98639bbca63c0c427cab0ed55b8a57bb96706b0942aa01c9", size = 23520497, upload-time = "2024-03-01T13:09:10.479Z" },
 ]
 
 [[package]]
@@ -575,7 +555,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "(python_full_version < '3.12' and sys_platform != 'linux') or (python_full_version < '3.11' and sys_platform == 'linux')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -691,18 +671,6 @@ wheels = [
 [package.optional-dependencies]
 http = [
     { name = "aiohttp", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-]
-
-[[package]]
-name = "gekko"
-version = "1.3.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/12/0e/fe8a9e823c059141560106cdf5e0e4338c71a60d4802e32dca0e2b2129d5/gekko-1.3.2.tar.gz", hash = "sha256:a399cd9f896c864adbdfbb9dd052f957d106f454e0a711bd53db696c889ace7e", size = 13080745, upload-time = "2025-12-31T18:47:38.139Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/c6/4a03e540b0cbd7ea29437b547370a74732b35d23e22d20735718642a2140/gekko-1.3.2-py3-none-any.whl", hash = "sha256:d1ae9a096eb496f16df8f42a3dba7dcea59e2d17bf9a7d6d2b9187a06959e00a", size = 13169386, upload-time = "2025-12-31T18:47:34.987Z" },
 ]
 
 [[package]]
@@ -1192,7 +1160,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.1.0.70"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/fd/713452cd72343f682b1c7b9321e23829f00b842ceaedcda96e742ea0b0b3/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl", hash = "sha256:165764f44ef8c61fcdfdfdbe769d687e06374059fbb388b6c89ecb0e28793a6f", size = 664752741, upload-time = "2024-04-22T15:24:15.253Z" },
@@ -1203,7 +1171,7 @@ name = "nvidia-cufft-cu12"
 version = "11.2.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/94/3266821f65b92b3138631e9c8e7fe1fb513804ac934485a8d05776e1dd43/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9", size = 211459117, upload-time = "2024-04-03T20:57:40.402Z" },
@@ -1222,9 +1190,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.6.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
-    { name = "nvidia-cusparse-cu12" },
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
+    { name = "nvidia-cusparse-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/e1/5b9089a4b2a4790dfdea8b3a006052cfecff58139d5a4e34cb1a51df8d6f/nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_x86_64.whl", hash = "sha256:19e33fa442bcfd085b3086c4ebf7e8debc07cfe01e11513cc6d332fd918ac260", size = 127936057, upload-time = "2024-04-03T20:58:28.735Z" },
@@ -1235,7 +1203,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.3.1.170"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "python_full_version >= '3.12' or sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/f7/97a9ea26ed4bbbfc2d470994b8b4f338ef663be97b8f677519ac195e113d/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl", hash = "sha256:ea4f11a2904e2a8dc4b1833cc1b5181cde564edd0d5cd33e3c168eff2d1863f1", size = 207454763, upload-time = "2024-04-03T20:58:59.995Z" },
@@ -1350,27 +1318,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/28/2e/83722ece0f6ee24387d6cb830dd562ddbcd6ce0b9d76072c6849670c31b4/pathspec-1.0.1.tar.gz", hash = "sha256:e2769b508d0dd47b09af6ee2c75b2744a2cb1f474ae4b1494fd6a1b7a841613c", size = 129791, upload-time = "2026-01-06T13:02:55.15Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/fe/2257c71721aeab6a6e8aa1f00d01f2a20f58547d249a6c8fef5791f559fc/pathspec-1.0.1-py3-none-any.whl", hash = "sha256:8870061f22c58e6d83463cfce9a7dd6eca0512c772c1001fb09ac64091816721", size = 54584, upload-time = "2026-01-06T13:02:53.601Z" },
-]
-
-[[package]]
-name = "peft"
-version = "0.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "accelerate", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "huggingface-hub", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "psutil", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "safetensors", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "torch", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-    { name = "transformers", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/0c/f2938db546ac7fc961ab5917cd50fcf5d0d70b406de93e3faccaa504e152/peft-0.18.0.tar.gz", hash = "sha256:c81c80b2056ab40c23d58ef25f74daab417ac653970718589a11a8af28218588", size = 634141, upload-time = "2025-11-13T11:13:06.603Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/55/481bf25613d40ef53534f664deba7b138fe566356b6ca10304e2b3b2529c/peft-0.18.0-py3-none-any.whl", hash = "sha256:624f69ca6393b765ccc6734adda7ca57d80b238f0900a42c357d8b67a03d62ff", size = 556427, upload-time = "2025-11-13T11:13:03.664Z" },
 ]
 
 [[package]]
@@ -2022,7 +1969,6 @@ resolution-markers = [
 dependencies = [
     { name = "accelerate", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "addict", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
-    { name = "auto-gptq", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "colorlog", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "datamodel-code-generator", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
     { name = "datasets", marker = "python_full_version < '3.11' and sys_platform == 'linux'" },
@@ -2095,7 +2041,6 @@ resolution-markers = [
 dependencies = [
     { name = "accelerate", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
     { name = "addict", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
-    { name = "auto-gptq", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
     { name = "colorlog", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
     { name = "datamodel-code-generator", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
     { name = "datasets", marker = "python_full_version == '3.11.*' and sys_platform == 'linux'" },
@@ -2168,7 +2113,6 @@ resolution-markers = [
 dependencies = [
     { name = "accelerate", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
     { name = "addict", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
-    { name = "auto-gptq", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
     { name = "colorlog", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
     { name = "datamodel-code-generator", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
     { name = "datasets", marker = "python_full_version == '3.12.*' and sys_platform == 'linux'" },
@@ -2229,18 +2173,6 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.64.0" },
     { name = "transformers", specifier = "==4.55.2" },
     { name = "transformers-stream-generator", specifier = "==0.0.5" },
-]
-
-[[package]]
-name = "rouge"
-version = "1.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "six", marker = "python_full_version < '3.13' and sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/db/e4/3420a1ab1e82a280fb6107f7ae99e88eb12383c978fe573c0c64d0327d6b/rouge-1.0.1.tar.gz", hash = "sha256:12b48346ca47d6bcf3c45061f315452b9ccec0620ee895ec85b7efc3d54aae34", size = 14292, upload-time = "2021-07-20T08:45:56.53Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/7c/650ae86f92460e9e8ef969cc5008b24798dcf56a9a8947d04c78f550b3f5/rouge-1.0.1-py3-none-any.whl", hash = "sha256:28d118536e8c774dc47d1d15ec266479b4dd0914c4672ce117d4002789bdc644", size = 13725, upload-time = "2021-07-20T08:45:54.605Z" },
 ]
 
 [[package]]
