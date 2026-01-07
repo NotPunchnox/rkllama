@@ -496,9 +496,38 @@ If you have already downloaded models and do not wish to reinstall everything, p
 
 ---
 
+## Model Converter
+
+RKLlama includes a model converter for converting HuggingFace models to RKLLM format.
+
+### Quick Start
+
+```bash
+# Clone the repository (if not already done)
+git clone https://github.com/notpunchnox/rkllama
+cd rkllama/converter
+
+# Install with uv (choose your GPU backend)
+uv sync --extra cuda --index pytorch-cu121    # NVIDIA GPU (CUDA 12.1)
+uv sync --extra rocm --index pytorch-rocm62   # AMD GPU (ROCm 6.2)
+uv sync --extra cpu --index pytorch-cpu       # CPU only
+
+# Convert a model
+uv run rkllama-convert Qwen/Qwen2.5-7B-Instruct -q Q4_0 -o ./models/qwen
+```
+
+### Features
+- **Modern CLI** - Rich terminal output with progress bars
+- **Multiple backends** - CUDA (NVIDIA), ROCm (AMD), and CPU support
+- **Quantization options** - Q4_0, Q4_K_M, Q8_0, Q8_K_M formats
+- **Auto Modelfile** - Automatic configuration file generation
+
+For complete documentation, see the [Converter Guide](./documentation/converter/index.md).
+
+---
+
 ## Upcoming Features
 - Add RKNN for onnx models (TTS, image classification/segmentation...)
-- `GGUF/HF to RKLLM` conversion software
 
 ---
 

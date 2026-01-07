@@ -21,7 +21,6 @@ dependencies = [
     # ML/AI
     "huggingface_hub>=0.26.0",
     "transformers>=4.46.0",
-    "torch>=2.0.0",
     "diffusers>=0.31.0",
     # Data validation
     "pydantic>=2.9.0",
@@ -91,7 +90,6 @@ rknn-toolkit-lite2 = [
     { path = "src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", marker = "python_version == '3.11'" },
     { path = "src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", marker = "python_version == '3.10'" },
 ]
-
 
 [tool.setuptools]
 include-package-data = true
@@ -245,3 +243,8 @@ replace = "newTag: {new_version}"
 filename = "README.md"
 search = "### [Version: {current_version}](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v{current_version})"
 replace = "### [Version: {new_version}](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v{new_version})"
+
+[[tool.bumpversion.files]]
+filename = "converter/pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
