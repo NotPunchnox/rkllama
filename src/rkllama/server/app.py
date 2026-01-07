@@ -177,6 +177,14 @@ def create_app() -> FastAPI:
         request_id = correlation_id.get()
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
+        # Log request start (skip health checks to reduce noise)
+        if not request.url.path.startswith("/health"):
+            access_logger.info(
+                f"Request started: {request.method} {request.url.path}",
+                http={"method": request.method, "path": request.url.path, "request_id": request_id},
+                event="request_started",
+            )
+
         start_time = time.perf_counter_ns()
         response = Response(status_code=500)
         try:
