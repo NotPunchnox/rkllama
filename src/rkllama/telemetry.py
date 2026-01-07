@@ -12,11 +12,12 @@ Features:
     - Graceful shutdown with span/metric flushing
 
 Quick Start:
-    Telemetry is automatically configured when starting the RKLlama server.
-    Set the OTLP endpoint via environment variable:
+    Telemetry is opt-in. To enable, set the OTLP endpoint:
 
         export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
         rkllama_server --port 8080
+
+    Without this env var, telemetry is silently disabled (no errors, no exports).
 
 Custom Spans:
     Add tracing to your own code:
@@ -53,9 +54,10 @@ Span Attributes:
         )
 
 Environment Variables:
-    OTEL_EXPORTER_OTLP_ENDPOINT: OTLP gRPC endpoint (default: Grafana Alloy k8s service)
+    OTEL_EXPORTER_OTLP_ENDPOINT: OTLP gRPC endpoint (required to enable telemetry)
+    OTEL_SDK_DISABLED: Set to "true" to explicitly disable telemetry
     ENVIRONMENT: Deployment environment label (default: "local")
-    PYTEST_CURRENT_TEST: If set, uses no-op providers (no export)
+    PYTEST_CURRENT_TEST: If set, telemetry is disabled
 
 Kubernetes:
     For k8s deployments, telemetry exports to the Grafana Alloy receiver service.
@@ -160,9 +162,10 @@ def setup_telemetry(
         Tuple of (TracerProvider, MeterProvider) - store these for shutdown
 
     Environment Variables:
-        OTEL_EXPORTER_OTLP_ENDPOINT: OTLP gRPC endpoint URL
+        OTEL_EXPORTER_OTLP_ENDPOINT: OTLP gRPC endpoint (required to enable)
+        OTEL_SDK_DISABLED: Set to "true" to explicitly disable
         ENVIRONMENT: Deployment environment (production, staging, local)
-        PYTEST_CURRENT_TEST: If set, uses no-op providers (no network calls)
+        PYTEST_CURRENT_TEST: If set, telemetry is disabled
 
     Example:
         tracer_provider, meter_provider = setup_telemetry(
@@ -171,32 +174,29 @@ def setup_telemetry(
             otlp_endpoint="http://localhost:4317",
         )
     """
+    # Skip telemetry if explicitly disabled
+    if os.getenv("OTEL_SDK_DISABLED", "").lower() in ("true", "1", "yes"):
+        logger.info("Telemetry disabled via OTEL_SDK_DISABLED")
+        return None, None
+
     # Skip telemetry setup during tests - use no-op providers
     if os.getenv("PYTEST_CURRENT_TEST"):
-        logger.info("Running in pytest - using no-op telemetry providers")
-        from opentelemetry.sdk.metrics import MeterProvider as NoOpMeterProvider
-        from opentelemetry.sdk.trace import TracerProvider as NoOpTracerProvider
+        logger.debug("Running in pytest - using no-op telemetry providers")
+        return None, None
 
-        # Create minimal no-op providers (won't export anything)
-        tracer_provider = NoOpTracerProvider()
-        meter_provider = NoOpMeterProvider()
+    # Get OTLP endpoint - only enable telemetry if explicitly configured
+    if otlp_endpoint is None:
+        otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
 
-        # Set them globally so get_tracer/get_meter work
-        trace.set_tracer_provider(tracer_provider)
-        metrics.set_meter_provider(meter_provider)
-
-        return tracer_provider, meter_provider
+    if not otlp_endpoint:
+        logger.debug(
+            "Telemetry disabled - set OTEL_EXPORTER_OTLP_ENDPOINT to enable"
+        )
+        return None, None
 
     # Get deployment environment from env var if not provided
     if deployment_environment is None:
         deployment_environment = os.environ.get("ENVIRONMENT", "local")
-
-    # Get OTLP endpoint from env var if not provided
-    if otlp_endpoint is None:
-        otlp_endpoint = os.environ.get(
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "http://grafana-k8s-monitoring-alloy-receiver.observability.svc.cluster.local:4317",
-        )
 
     logger.info(
         "Initializing OpenTelemetry",
