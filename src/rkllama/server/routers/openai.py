@@ -1,7 +1,6 @@
 """OpenAI API compatible routes."""
 
 import datetime
-import logging
 import os
 import random
 import re
@@ -23,10 +22,11 @@ from rkllama.api.schemas.openai import (
     OpenAISpeechRequest,
 )
 from rkllama.api.worker import WorkerManager
+from rkllama.logging import get_logger
 from rkllama.server.dependencies import get_debug_mode, get_models_path, get_worker_manager
 from rkllama.server.routers.native import load_model
 
-logger = logging.getLogger("rkllama.server.openai")
+logger = get_logger("rkllama.server.openai")
 
 router = APIRouter()
 
@@ -89,7 +89,7 @@ async def get_openai_model(model_name: str, models_path: str = Depends(get_model
 
 
 @router.post("/completions")
-async def completions_openai(
+def completions_openai(
     request: OpenAICompletionRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -99,7 +99,7 @@ async def completions_openai(
     model_name = strip_namespace(request.model)
 
     if debug:
-        logger.debug(f"OpenAI completions request for model: {model_name}")
+        logger.debug("OpenAI completions request", model=model_name)
 
     # Convert to Ollama format
     ollama_data = openai_to_ollama_generate_request(request.model_dump())
@@ -134,7 +134,7 @@ async def completions_openai(
 
 
 @router.post("/chat/completions")
-async def chat_completions_openai(
+def chat_completions_openai(
     request: OpenAIChatRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -144,7 +144,7 @@ async def chat_completions_openai(
     model_name = strip_namespace(request.model)
 
     if debug:
-        logger.debug(f"OpenAI chat request for model: {model_name}")
+        logger.debug("OpenAI chat request", model=model_name)
 
     # Convert to Ollama format
     ollama_data = openai_to_ollama_chat_request(request.model_dump())
@@ -192,7 +192,7 @@ async def chat_completions_openai(
 
 
 @router.post("/embeddings")
-async def embeddings_openai(
+def embeddings_openai(
     request: OpenAIEmbeddingRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -202,7 +202,7 @@ async def embeddings_openai(
     model_name = strip_namespace(request.model)
 
     if debug:
-        logger.debug(f"OpenAI embedding request for model: {model_name}")
+        logger.debug("OpenAI embedding request", model=model_name)
 
     options = get_model_full_options(model_name, models_path, {})
 
@@ -225,7 +225,7 @@ async def embeddings_openai(
 
 
 @router.post("/images/generations")
-async def generate_image_openai(
+def generate_image_openai(
     request: OpenAIImageRequest,
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
@@ -233,7 +233,7 @@ async def generate_image_openai(
     model_name = strip_namespace(request.model) if request.model else None
 
     if debug:
-        logger.debug(f"OpenAI image generation request: {request.prompt[:50]}...")
+        logger.debug("OpenAI image generation request", prompt_preview=request.prompt[:50])
 
     from rkllama.api.server_utils import GenerateImageEndpointHandler
 
@@ -264,7 +264,7 @@ async def get_generated_image(model_name: str, file_name: str) -> FileResponse:
 
 
 @router.post("/audio/speech")
-async def generate_speech_openai(
+def generate_speech_openai(
     request: OpenAISpeechRequest,
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
@@ -275,7 +275,7 @@ async def generate_speech_openai(
     length_scale = 1 / request.speed if request.speed else None
 
     if debug:
-        logger.debug(f"OpenAI speech request for model: {model_name}")
+        logger.debug("OpenAI speech request", model=model_name)
 
     from rkllama.api.server_utils import GenerateSpeechEndpointHandler
 
@@ -294,7 +294,7 @@ async def generate_speech_openai(
 
 
 @router.post("/audio/transcriptions")
-async def generate_transcriptions_openai(
+def generate_transcriptions_openai(
     file: UploadFile = File(...),
     model: str = Form(...),
     language: str | None = Form(None),
@@ -307,7 +307,7 @@ async def generate_transcriptions_openai(
     stream_bool = strtobool(stream) if stream else False
 
     if debug:
-        logger.debug(f"OpenAI transcription request for model: {model_name}")
+        logger.debug("OpenAI transcription request", model=model_name)
 
     from rkllama.api.server_utils import GenerateTranscriptionsEndpointHandler
 

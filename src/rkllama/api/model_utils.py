@@ -1,12 +1,12 @@
 import os
 import re
-import logging
 import requests
 from pathlib import Path
 import rkllama.config
+from rkllama.logging import get_logger
 
 # Configure logger
-logger = logging.getLogger("rkllama.model_utils")
+logger = get_logger("rkllama.model_utils")
 
 # Mapping from RKLLM quantization types to Ollama-style formats
 QUANT_MAPPING = {
@@ -149,17 +149,17 @@ def get_huggingface_model_info(model_path):
                 data['license_url'] = f"https://huggingface.co/{model_path}/blob/main/LICENSE"
 
             if debug_mode:
-                logger.debug(f"Enhanced model info from HF API: {model_path}")
+                logger.debug("Enhanced model info from HF API", model_path=model_path)
 
             return data
         else:
             if debug_mode:
-                logger.debug(f"Failed to get HF data: {response.status_code}")
+                logger.debug("Failed to get HF data", status_code=response.status_code)
             return None
     except Exception as e:
         debug_mode = rkllama.config.is_debug_mode()
         if debug_mode:
-            logger.exception(f"Error fetching HF model info: {str(e)}")
+            logger.exception("Error fetching HF model info", error=str(e))
         return None
 
 
@@ -395,7 +395,7 @@ def get_property_modelfile(model_name: str, property: str, models_path: str = "m
                     key, value = line.split('=', 1)
                     modelfile_dict[key] = value
     except FileNotFoundError:
-        logger.error(f"Error: File '{modelfile}' not found.")
+        logger.error("File not found", modelfile=modelfile)
 
     # Retrieve the value of the property
     return modelfile_dict.get(property, None)

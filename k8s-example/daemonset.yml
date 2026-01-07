@@ -1,35 +1,26 @@
-# RKLLama Kubernetes Deployment
+# RKLlama DaemonSet for Multi-Node NPU Clusters
 #
-# Deploys RKLLama server on RK3588 NPU nodes with Ollama-compatible API.
+# Deploys one RKLlama instance per NPU node for maximum throughput.
+# Use with the headless service for load balancing across all nodes.
+#
+# For a TuringPi cluster with 8 RK3588 nodes, this gives you 8 independent
+# inference endpoints behind a single service.
 #
 # Prerequisites:
-# 1. Rockchip device plugin installed:
-#    https://github.com/rockchip-linux/rknpu-device-plugin
-#
-# 2. RK3588 node with NPU toleration:
-#    kubectl taint nodes <node> npu=enabled:NoSchedule
-#
-# Note: Requires privileged mode and /sys mount for NPU/CPU/GPU frequency
-# optimization. The fix_freq script writes to sysfs to maximize performance.
+# 1. Rockchip device plugin: https://github.com/rockchip-linux/rknpu-device-plugin
+# 2. Nodes labeled/tainted for NPU workloads
 #
 # Usage:
-#   kubectl apply -f rkllama-deployment.yaml
-#   kubectl logs -f deployment/rkllama
-#
-# Test:
-#   kubectl port-forward svc/rkllama 8080:8080
-#   curl http://localhost:8080/api/tags
+#   kubectl apply -k k8s-example/
+#   curl http://rkllama.your-domain/api/tags
 
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: rkllama
   labels:
     app: rkllama
 spec:
-  strategy:
-    type: Recreate
-  replicas: 1
   selector:
     matchLabels:
       app: rkllama
@@ -49,6 +40,10 @@ spec:
           env:
             - name: PYTHONUNBUFFERED
               value: "1"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           resources:
             limits:
               rockchip.com/npu: "1"
@@ -76,15 +71,13 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /opt/rkllama/models
-            # Required for fix_freq script to optimize NPU/CPU/GPU frequencies
+              readOnly: true
             - name: sys
               mountPath: /sys
-      restartPolicy: Always
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: rkllama-models
-        # Host /sys for frequency tuning (requires privileged mode)
         - name: sys
           hostPath:
             path: /sys

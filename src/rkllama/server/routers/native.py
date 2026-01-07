@@ -1,6 +1,5 @@
 """Native RKLlama API routes."""
 
-import logging
 import os
 import shutil
 import time
@@ -22,9 +21,10 @@ from rkllama.api.schemas import (
     PullRequest,
 )
 from rkllama.api.worker import WorkerManager
+from rkllama.logging import get_logger
 from rkllama.server.dependencies import get_debug_mode, get_models_path, get_worker_manager
 
-logger = logging.getLogger("rkllama.server.native")
+logger = get_logger("rkllama.server.native")
 
 router = APIRouter()
 
@@ -164,16 +164,16 @@ async def rm_model(
     # Unload if loaded
     if wm.exists_model_loaded(request.model):
         if debug:
-            logger.debug(f"Unloading model '{request.model}' before deletion")
+            logger.debug("Unloading model before deletion", model=request.model)
         unload_model(request.model, wm)
 
     try:
         if debug:
-            logger.debug(f"Deleting model directory: {model_path}")
+            logger.debug("Deleting model directory", path=model_path)
         shutil.rmtree(model_path)
         return NativeDeleteResponse(message="The model has been successfully deleted!")
     except Exception as e:
-        logger.error(f"Failed to delete model '{request.model}': {e}")
+        logger.error("Failed to delete model", model=request.model, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {e}")
 
 

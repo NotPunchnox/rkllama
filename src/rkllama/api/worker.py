@@ -1,19 +1,20 @@
-import logging
-import psutil
-import rkllama.config
-import time
-import threading
 import random
-from multiprocessing import Process, Queue
+import threading
+import time
 from datetime import datetime, timedelta
-from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile
-from .classes import *
-from .callback import *
-
+from multiprocessing import Process, Queue
 from operator import attrgetter
 
+import psutil
 
-logger = logging.getLogger("rkllama.worker")
+import rkllama.config
+from rkllama.logging import get_logger
+
+from .callback import *
+from .classes import *
+from .model_utils import get_encoder_model_path, get_model_size, get_property_modelfile
+
+logger = get_logger("rkllama.worker")
 
 # Worker variables
 WORKER_TASK_UNLOAD_MODEL = "UNLOAD"
@@ -137,7 +138,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
         result_queue.put(WORKER_TASK_FINISHED)
 
     except Exception as e:
-        logger.error(f"Failed creating the worker for model '{name}': {str(e)}")
+        logger.error("Failed creating worker", model=name, error=str(e))
         # Announce the creation of the RKLLM model in memory
         result_queue.put(WORKER_TASK_ERROR)
         return
@@ -151,7 +152,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
             task, inference_mode, model_input_type, model_input, role, enable_thinking = task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
-                logger.info(f"Unloading model {name}...")
+                logger.info("Unloading model", model=name)
                 # Unload the model
                 model_rkllm.release()
 
@@ -159,17 +160,17 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 break
 
             elif task == WORKER_TASK_ABORT_INFERENCE:
-                logger.info(f"Aborting inference for model {name}...")
+                logger.info("Aborting inference", model=name)
                 # Abort the inference of the model
                 model_rkllm.abort()
 
             elif task == WORKER_TASK_CLEAR_CACHE:
-                logger.info(f"Clearing KV cache for model {name}...")
+                logger.info("Clearing KV cache", model=name)
                 # CLear the cache of the model
                 model_rkllm.clear_cache()
 
             elif task == WORKER_TASK_INFERENCE:
-                logger.info(f"Running inference for model {name}...")
+                logger.info("Running inference", model=name)
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
@@ -198,7 +199,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 result_queue.put(WORKER_TASK_FINISHED)
 
             elif task == WORKER_TASK_EMBEDDING:
-                logger.info(f"Running embedding for model {name}...")
+                logger.info("Running embedding", model=name)
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, role, enable_thinking))
                 thread_model.start()
@@ -215,7 +216,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                     result_queue.put(last_embeddings[0])
 
             elif task == WORKER_TASK_VISION_ENCODER:
-                logger.info(f"Running vision encoder for model {name}...")
+                logger.info("Running vision encoder", model=name)
                 # Run the vision encoder to get the image embedding
                 rknn_queue = Queue()
 
@@ -240,7 +241,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 result_queue.put(WORKER_TASK_FINISHED)
 
         except Exception as e:
-            logger.error(f"Failed executing task the worker for model '{name}' for task '{task}': {str(e)}")
+            logger.error("Worker task failed", model=name, task=task, error=str(e))
             # Announce the creation of the RKLLM model in memory
             result_queue.put(WORKER_TASK_ERROR)
 
@@ -252,7 +253,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
     try:
 
         if task == WORKER_TASK_GENERATE_IMAGE:
-            logger.info(f"Running image generator for model {name}...")
+            logger.info("Running image generator", model=name)
             # Run the vision encoder to get the image embedding
             rknn_queue = Queue()
 
@@ -272,7 +273,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             result_queue.put(img)
 
         elif task == WORKER_TASK_GENERATE_SPEECH:
-            logger.info(f"Running speech generator for model {name}...")
+            logger.info("Running speech generator", model=name)
             # Run piper
             rknn_queue = Queue()
 
@@ -292,7 +293,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             result_queue.put(audio)
 
         elif task == WORKER_TASK_GENERATE_TRANSCRIPTION:
-            logger.info(f"Running transcription generator for model {name}...")
+            logger.info("Running transcription generator", model=name)
             # Run omniasr
             rknn_queue = Queue()
 
@@ -317,7 +318,7 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
             result_queue.put(WORKER_TASK_FINISHED)
 
     except Exception as e:
-        logger.error(f"Failed executing task the rknn process for model '{name}' for task '{task}': {str(e)}")
+        logger.error("RKNN process task failed", model=name, task=task, error=str(e))
         # Announce the creation of the RKLLM model in memory
         result_queue.put(WORKER_TASK_ERROR)
 
@@ -347,12 +348,12 @@ class WorkerManager:
                     # Wait for the next execution
                     time.sleep(interval)  # Check every 60 seconds expired models
                 except Exception as e:
-                    logger.error(f"Exception in monitor models: {e}")
+                    logger.error("Exception in monitor models", error=str(e))
 
         # Iniciar el hilo como daemon (no bloquea al final del programa)
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
-        logger.info("Models Monitor running.")
+        logger.info("Models Monitor running")
 
 
     def unload_expired_models(self) -> int | None:
@@ -364,7 +365,7 @@ class WorkerManager:
 
         # Unload/stop the expired model
         for model_name in expired_models:
-            logger.info(f"Detected expired model: {model_name}")
+            logger.info("Detected expired model", model=model_name)
             self.stop_worker(model_name)
 
 
@@ -440,7 +441,7 @@ class WorkerManager:
             else:
                 # Add the worker to the dictionary of workers
                 self.workers[model_name] = worker_model
-                logger.info(f"Worker for model {model_name} created and running...")
+                logger.info("Worker created and running", model=model_name)
                 return True
 
 
@@ -455,7 +456,7 @@ class WorkerManager:
 
         # Loop over the array by the oldest worker model
         for worker_model_info in sorted(worker_models_info, key=attrgetter('last_call')):
-            logger.info(f"Unloading model {worker_model_info.model} to gain free memory (at least {memory_required})")
+            logger.info("Unloading model to free memory", model=worker_model_info.model, memory_required=memory_required)
             # Stop the first oldest modelin memory
             self.stop_worker(worker_model_info.model)
 
@@ -529,7 +530,7 @@ class WorkerManager:
 
             # Wait for unload
             self.workers[model_name].process.join()
-            logger.info(f"Worker {model_name} stopped...")
+            logger.info("Worker stopped", model=model_name)
 
             # Remove the worker from the dictionary
             del self.workers[model_name]

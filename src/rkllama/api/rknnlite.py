@@ -1,13 +1,14 @@
 # img_encoder.py
 import numpy as np
-import logging
 import cv2
 import base64
 import requests
 from rknnlite.api.rknn_lite import RKNNLite
 import os
 
-logger = logging.getLogger("rkllama.rknnlite")
+from rkllama.logging import get_logger
+
+logger = get_logger("rkllama.rknnlite")
 
 
 # Run the visionencder to get the image embedding
@@ -33,12 +34,12 @@ def run_vision_encoder(model_encoder_path, images_source, image_width, image_hei
 
     # Inference
     image_embeddings = [vision_encoder.inference(inputs=[img.astype(np.float32)], data_type="float32", data_format="nhwc")[0] for img in prepared_images]
-    logger.debug(f"Image embeddings shapes: {[emb.shape for emb in image_embeddings]}")
+    logger.debug("Image embeddings generated", shapes=[emb.shape for emb in image_embeddings])
 
     # Concatenate along the first axis (rows)
     np_float32_image_embeddings = [emb.astype(np.float32) for emb in image_embeddings]
     concatenated_image_embeddings = np.concatenate(np_float32_image_embeddings, axis=0)
-    logger.debug(f"Concatenated image embeddings shape: {concatenated_image_embeddings.shape}")
+    logger.debug("Concatenated image embeddings", shape=concatenated_image_embeddings.shape)
 
     # Release RKNNLite resources
     vision_encoder.release()
@@ -70,7 +71,7 @@ def load_image(source: str):
             img_array = np.frombuffer(response.content, np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
-            logger.error("Error loading from URL:", e)
+            logger.error("Error loading from URL", error=str(e))
 
     # Case 3: Base64
     else:
@@ -82,7 +83,7 @@ def load_image(source: str):
             img_array = np.frombuffer(img_data, np.uint8)
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         except Exception as e:
-            logger.error("Error loading from Base64:", e)
+            logger.error("Error loading from Base64", error=str(e))
 
     # Convert BGR → RGB (Color fix)
     if img is not None:

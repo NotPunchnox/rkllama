@@ -1,11 +1,13 @@
 namespace: rkllama
 
 resources:
+  # Choose ONE: deployment.yml (single node) OR daemonset.yml (multi-node cluster)
   - ./deployment.yml
+  # - ./daemonset.yml
   - ./ingress.yml
   - ./pv.yml
   - ./service.yml
 
 images:
   - name: ghcr.io/rsjames-ttrpg/rkllama
-    newTag: 8902b91  # Change to specific version e.g. v0.1.0
+    newTag: 1.2.3-1

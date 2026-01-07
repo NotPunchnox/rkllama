@@ -1,284 +1,126 @@
-from enum import Enum
-from typing import Dict, Any, Optional, List, Union, Type, TypeVar, Generic, get_type_hints
+"""Pydantic-based configuration schema for RKLlama."""
 
-class FieldType(Enum):
-    """Enumeration of field types for configuration schema"""
-    STRING = "string"
-    INTEGER = "integer"
-    FLOAT = "float"
-    BOOLEAN = "boolean"
-    LIST = "list"
-    PATH = "path"
+from pathlib import Path
+from typing import Literal
 
-T = TypeVar('T')
-
-class ConfigField(Generic[T]):
-    """Definition of a configuration field with type information and validation"""
-
-    def __init__(
-        self,
-        field_type: FieldType,
-        default: T,
-        description: str = "",
-        min_value: Optional[Union[int, float]] = None,
-        max_value: Optional[Union[int, float]] = None,
-        options: Optional[List[Any]] = None,
-        item_type: Optional[FieldType] = None,
-        required: bool = False
-    ):
-        self.field_type = field_type
-        self.default = default
-        self.description = description
-        self.min_value = min_value
-        self.max_value = max_value
-        self.options = options
-        self.item_type = item_type
-        self.required = required
-
-    def validate(self, value: Any) -> T:
-        """Validate a value against this field definition"""
-        if value is None:
-            if self.required:
-                raise ValueError(f"Field is required but value is None")
-            return self.default
-
-        # Type conversion based on field_type
-        converted_value = self._convert_value(value)
-
-        # Range validation for numeric types
-        if self.field_type in [FieldType.INTEGER, FieldType.FLOAT]:
-            if self.min_value is not None and converted_value < self.min_value:
-                raise ValueError(f"Value {converted_value} is less than minimum {self.min_value}")
-            if self.max_value is not None and converted_value > self.max_value:
-                raise ValueError(f"Value {converted_value} is greater than maximum {self.max_value}")
-
-        # Options validation
-        if self.options is not None and converted_value not in self.options:
-            raise ValueError(f"Value {converted_value} is not in allowed options: {self.options}")
-
-        return converted_value
-
-    def _convert_value(self, value: Any) -> T:
-        """Convert a value to the appropriate type based on field_type"""
-        try:
-            if self.field_type == FieldType.STRING:
-                return str(value)
-            elif self.field_type == FieldType.INTEGER:
-                if isinstance(value, str):
-                    return int(value)
-                return int(value)
-            elif self.field_type == FieldType.FLOAT:
-                if isinstance(value, str):
-                    return float(value)
-                return float(value)
-            elif self.field_type == FieldType.BOOLEAN:
-                if isinstance(value, str):
-                    return value.lower() in ('true', 'yes', '1', 'on', 'y')
-                return bool(value)
-            elif self.field_type == FieldType.LIST:
-                if isinstance(value, str):
-                    items = [item.strip() for item in value.split(',') if item.strip()]
-                    if self.item_type:
-                        # Convert each item to the specified type
-                        temp_field = ConfigField(self.item_type, None)
-                        return [temp_field._convert_value(item) for item in items]
-                    return items
-                elif isinstance(value, list):
-                    return value
-                else:
-                    raise ValueError(f"Cannot convert {value} to list")
-            elif self.field_type == FieldType.PATH:
-                return str(value)
-            else:
-                return value
-        except (ValueError, TypeError) as e:
-            raise ValueError(f"Failed to convert value {value} to {self.field_type.value}: {str(e)}")
-
-class ConfigSectionSchema:
-    """Schema definition for a configuration section"""
-
-    def __init__(self, description: str = ""):
-        self.description = description
-        self.fields: Dict[str, ConfigField] = {}
-
-    def add_field(self, name: str, field: ConfigField):
-        """Add a field to this section schema"""
-        self.fields[name] = field
-        return self
-
-    def string(self, name: str, default: str = "", description: str = "", options: List[str] = None, required: bool = False):
-        """Add a string field to this section schema"""
-        self.fields[name] = ConfigField(
-            FieldType.STRING,
-            default,
-            description,
-            options=options,
-            required=required
-        )
-        return self
-
-    def integer(self, name: str, default: int = 0, description: str = "", min_value: int = None,
-                max_value: int = None, required: bool = False):
-        """Add an integer field to this section schema"""
-        self.fields[name] = ConfigField(
-            FieldType.INTEGER,
-            default,
-            description,
-            min_value=min_value,
-            max_value=max_value,
-            required=required
-        )
-        return self
-
-    def float(self, name: str, default: float = 0.0, description: str = "",
-              min_value: float = None, max_value: float = None, required: bool = False):
-        """Add a float field to this section schema"""
-        self.fields[name] = ConfigField(
-            FieldType.FLOAT,
-            default,
-            description,
-            min_value=min_value,
-            max_value=max_value,
-            required=required
-        )
-        return self
-
-    def boolean(self, name: str, default: bool = False, description: str = "", required: bool = False):
-        """Add a boolean field to this section schema"""
-        self.fields[name] = ConfigField(
-            FieldType.BOOLEAN,
-            default,
-            description,
-            required=required
-        )
-        return self
-
-    def list(self, name: str, default: List = None, description: str = "",
-             item_type: FieldType = None, required: bool = False):
-        """Add a list field to this section schema"""
-        if default is None:
-            default = []
-        self.fields[name] = ConfigField(
-            FieldType.LIST,
-            default,
-            description,
-            item_type=item_type,
-            required=required
-        )
-        return self
-
-    def path(self, name: str, default: str = "", description: str = "", required: bool = False):
-        """Add a path field to this section schema"""
-        self.fields[name] = ConfigField(
-            FieldType.PATH,
-            default,
-            description,
-            required=required
-        )
-        return self
-
-    def validate_section(self, values: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate values against this section schema"""
-        validated = {}
-
-        # First, apply defaults for all fields
-        for name, field in self.fields.items():
-            validated[name] = field.default
-
-        # Then override with provided values
-        if values:
-            for name, value in values.items():
-                if name in self.fields:
-                    try:
-                        validated[name] = self.fields[name].validate(value)
-                    except ValueError as e:
-                        raise ValueError(f"Validation error for {name}: {str(e)}")
-                else:
-                    # Keep unknown fields, but don't validate them
-                    validated[name] = value
-
-        return validated
-
-class ConfigSchema:
-    """Schema definition for the entire configuration"""
-
-    def __init__(self):
-        self.sections: Dict[str, ConfigSectionSchema] = {}
-
-    def add_section(self, name: str, section: ConfigSectionSchema = None, description: str = ""):
-        """Add a section to this schema"""
-        if section is None:
-            section = ConfigSectionSchema(description)
-        self.sections[name] = section
-        return section
-
-    def get_section(self, name: str) -> ConfigSectionSchema:
-        """Get a section from this schema"""
-        return self.sections.get(name)
-
-    def validate(self, config: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-        """Validate a configuration against this schema"""
-        validated = {}
-
-        # First, apply defaults for all sections
-        for section_name, section_schema in self.sections.items():
-            validated[section_name] = section_schema.validate_section({})
-
-        # Then override with provided values
-        if config:
-            for section_name, section_values in config.items():
-                if section_name in self.sections:
-                    validated[section_name] = self.sections[section_name].validate_section(section_values)
-                else:
-                    # Keep unknown sections, but don't validate them
-                    validated[section_name] = section_values
-
-        return validated
-
-def create_rkllama_schema() -> ConfigSchema:
-    """Create and return the RKLLAMA configuration schema"""
-    schema = ConfigSchema()
-
-    # Server section
-    server = schema.add_section("server", description="Server configuration settings")
-    server.integer("port", 8080, "Server port number", min_value=1, max_value=65535)
-    server.string("host", "0.0.0.0", "Server host address")
-    server.boolean("debug", False, "Enable debug mode")
-
-    # Paths section
-    paths = schema.add_section("paths", description="Path configuration")
-    paths.path("models", "models", "Path to model files")
-    paths.path("logs", "logs", "Path to log files")
-    paths.path("data", "data", "Path to data files")
-    paths.path("src", "src", "Path to source files")
-    paths.path("lib", "lib", "Path to library files")
-    paths.path("temp", "temp", "Path to temporary files")
-
-    # Model section
-    model = schema.add_section("model", description="Model configuration")
-    model.string("default", "", "Default model to use")
-    model.string("default_temperature", 0.5, "Default temperature for the model to use")
-    model.string("default_enable_thinking", False, "Default Enable Thinking for the model to use")
-    model.string("default_num_ctx", 4096, "Default Context Length for the model to use")
-    model.string("default_max_new_tokens", 1024, "Default Max New Tokens for the model to use")
-    model.string("default_top_k", 7, "Default Top K for the model to use")
-    model.string("default_top_p", 0.5, "Default Top P for the model to use")
-    model.string("default_repeat_penalty", 1.1, "Default Repeat Penalty for the model to use")
-    model.string("default_frequency_penalty", 0.0, "Default Frequency Penalty for the model to use")
-    model.string("default_presence_penalty", 0.0, "Default Presence Penalty for the model to use")
-    model.string("default_mirostat", 0, "Default Mirostat for the model to use")
-    model.string("default_mirostat_tau", 3, "Default Mirostat Tau for the model to use")
-    model.string("default_mirostat_eta", 0.1, "Default Mirostat Eta for the model to use")
-    model.string("max_minutes_loaded_in_memory", 30, "Max minutes allowed to be load in memory a model without any activity/inference")
-    model.string("max_number_models_loaded_in_memory", 10, "Max number of models allowed to be loaded simultaneously in memory")
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-    # Platform section
-    platform = schema.add_section("platform", description="Platform configuration")
-    platform.string("processor", "rk3588", "Target processor",
-                   options=["rk3588", "rk3576"])
+class ServerSettings(BaseSettings):
+    """Server configuration."""
 
-    return schema
+    model_config = SettingsConfigDict(env_prefix="RKLLAMA_SERVER_")
 
-# Create the global schema instance
-RKLLAMA_SCHEMA = create_rkllama_schema()
+    port: int = Field(default=8080, ge=1, le=65535, description="Server port number")
+    host: str = Field(default="0.0.0.0", description="Server host address")
+    debug: bool = Field(default=False, description="Enable debug mode")
+
+
+class PathSettings(BaseSettings):
+    """Path configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="RKLLAMA_PATHS_")
+
+    models: str = Field(default="models", description="Path to model files")
+    logs: str = Field(default="logs", description="Path to log files")
+    data: str = Field(default="data", description="Path to data files")
+    src: str = Field(default="src", description="Path to source files")
+    lib: str = Field(default="lib", description="Path to library files")
+    temp: str = Field(default="temp", description="Path to temporary files")
+
+
+class ModelSettings(BaseSettings):
+    """Model default parameters."""
+
+    model_config = SettingsConfigDict(env_prefix="RKLLAMA_MODEL_")
+
+    default: str = Field(default="", description="Default model to use")
+    default_temperature: float = Field(
+        default=0.5, ge=0.0, le=2.0, description="Default temperature for inference"
+    )
+    default_enable_thinking: bool = Field(
+        default=False, description="Enable thinking/reasoning mode by default"
+    )
+    default_num_ctx: int = Field(
+        default=4096, ge=512, le=131072, description="Default context window size in tokens"
+    )
+    default_max_new_tokens: int = Field(
+        default=1024, ge=1, le=32768, description="Maximum tokens to generate per response"
+    )
+    default_top_k: int = Field(default=7, ge=1, le=100, description="Top-K sampling parameter")
+    default_top_p: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Top-P (nucleus) sampling parameter"
+    )
+    default_repeat_penalty: float = Field(
+        default=1.1, ge=0.0, le=2.0, description="Penalty for token repetition"
+    )
+    default_frequency_penalty: float = Field(
+        default=0.0, ge=-2.0, le=2.0, description="Frequency penalty for sampling"
+    )
+    default_presence_penalty: float = Field(
+        default=0.0, ge=-2.0, le=2.0, description="Presence penalty for sampling"
+    )
+    default_mirostat: int = Field(
+        default=0, ge=0, le=2, description="Mirostat sampling mode (0=disabled, 1=v1, 2=v2)"
+    )
+    default_mirostat_tau: float = Field(
+        default=3.0, ge=0.0, le=10.0, description="Mirostat target entropy"
+    )
+    default_mirostat_eta: float = Field(
+        default=0.1, ge=0.0, le=1.0, description="Mirostat learning rate"
+    )
+    max_minutes_loaded_in_memory: int = Field(
+        default=30, ge=1, le=1440, description="Max idle minutes before unloading model"
+    )
+    max_number_models_loaded_in_memory: int = Field(
+        default=10, ge=1, le=100, description="Max concurrent loaded models"
+    )
+
+
+class PlatformSettings(BaseSettings):
+    """Platform configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="RKLLAMA_PLATFORM_")
+
+    processor: Literal["rk3588", "rk3576"] = Field(
+        default="rk3588", description="Target processor"
+    )
+
+
+class RKLlamaSettings(BaseSettings):
+    """Main RKLlama configuration combining all sections."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="RKLLAMA_",
+        env_nested_delimiter="_",
+        extra="allow",
+    )
+
+    server: ServerSettings = Field(default_factory=ServerSettings)
+    paths: PathSettings = Field(default_factory=PathSettings)
+    model: ModelSettings = Field(default_factory=ModelSettings)
+    platform: PlatformSettings = Field(default_factory=PlatformSettings)
+
+    def get_section(self, section: str) -> BaseSettings | None:
+        """Get a settings section by name."""
+        return getattr(self, section, None)
+
+    def resolve_path(self, path: str, app_root: Path) -> str | None:
+        """Resolve a path relative to the application root."""
+        import os
+
+        if not path:
+            return None
+
+        path_obj = Path(path)
+
+        if path_obj.is_absolute():
+            return str(path_obj)
+        elif "$" in path or "~" in path:
+            expanded_path = os.path.expanduser(os.path.expandvars(path))
+            if os.path.isabs(expanded_path):
+                return expanded_path
+            return str(app_root / expanded_path)
+        else:
+            return str(app_root / path)

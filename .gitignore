@@ -2,6 +2,7 @@ models/**/*
 src/__pycache__
 *.log
 config/config.env
+src/rkllama/config/config.env
 
 
 # macOS system files

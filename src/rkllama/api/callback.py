@@ -1,7 +1,10 @@
-import ctypes, sys
+import ctypes
 import numpy as np
 from .classes import *
 from .variables import *
+from rkllama.logging import get_logger
+
+logger = get_logger("rkllama.callback")
 
 global_status = -1
 global_text = []
@@ -9,8 +12,9 @@ split_byte_data = bytes(b"")
 last_embeddings = []
 last_perf_stats = None  # Performance stats from last inference
 
-# Definir la fonction de rappel
+
 def callback_impl(result, userdata, status):
+    """RKLLM callback for token streaming and embeddings."""
     global split_byte_data, global_status, global_text, last_embeddings, last_perf_stats
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
@@ -30,22 +34,17 @@ def callback_impl(result, userdata, status):
             except Exception:
                 last_perf_stats = None
 
-        print("\n")
-        sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_ERROR:
         global_status = status
-        print("Execution Error")
-        sys.stdout.flush()
+        logger.error("RKLLM execution error")
+
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
-        # Sauvegarder le texte du token de sortie et l'status d'execution de RKLLM
         global_status = status
-        # Check if result or result.contents or result.contents.text is None
         try:
             # Add defensive checks to prevent None concatenation
             if result and result.contents and result.contents.text:
                 text_bytes = result.contents.text
                 if not isinstance(text_bytes, bytes):
-                    # If not bytes, try to convert or use empty bytes
                     try:
                         text_bytes = bytes(text_bytes)
                     except:
@@ -55,7 +54,6 @@ def callback_impl(result, userdata, status):
                 try:
                     decoded_text = (split_byte_data + text_bytes).decode('utf-8')
                     global_text.append(decoded_text)
-                    print(decoded_text, end='')
                     split_byte_data = bytes(b"")
                 except UnicodeDecodeError:
                     # Handle incomplete UTF-8 sequences
@@ -64,13 +62,10 @@ def callback_impl(result, userdata, status):
                 # Handle case where text is None
                 if split_byte_data:
                     try:
-                        # Try to decode any accumulated bytes
                         decoded_text = split_byte_data.decode('utf-8')
                         global_text.append(decoded_text)
-                        print(decoded_text, end='')
                         split_byte_data = bytes(b"")
                     except UnicodeDecodeError:
-                        # Still incomplete, keep for next time
                         pass
 
             # --- EMBEDDINGS Part---
@@ -87,12 +82,8 @@ def callback_impl(result, userdata, status):
                 embeddings = np.ctypeslib.as_array(raw)
                 embeddings = embeddings.reshape(num_tokens, embd_size)
 
-                # Save global
-                #last_embeddings = embeddings.copy()
                 last_embeddings.append(embeddings)
-                print(f"\n✅ Embeddings Shape: {embeddings.shape}")
+                logger.debug("Embeddings generated", shape=embeddings.shape)
 
         except Exception as e:
-            print(f"\nError processing callback: {str(e)}", end='')
-
-        sys.stdout.flush()
+            logger.error("Error processing callback", error=str(e))
