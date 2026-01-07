@@ -208,18 +208,20 @@ def create_app() -> FastAPI:
             http_method = request.method
             http_version = request.scope["http_version"]
 
-            access_logger.info(
-                f'{client_host}:{client_port} - "{http_method} {url} HTTP/{http_version}" {status_code}',
-                http={
-                    "url": str(request.url),
-                    "status_code": status_code,
-                    "method": http_method,
-                    "request_id": request_id,
-                    "version": http_version,
-                },
-                network={"client": {"ip": client_host, "port": client_port}},
-                duration_ms=process_time_ms,
-            )
+            # Skip health check logging to reduce noise
+            if not request.url.path.startswith("/health"):
+                access_logger.info(
+                    f'{client_host}:{client_port} - "{http_method} {url} HTTP/{http_version}" {status_code}',
+                    http={
+                        "url": str(request.url),
+                        "status_code": status_code,
+                        "method": http_method,
+                        "request_id": request_id,
+                        "version": http_version,
+                    },
+                    network={"client": {"ip": client_host, "port": client_port}},
+                    duration_ms=process_time_ms,
+                )
 
             response.headers["X-Request-ID"] = request_id or ""
             response.headers["X-Process-Time"] = str(process_time_ms)
