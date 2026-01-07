@@ -379,7 +379,7 @@ async def unload_model_ollama(
         }
     },
 )
-async def generate_ollama(
+def generate_ollama(
     request: GenerateRequest,
     req: Request,
     wm: WorkerManager = Depends(get_worker_manager),
@@ -448,7 +448,7 @@ async def generate_ollama(
         }
     },
 )
-async def chat_ollama(
+def chat_ollama(
     request: ChatRequest,
     req: Request,
     wm: WorkerManager = Depends(get_worker_manager),
@@ -512,7 +512,7 @@ async def chat_ollama(
 
 @router.post("/embeddings")
 @router.post("/embed")
-async def embeddings_ollama(
+def embeddings_ollama(
     request: EmbeddingsRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),

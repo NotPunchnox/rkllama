@@ -89,7 +89,7 @@ async def get_openai_model(model_name: str, models_path: str = Depends(get_model
 
 
 @router.post("/completions")
-async def completions_openai(
+def completions_openai(
     request: OpenAICompletionRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -134,7 +134,7 @@ async def completions_openai(
 
 
 @router.post("/chat/completions")
-async def chat_completions_openai(
+def chat_completions_openai(
     request: OpenAIChatRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -192,7 +192,7 @@ async def chat_completions_openai(
 
 
 @router.post("/embeddings")
-async def embeddings_openai(
+def embeddings_openai(
     request: OpenAIEmbeddingRequest,
     wm: WorkerManager = Depends(get_worker_manager),
     models_path: str = Depends(get_models_path),
@@ -225,7 +225,7 @@ async def embeddings_openai(
 
 
 @router.post("/images/generations")
-async def generate_image_openai(
+def generate_image_openai(
     request: OpenAIImageRequest,
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
@@ -264,7 +264,7 @@ async def get_generated_image(model_name: str, file_name: str) -> FileResponse:
 
 
 @router.post("/audio/speech")
-async def generate_speech_openai(
+def generate_speech_openai(
     request: OpenAISpeechRequest,
     debug: bool = Depends(get_debug_mode),
 ) -> Any:
@@ -294,7 +294,7 @@ async def generate_speech_openai(
 
 
 @router.post("/audio/transcriptions")
-async def generate_transcriptions_openai(
+def generate_transcriptions_openai(
     file: UploadFile = File(...),
     model: str = Form(...),
     language: str | None = Form(None),
