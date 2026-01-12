@@ -33,8 +33,10 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **Hardware**: Orange Pi 5 Plus: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **Hardware**: Orange Pi 5 Max: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
+- **Hardware**: Turing Pi 2 + RK1 Compute Modules: (Rockchip RK3588, NPU 6 TOPS), 8-32GB RAM per node.
 - **OS**: [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
 - **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
+- **Orchestration**: Kubernetes (K3s) with RKNPU device plugin for multi-node NPU clusters.
 
 ## Main Features
 - **Running models on NPU.**
@@ -75,6 +77,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **OpenTelemetry Observability** - Opt-in distributed tracing and metrics with OTLP export to Grafana Alloy, Jaeger, or any OTLP-compatible backend.
 - **Health Check Endpoints** - Kubernetes-ready `/health` (liveness) and `/health/ready` (readiness) probes that remain responsive during inference.
 - **Structured Access Logging** - JSON-formatted request logs with correlation IDs for production debugging and monitoring.
+- **Model Router** - Kubernetes-native request router for multi-node NPU clusters with model-aware routing and automatic load balancing.
 
 
 ## Documentation
@@ -455,6 +458,32 @@ See the [Configuration Documentation](documentation/configuration.md) for comple
 ---
 
 # Changelog
+
+## 1.2.3-3 (Upcoming)
+
+**Model Router**: New model-aware request router for multi-node Kubernetes deployments:
+- Routes requests to pods that have the requested model loaded
+- Round-robin load balancing across pods with the same model
+- Automatic model placement via ConfigMap configuration
+- Aggregated endpoints: `/api/tags`, `/api/ps` show models across all pods
+- Router status endpoints: `/router/status`, `/router/pods`, `/router/models`
+
+**Disable Model Unloading**: New `RKLLAMA_MODEL_DISABLE_MODEL_UNLOADING=true` option to prevent NPU memory leaks. When enabled:
+- Models load once and stay loaded permanently
+- No automatic expiration unloading
+- Unload API calls return an error
+- Restart pod to change models
+
+**Tool Calling Fix**: Fixed OpenAI API compatibility for tool calls - `arguments` field now correctly returns a JSON string instead of a dict object.
+
+**Kubernetes Improvements**:
+- Added router deployment manifests to `k8s-example/router/`
+- DaemonSet now supports `node-type: npu` node selector
+- Router version tied to main RKLlama version
+
+**Dependencies**: Added `jinja2` as required dependency for chat template processing with tools.
+
+---
 
 ## 1.2.3-2
 
