@@ -76,6 +76,9 @@ class ModelSettings(BaseSettings):
     max_number_models_loaded_in_memory: int = Field(
         default=10, ge=1, le=100, description="Max concurrent loaded models"
     )
+    disable_model_unloading: bool = Field(
+        default=False, description="Disable model unloading to prevent NPU memory leaks. Restart pod to change models."
+    )
 
 
 class PlatformSettings(BaseSettings):

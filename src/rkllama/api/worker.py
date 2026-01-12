@@ -360,6 +360,10 @@ class WorkerManager:
         """
         Unload/stop workers for expired models
         """
+        # Skip if model unloading is disabled (prevents NPU memory leaks)
+        if rkllama.config.get("model", "disable_model_unloading"):
+            return None
+
         # Get all expired models
         expired_models = [ model for model in self.workers.keys() if datetime.now() > self.workers[model].worker_model_info.expires_at ]
 
@@ -451,6 +455,11 @@ class WorkerManager:
         Args:
             memory_required (int) -> Size of memory need by the model to load
         """
+        # Skip if model unloading is disabled (prevents NPU memory leaks)
+        if rkllama.config.get("model", "disable_model_unloading"):
+            logger.warning("Cannot free memory: model unloading is disabled. Restart pod to change models.", memory_required=memory_required)
+            return
+
         # From the dictionary of workers, we create an array of worker info that holds the size of each one
         worker_models_info = [ self.workers[model].worker_model_info for model in self.workers.keys() ]
 

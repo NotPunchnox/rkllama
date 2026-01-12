@@ -1,0 +1,59 @@
+# RKLlama Router Deployment
+#
+# Routes requests to appropriate rkllama pods based on model name.
+# Reads model assignment config from ConfigMap.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rkllama-router
+  labels:
+    app: rkllama-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rkllama-router
+  template:
+    metadata:
+      labels:
+        app: rkllama-router
+    spec:
+      serviceAccountName: rkllama-router
+      containers:
+        - name: router
+          image: ghcr.io/rsjames-ttrpg/rkllama-router:latest
+          imagePullPolicy: Always
+          args:
+            - --port=8080
+            - --namespace=$(NAMESPACE)
+            - --selector=app=rkllama
+            - --config=rkllama-model-config
+            - --sync-interval=30s
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10

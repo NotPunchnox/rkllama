@@ -249,3 +249,11 @@ replace = "### [Version: {new_version}](https://github.com/rsJames-ttrpg/rkllama
 filename = "converter/pyproject.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "router/VERSION"
+
+[[tool.bumpversion.files]]
+filename = "k8s-example/router/kustomization.yml"
+search = "newTag: {current_version}"
+replace = "newTag: {new_version}"
