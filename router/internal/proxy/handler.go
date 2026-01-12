@@ -57,6 +57,19 @@ func (h *Handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		h.aggregatePS(w, r)
 		return
 	}
+	// Router status endpoints
+	if r.URL.Path == "/router/status" && r.Method == http.MethodGet {
+		h.routerStatus(w, r)
+		return
+	}
+	if r.URL.Path == "/router/pods" && r.Method == http.MethodGet {
+		h.routerPods(w, r)
+		return
+	}
+	if r.URL.Path == "/router/models" && r.Method == http.MethodGet {
+		h.routerModels(w, r)
+		return
+	}
 
 	// Extract model from request
 	model, body, err := h.extractModel(r)
@@ -215,5 +228,112 @@ func (h *Handler) aggregatePS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"models": running,
+	})
+}
+
+// routerStatus returns detailed router status
+func (h *Handler) routerStatus(w http.ResponseWriter, _ *http.Request) {
+	pods := h.discovery.GetAllPods()
+
+	type podStatus struct {
+		Name     string   `json:"name"`
+		IP       string   `json:"ip"`
+		NodeName string   `json:"node_name"`
+		Ready    bool     `json:"ready"`
+		Models   []string `json:"models"`
+	}
+
+	podStatuses := make([]podStatus, 0, len(pods))
+	totalModels := 0
+	for _, pod := range pods {
+		podStatuses = append(podStatuses, podStatus{
+			Name:     pod.Name,
+			IP:       pod.IP,
+			NodeName: pod.NodeName,
+			Ready:    pod.Ready,
+			Models:   pod.Models,
+		})
+		totalModels += len(pod.Models)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":        "ok",
+		"pods":          podStatuses,
+		"pod_count":     len(pods),
+		"model_count":   len(h.discovery.GetAllModels()),
+		"loaded_count":  totalModels,
+		"unique_models": h.discovery.GetAllModels(),
+	})
+}
+
+// routerPods returns detailed information about all pods
+func (h *Handler) routerPods(w http.ResponseWriter, _ *http.Request) {
+	pods := h.discovery.GetAllPods()
+
+	type podInfo struct {
+		Name       string   `json:"name"`
+		IP         string   `json:"ip"`
+		NodeName   string   `json:"node_name"`
+		Ready      bool     `json:"ready"`
+		Models     []string `json:"models"`
+		ModelCount int      `json:"model_count"`
+	}
+
+	podInfos := make([]podInfo, 0, len(pods))
+	for _, pod := range pods {
+		podInfos = append(podInfos, podInfo{
+			Name:       pod.Name,
+			IP:         pod.IP,
+			NodeName:   pod.NodeName,
+			Ready:      pod.Ready,
+			Models:     pod.Models,
+			ModelCount: len(pod.Models),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"pods": podInfos,
+	})
+}
+
+// routerModels returns models with their pod locations
+func (h *Handler) routerModels(w http.ResponseWriter, _ *http.Request) {
+	models := h.discovery.GetAllModels()
+
+	type modelInfo struct {
+		Name     string   `json:"name"`
+		Pods     []string `json:"pods"`
+		Nodes    []string `json:"nodes"`
+		Replicas int      `json:"replicas"`
+	}
+
+	modelInfos := make([]modelInfo, 0, len(models))
+	for _, model := range models {
+		pods := h.discovery.GetPodsForModel(model)
+		podNames := make([]string, 0, len(pods))
+		nodeNames := make([]string, 0, len(pods))
+		nodeSet := make(map[string]bool)
+
+		for _, pod := range pods {
+			podNames = append(podNames, pod.Name)
+			if !nodeSet[pod.NodeName] {
+				nodeSet[pod.NodeName] = true
+				nodeNames = append(nodeNames, pod.NodeName)
+			}
+		}
+
+		modelInfos = append(modelInfos, modelInfo{
+			Name:     model,
+			Pods:     podNames,
+			Nodes:    nodeNames,
+			Replicas: len(pods),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"models": modelInfos,
 	})
 }
