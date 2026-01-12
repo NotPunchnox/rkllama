@@ -59,10 +59,57 @@ kubectl -n rkllama set image deployment/rkllama rkllama=ghcr.io/rsjames-ttrpg/rk
 | File | Description |
 |------|-------------|
 | `kustomization.yml` | Kustomize configuration, sets namespace |
-| `deployment.yml` | Main deployment with NPU resource requests |
+| `deployment.yml` | Single-node deployment with NPU resource requests |
+| `daemonset.yml` | Multi-node DaemonSet (one pod per NPU node) |
 | `service.yml` | ClusterIP service on port 8080 |
 | `ingress.yml` | Ingress with TLS and timeout settings |
 | `pv.yml` | PersistentVolumeClaim for model storage |
+| `router/` | Model-aware router for multi-node clusters |
+
+## Router (Multi-Node Clusters)
+
+For multi-node deployments, the router provides intelligent request routing based on which models are loaded on each pod.
+
+### Router Features
+
+- **Model-aware routing**: Routes requests to pods that have the requested model loaded
+- **Round-robin load balancing**: Distributes requests across pods with the same model
+- **Automatic model placement**: Configures which models should be loaded on which pods
+- **Aggregated endpoints**: `/api/tags` shows all models across all pods
+
+### Router Configuration
+
+Edit `router/configmap.yml` to define model placement:
+
+```yaml
+models:
+  # Replica-based: router picks nodes automatically
+  qwen-7b:
+    replicas: 2      # Load on 2 pods
+    priority: 10     # Higher priority models placed first
+
+  # Node-based: explicit placement
+  llama-70b:
+    nodes:
+      - big-memory-node-1
+      - big-memory-node-2
+
+# Model aliases (Ollama-style names)
+aliases:
+  "qwen:7b": "qwen-7b"
+  "qwen:latest": "qwen-7b"
+```
+
+### Disable Router
+
+If you don't need the router (single-node deployment), comment it out in `kustomization.yml`:
+
+```yaml
+resources:
+  - ./deployment.yml
+  - ./service.yml
+  # - ./router  # Disabled
+```
 
 ## Configuration
 

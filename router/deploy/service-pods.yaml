@@ -1,0 +1,16 @@
+# Headless service for direct pod access (used by router internally)
+apiVersion: v1
+kind: Service
+metadata:
+  name: rkllama-pods
+  labels:
+    app: rkllama
+spec:
+  clusterIP: None
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: rkllama

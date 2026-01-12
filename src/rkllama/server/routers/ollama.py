@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+import rkllama.config
 from rkllama.api.format_utils import strtobool
 from rkllama.api.model_utils import (
     extract_model_details,
@@ -353,6 +354,12 @@ async def unload_model_ollama(
     wm: WorkerManager = Depends(get_worker_manager),
 ) -> UnloadResponse:
     """Unload a model (Ollama-compatible)."""
+    if rkllama.config.get("model", "disable_model_unloading"):
+        raise HTTPException(
+            status_code=400,
+            detail="Model unloading is disabled to prevent NPU memory leaks. Restart pod to change models.",
+        )
+
     model_name = strip_namespace(request.model)
 
     if not wm.exists_model_loaded(model_name):

@@ -247,6 +247,12 @@ async def unload_model_route(
     wm: WorkerManager = Depends(get_worker_manager),
 ) -> NativeUnloadResponse:
     """Unload a model from the NPU."""
+    if rkllama.config.get("model", "disable_model_unloading"):
+        raise HTTPException(
+            status_code=400,
+            detail="Model unloading is disabled to prevent NPU memory leaks. Restart pod to change models.",
+        )
+
     if not wm.exists_model_loaded(request.model_name):
         raise HTTPException(status_code=400, detail=f"No model {request.model_name} is currently loaded.")
 
@@ -257,5 +263,11 @@ async def unload_model_route(
 @router.post("/unload_models")
 async def unload_models_route(wm: WorkerManager = Depends(get_worker_manager)) -> NativeUnloadAllResponse:
     """Unload all models."""
+    if rkllama.config.get("model", "disable_model_unloading"):
+        raise HTTPException(
+            status_code=400,
+            detail="Model unloading is disabled to prevent NPU memory leaks. Restart pod to change models.",
+        )
+
     wm.stop_all()
     return NativeUnloadAllResponse(message="Models successfully unloaded!")

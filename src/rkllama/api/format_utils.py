@@ -458,6 +458,9 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
         for tool in tool_calls:
             tool["id"] = f"call_{uuid.uuid4().hex}"
             tool["type"] = "function"
+            # OpenAI API requires arguments to be a JSON string, not a dict
+            if isinstance(tool.get("function", {}).get("arguments"), dict):
+                tool["function"]["arguments"] = json.dumps(tool["function"]["arguments"])
         choice_message["tool_calls"] = tool_calls
         finish_reason = ollama_response.get("done_reason")
 
@@ -629,7 +632,9 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
                 tool["id"] = f"call_{uuid.uuid4().hex}"
                 tool["type"] = "function"
                 tool["index"] = idx
-                tool["function"]["arguments"] = str(tool["function"]["arguments"]).replace("'", '"')
+                # OpenAI API requires arguments to be a JSON string, not a dict
+                if isinstance(tool.get("function", {}).get("arguments"), dict):
+                    tool["function"]["arguments"] = json.dumps(tool["function"]["arguments"])
             delta["tool_calls"] = tool_calls
 
         chunk = {

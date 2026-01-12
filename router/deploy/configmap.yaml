@@ -1,0 +1,37 @@
+# Model assignment configuration
+#
+# Two modes:
+# 1. Replica-based (flexible): specify how many copies, router picks nodes
+# 2. Node-based (explicit): specify exactly which nodes should have the model
+#
+# Models are processed by priority (higher first) to ensure important
+# models get placed before less important ones.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rkllama-model-config
+data:
+  models.yaml: |
+    models:
+      # Replica-based placement - router picks nodes automatically
+      # Good for load balancing when you don't care which specific nodes
+      qwen-7b:
+        replicas: 2
+        priority: 10  # Higher priority, placed first
+
+      qwen-1.5b:
+        replicas: 4
+        priority: 5
+
+      # Explicit node placement - you control exactly where
+      # Use when specific nodes have specific hardware/memory
+      # llama-70b:
+      #   nodes:
+      #     - big-memory-node-1
+      #     - big-memory-node-2
+
+      # Mix: explicit placement with priority
+      # phi-2:
+      #   nodes: ["node-3", "node-4"]
+      #   priority: 1

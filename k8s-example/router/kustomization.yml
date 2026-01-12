@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yml
+  - role.yml
+  - rolebinding.yml
+  - configmap.yml
+  - deployment.yml
+  - service.yml
+  - service-pods.yml
+
+images:
+  - name: ghcr.io/rsjames-ttrpg/rkllama-router
+    newTag: 1.2.3-2

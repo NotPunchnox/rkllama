@@ -1,0 +1,12 @@
+# Bind role to service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rkllama-router
+subjects:
+  - kind: ServiceAccount
+    name: rkllama-router
+roleRef:
+  kind: Role
+  name: rkllama-router
+  apiGroup: rbac.authorization.k8s.io
