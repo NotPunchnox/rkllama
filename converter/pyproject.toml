@@ -1,6 +1,6 @@
 [project]
 name = "rkllama-converter"
-version = "1.2.3-2"
+version = "1.2.3-3"
 description = "Convert HuggingFace models to RKLLM format for Rockchip NPU"
 readme = "README.md"
 requires-python = ">=3.10"
