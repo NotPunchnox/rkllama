@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/rsjames-ttrpg/rkllama/router/internal/discovery"
@@ -91,15 +92,21 @@ func (h *Handler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve model pattern (supports regex matching against loaded models)
+	resolvedModel, body, err := h.resolveModelPattern(model, body)
+	if err != nil {
+		slog.Warn("failed to resolve model pattern", "pattern", model, "error", err)
+	}
+
 	// Find a pod with the model loaded
-	pod := h.discovery.GetNextPodForModel(model)
+	pod := h.discovery.GetNextPodForModel(resolvedModel)
 	if pod == nil {
-		slog.Warn("no pod found for model", "model", model)
+		slog.Warn("no pod found for model", "model", resolvedModel, "original_pattern", model)
 		http.Error(w, fmt.Sprintf("model %q not loaded on any pod", model), http.StatusServiceUnavailable)
 		return
 	}
 
-	slog.Debug("routing request", "model", model, "pod", pod.Name, "path", r.URL.Path)
+	slog.Debug("routing request", "model", resolvedModel, "pattern", model, "pod", pod.Name, "path", r.URL.Path)
 	h.proxyToPod(w, r, pod, body)
 }
 
@@ -129,6 +136,67 @@ func (h *Handler) extractModel(r *http.Request) (string, []byte, error) {
 	}
 
 	return req.Model, body, nil
+}
+
+// resolveModelPattern attempts to match the model pattern against loaded models.
+// If an exact match exists, it returns the model unchanged.
+// If the pattern matches a loaded model via regex, it returns the matched model and updated body.
+// Returns the resolved model name, updated body (with model replaced), and any error.
+func (h *Handler) resolveModelPattern(modelPattern string, body []byte) (string, []byte, error) {
+	// First check for exact match
+	pods := h.discovery.GetPodsForModel(modelPattern)
+	if len(pods) > 0 {
+		return modelPattern, body, nil
+	}
+
+	// Try to compile as regex
+	re, err := regexp.Compile(modelPattern)
+	if err != nil {
+		// Not a valid regex, return as-is
+		return modelPattern, body, nil
+	}
+
+	// Match against all loaded models
+	allModels := h.discovery.GetAllModels()
+	for _, model := range allModels {
+		if re.MatchString(model) {
+			slog.Debug("regex model match", "pattern", modelPattern, "matched", model)
+
+			// Replace model in body
+			newBody, err := h.replaceModelInBody(body, model)
+			if err != nil {
+				return model, body, err
+			}
+			return model, newBody, nil
+		}
+	}
+
+	// No match found, return original
+	return modelPattern, body, nil
+}
+
+// replaceModelInBody replaces the model field in the JSON body with the new model name
+func (h *Handler) replaceModelInBody(body []byte, newModel string) ([]byte, error) {
+	if len(body) == 0 {
+		return body, nil
+	}
+
+	// Parse the body as a generic map to preserve all fields
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body, err
+	}
+
+	// Replace the model field
+	data["model"] = newModel
+
+	// Re-encode
+	newBody, err := json.Marshal(data)
+	if err != nil {
+		return body, err
+	}
+
+	return newBody, nil
 }
 
 // proxyToAnyPod proxies to any available pod
