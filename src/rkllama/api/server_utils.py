@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import re
+import threading
 import time
 
 from fastapi.responses import Response, StreamingResponse
@@ -10,6 +11,11 @@ from transformers import AutoTokenizer
 import rkllama.api.variables as variables
 import rkllama.config
 from rkllama.logging import get_logger
+
+# Global inference lock to prevent concurrent requests from corrupting model output
+# Each pod processes one inference at a time; the router distributes across pods
+_inference_lock = threading.Lock()
+_inference_lock_timeout = 300  # 5 minute timeout to prevent deadlocks
 
 from .format_utils import (
     create_format_instruction,
@@ -308,137 +314,146 @@ class ChatEndpointHandler(EndpointHandler):
     def handle_streaming(cls, model_name, prompt_input, prompt_token_count, format_spec, tools, enable_thinking, images=None):
         """Handle streaming chat response"""
 
-        # Check if multimodal or text only
-        if not images:
-            # Send the task of inference to the model (using PROMPT mode - raw string)
-            variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
-        else:
-            # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
-            # Clear the cache to prevent image embedding problems
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
-
-
-        # Wait for result queue
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
-        if result_q is None:
-            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
-        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
-
-
         def generate():
+            # Acquire inference lock to prevent concurrent requests from corrupting output
+            lock_acquired = _inference_lock.acquire(timeout=_inference_lock_timeout)
+            if not lock_acquired:
+                logger.error("Failed to acquire inference lock - request timed out waiting for previous request")
+                raise RuntimeError("Server busy - inference request timed out waiting for lock")
 
-            count = 0
-            start_time = time.time()
-            prompt_eval_time = None
-            complete_text = ""
-            final_sent = False
+            try:
+                # Check if multimodal or text only
+                if not images:
+                    # Send the task of inference to the model (using PROMPT mode - raw string)
+                    variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
+                else:
+                    # Send the task of multimodal inference to the model
+                    variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
+                    # Clear the cache to prevent image embedding problems
+                    variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
-            thread_finished = False
+                # Wait for result queue
+                result_q = variables.worker_manager_rkllm.get_result(model_name)
+                if result_q is None:
+                    raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
+                finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
-            # Tool calls detection
-            max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
-            tool_calls = False
+                count = 0
+                start_time = time.time()
+                prompt_eval_time = None
+                complete_text = ""
+                final_sent = False
 
-            # Thinking variables
-            thinking = enable_thinking
-            response_tokens = [] # All tokens from response
-            thinking_response_tokens = [] # Thinking tokens from response
-            final_response_tokens = [] # Final answer tokens from response
+                thread_finished = False
+
+                # Tool calls detection
+                max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
+                tool_calls = False
+
+                # Thinking variables
+                thinking = enable_thinking
+                response_tokens = [] # All tokens from response
+                thinking_response_tokens = [] # Thinking tokens from response
+                final_response_tokens = [] # Final answer tokens from response
 
 
-            while not thread_finished or not final_sent:
-                token = result_q.get(timeout=300)  # Block until receive any token
-                if token == finished_inference_token:
-                    thread_finished = True
+                while not thread_finished or not final_sent:
+                    token = result_q.get(timeout=300)  # Block until receive any token
+                    if token == finished_inference_token:
+                        thread_finished = True
 
-                if not thread_finished:
-                    count += 1
+                    if not thread_finished:
+                        count += 1
 
-                    if count == 1:
-                        prompt_eval_time = time.time()
+                        if count == 1:
+                            prompt_eval_time = time.time()
 
-                        if thinking and "<think>" not in token.lower():
-                            thinking_response_tokens.append(token)
-                            token = "<think>" + token # Ensure correct initial format token <think>
-                    else:
-                        if thinking:
-                            if "</think>" in token.lower():
-                                thinking = False
-                            else:
+                            if thinking and "<think>" not in token.lower():
                                 thinking_response_tokens.append(token)
+                                token = "<think>" + token # Ensure correct initial format token <think>
+                        else:
+                            if thinking:
+                                if "</think>" in token.lower():
+                                    thinking = False
+                                else:
+                                    thinking_response_tokens.append(token)
 
-                    complete_text += token
-                    response_tokens.append(token)
+                        complete_text += token
+                        response_tokens.append(token)
 
-                    if not thinking and token != "</think>":
-                        final_response_tokens.append(token)
+                        if not thinking and token != "</think>":
+                            final_response_tokens.append(token)
 
-                    if not tool_calls:
-                        if len(final_response_tokens) > max_token_to_wait_for_tool_call or not tools:
-                            if variables.global_status != 1:
-                                chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
-                                yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass
-                        elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
-                            if variables.global_status != 1:
-
-                                for temp_token in response_tokens:
-                                    time.sleep(0.1) # Simulate delay to stream previos tokens
-                                    chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
+                        if not tool_calls:
+                            if len(final_response_tokens) > max_token_to_wait_for_tool_call or not tools:
+                                if variables.global_status != 1:
+                                    chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
                                     yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass
+                                else:
+                                    pass
+                            elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
+                                if variables.global_status != 1:
+
+                                    for temp_token in response_tokens:
+                                        time.sleep(0.1) # Simulate delay to stream previous tokens
+                                        chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
+                                        yield f"{json.dumps(chunk)}\n"
+                                else:
+                                    pass
+                            elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
+                                if variables.global_status != 1:
+                                    # Check if tool call found in the first tokens in the response
+                                    tool_calls = "<tool_call>" in token
+
+                                else:
+                                    pass
+
+                    if thread_finished and not final_sent:
+                        final_sent = True
+
+                        # Final check for tool calls in the complete response
+                        if tools:
+                            json_tool_calls = get_tool_calls("".join(final_response_tokens))
+
+                            # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
+                            if len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                                if not tool_calls and json_tool_calls:
+                                    tool_calls = True
+
+                        # If tool calls detected, send them as final response
+                        if tools and tool_calls:
+                            chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
+                            yield f"{json.dumps(chunk_tool_call)}\n"
                         elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
-                            if variables.global_status != 1:
-                                # Check if tool call founded in th first tokens in the response
-                                tool_calls = "<tool_call>" in token
+                            for temp_token in response_tokens:
+                                  time.sleep(0.1) # Simulate delay to stream previous tokens
+                                  chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
+                                  yield f"{json.dumps(chunk)}\n"
 
-                            else:
-                                pass
+                        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+                        metrics["prompt_tokens"] = prompt_token_count
+                        metrics["token_count"] = count
 
-                if thread_finished and not final_sent:
-                    final_sent = True
+                        format_data = None
+                        if format_spec and complete_text:
+                            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                            if success and parsed_data:
+                                format_type = (
+                                    format_spec.get("type", "") if isinstance(format_spec, dict)
+                                    else "json"
+                                )
+                                format_data = {
+                                    "format_type": format_type,
+                                    "parsed": parsed_data,
+                                    "cleaned_json": cleaned_json
+                                }
+                        final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
+                        yield f"{json.dumps(final_chunk)}\n"
 
-                    # Final check for tool calls in the complete response
-                    if tools:
-                        json_tool_calls = get_tool_calls("".join(final_response_tokens))
-
-                        # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
-                        if len(final_response_tokens) < max_token_to_wait_for_tool_call:
-                            if not tool_calls and json_tool_calls:
-                                tool_calls = True
-
-                    # If tool calls detected, send them as final response
-                    if tools and tool_calls:
-                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
-                        yield f"{json.dumps(chunk_tool_call)}\n"
-                    elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
-                        for temp_token in response_tokens:
-                              time.sleep(0.1) # Simulate delay to stream previos tokens
-                              chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
-                              yield f"{json.dumps(chunk)}\n"
-
-                    metrics = cls.calculate_durations(start_time, prompt_eval_time)
-                    metrics["prompt_tokens"] = prompt_token_count
-                    metrics["token_count"] = count
-
-                    format_data = None
-                    if format_spec and complete_text:
-                        success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                        if success and parsed_data:
-                            format_type = (
-                                format_spec.get("type", "") if isinstance(format_spec, dict)
-                                else "json"
-                            )
-                            format_data = {
-                                "format_type": format_type,
-                                "parsed": parsed_data,
-                                "cleaned_json": cleaned_json
-                            }
-                    final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
-                    yield f"{json.dumps(final_chunk)}\n"
+            finally:
+                # Always release the lock when done
+                _inference_lock.release()
+                logger.debug("Released inference lock", model=model_name)
 
         return StreamingResponse(generate(), media_type='application/x-ndjson')
 
@@ -447,74 +462,86 @@ class ChatEndpointHandler(EndpointHandler):
     def handle_complete(cls, model_name, prompt_input, prompt_token_count, format_spec, tools, enable_thinking, images=None):
         """Handle complete non-streaming chat response"""
 
-        start_time = time.time()
-        prompt_eval_time = None
-        thread_finished = False
+        # Acquire inference lock to prevent concurrent requests from corrupting output
+        lock_acquired = _inference_lock.acquire(timeout=_inference_lock_timeout)
+        if not lock_acquired:
+            logger.error("Failed to acquire inference lock - request timed out waiting for previous request")
+            raise RuntimeError("Server busy - inference request timed out waiting for lock")
 
-        count = 0
-        complete_text = ""
+        try:
+            start_time = time.time()
+            prompt_eval_time = None
+            thread_finished = False
 
-        # Check if multimodal or text only
-        if not images:
-            # Send the task of inference to the model (using PROMPT mode - raw string)
-            variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
-        else:
-            # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
-            # Clear the cache to prevent image embedding problems
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+            count = 0
+            complete_text = ""
 
-        # Wait for result queue
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
-        if result_q is None:
-            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
-        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+            # Check if multimodal or text only
+            if not images:
+                # Send the task of inference to the model (using PROMPT mode - raw string)
+                variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
+            else:
+                # Send the task of multimodal inference to the model
+                variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
+                # Clear the cache to prevent image embedding problems
+                variables.worker_manager_rkllm.clear_cache_worker(model_name)
+
+            # Wait for result queue
+            result_q = variables.worker_manager_rkllm.get_result(model_name)
+            if result_q is None:
+                raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
+            finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
 
-        while not thread_finished:
-            token = result_q.get(timeout=300)  # Block until receive any token
-            if token == finished_inference_token:
-                thread_finished = True
-                continue
+            while not thread_finished:
+                token = result_q.get(timeout=300)  # Block until receive any token
+                if token == finished_inference_token:
+                    thread_finished = True
+                    continue
 
-            count += 1
-            if count == 1:
-                prompt_eval_time = time.time()
+                count += 1
+                if count == 1:
+                    prompt_eval_time = time.time()
 
-                if enable_thinking and "<think>" not in token.lower():
-                    token = "<think>" + token # Ensure correct initial format
+                    if enable_thinking and "<think>" not in token.lower():
+                        token = "<think>" + token # Ensure correct initial format
 
-            complete_text += token
+                complete_text += token
 
-        metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
-        metrics["token_count"] = count
+            metrics = cls.calculate_durations(start_time, prompt_eval_time)
+            metrics["prompt_tokens"] = prompt_token_count
+            metrics["token_count"] = count
 
-        format_data = None
-        tool_calls = get_tool_calls(complete_text) if tools else None
-        if format_spec and complete_text and not tool_calls:
-            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-            if success and parsed_data:
-                format_type = (
-                    format_spec.get("type", "") if isinstance(format_spec, dict)
-                    else "json"
-                )
-                format_data = {
-                    "format_type": format_type,
-                    "parsed": parsed_data,
-                    "cleaned_json": cleaned_json
-                }
+            format_data = None
+            tool_calls = get_tool_calls(complete_text) if tools else None
+            if format_spec and complete_text and not tool_calls:
+                success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                if success and parsed_data:
+                    format_type = (
+                        format_spec.get("type", "") if isinstance(format_spec, dict)
+                        else "json"
+                    )
+                    format_data = {
+                        "format_type": format_type,
+                        "parsed": parsed_data,
+                        "cleaned_json": cleaned_json
+                    }
 
-        if tool_calls:
-           format_data = {
-                   "format_type" : "json",
-                   "parsed": "",
-                   "cleaned_json": "",
-                   "tool_call": tool_calls
-           }
+            if tool_calls:
+               format_data = {
+                       "format_type" : "json",
+                       "parsed": "",
+                       "cleaned_json": "",
+                       "tool_call": tool_calls
+               }
 
-        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return response
+            response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
+            return response
+
+        finally:
+            # Always release the lock when done
+            _inference_lock.release()
+            logger.debug("Released inference lock", model=model_name)
 
 
 class GenerateEndpointHandler(EndpointHandler):
@@ -638,79 +665,88 @@ class GenerateEndpointHandler(EndpointHandler):
     def handle_streaming(cls, model_name, prompt_input, prompt_token_count, format_spec, enable_thinking, images=None):
         """Handle streaming generate response"""
 
-        # Check if multimodal or text only
-        if not images:
-            # Send the task of inference to the model (using PROMPT mode - raw string)
-            variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
-        else:
-            # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
-            # Clear the cache to prevent image embedding problems
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
-
-        # Wait for result queue
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
-        if result_q is None:
-            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
-        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
-
-
         def generate():
+            # Acquire inference lock to prevent concurrent requests from corrupting output
+            lock_acquired = _inference_lock.acquire(timeout=_inference_lock_timeout)
+            if not lock_acquired:
+                logger.error("Failed to acquire inference lock - request timed out waiting for previous request")
+                raise RuntimeError("Server busy - inference request timed out waiting for lock")
 
-            count = 0
-            start_time = time.time()
-            prompt_eval_time = None
-            complete_text = ""
-            final_sent = False
+            try:
+                # Check if multimodal or text only
+                if not images:
+                    # Send the task of inference to the model (using PROMPT mode - raw string)
+                    variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
+                else:
+                    # Send the task of multimodal inference to the model
+                    variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
+                    # Clear the cache to prevent image embedding problems
+                    variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
-            thread_finished = False
+                # Wait for result queue
+                result_q = variables.worker_manager_rkllm.get_result(model_name)
+                if result_q is None:
+                    raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
+                finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
-            while not thread_finished or not final_sent:
-                token = result_q.get(timeout=300)  # Block until receive any token
-                if token == finished_inference_token:
-                    thread_finished = True
+                count = 0
+                start_time = time.time()
+                prompt_eval_time = None
+                complete_text = ""
+                final_sent = False
 
-                if not thread_finished:
-                    count += 1
+                thread_finished = False
+
+                while not thread_finished or not final_sent:
+                    token = result_q.get(timeout=300)  # Block until receive any token
+                    if token == finished_inference_token:
+                        thread_finished = True
+
+                    if not thread_finished:
+                        count += 1
 
 
-                    if count == 1:
-                        prompt_eval_time = time.time()
-                        if enable_thinking and "<think>" not in token.lower():
-                            token = "<think>" + token # Ensure correct initial format token <think>
+                        if count == 1:
+                            prompt_eval_time = time.time()
+                            if enable_thinking and "<think>" not in token.lower():
+                                token = "<think>" + token # Ensure correct initial format token <think>
 
-                    complete_text += token
+                        complete_text += token
 
-                    if variables.global_status != 1:
-                        chunk = cls.format_streaming_chunk(model_name, token)
-                        yield f"{json.dumps(chunk)}\n"
-                    else:
-                        pass
+                        if variables.global_status != 1:
+                            chunk = cls.format_streaming_chunk(model_name, token)
+                            yield f"{json.dumps(chunk)}\n"
+                        else:
+                            pass
 
-                if thread_finished and not final_sent:
-                    final_sent = True
+                    if thread_finished and not final_sent:
+                        final_sent = True
 
-                    metrics = cls.calculate_durations(start_time, prompt_eval_time)
-                    metrics["prompt_tokens"] = prompt_token_count
-                    metrics["token_count"] = count
+                        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+                        metrics["prompt_tokens"] = prompt_token_count
+                        metrics["token_count"] = count
 
-                    format_data = None
-                    if format_spec and complete_text:
-                        success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                        if success and parsed_data:
-                            format_type = (
-                                format_spec.get("type", "") if isinstance(format_spec, dict)
-                                else "json"
-                            )
-                            format_data = {
-                                "format_type": format_type,
-                                "parsed": parsed_data,
-                                "cleaned_json": cleaned_json
-                            }
+                        format_data = None
+                        if format_spec and complete_text:
+                            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                            if success and parsed_data:
+                                format_type = (
+                                    format_spec.get("type", "") if isinstance(format_spec, dict)
+                                    else "json"
+                                )
+                                format_data = {
+                                    "format_type": format_type,
+                                    "parsed": parsed_data,
+                                    "cleaned_json": cleaned_json
+                                }
 
-                    final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
-                    yield f"{json.dumps(final_chunk)}\n"
+                        final_chunk = cls.format_streaming_chunk(model_name, "", True, metrics, format_data)
+                        yield f"{json.dumps(final_chunk)}\n"
 
+            finally:
+                # Always release the lock when done
+                _inference_lock.release()
+                logger.debug("Released inference lock", model=model_name)
 
         return StreamingResponse(generate(), media_type='application/x-ndjson')
 
@@ -718,126 +754,138 @@ class GenerateEndpointHandler(EndpointHandler):
     def handle_complete(cls, model_name, prompt_input, prompt_token_count, format_spec, enable_thinking, images=None):
         """Handle complete generate response"""
 
-        start_time = time.time()
-        prompt_eval_time = None
-        thread_finished = False
+        # Acquire inference lock to prevent concurrent requests from corrupting output
+        lock_acquired = _inference_lock.acquire(timeout=_inference_lock_timeout)
+        if not lock_acquired:
+            logger.error("Failed to acquire inference lock - request timed out waiting for previous request")
+            raise RuntimeError("Server busy - inference request timed out waiting for lock")
 
-        count = 0
-        complete_text = ""
+        try:
+            start_time = time.time()
+            prompt_eval_time = None
+            thread_finished = False
 
-        # Check if multimodal or text only
-        if not images:
-            # Send the task of inference to the model (using PROMPT mode - raw string)
-            variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
-        else:
-            # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
-            # Clear the cache to prevent image embedding problems
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+            count = 0
+            complete_text = ""
 
-        # Wait for result queue
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
-        if result_q is None:
-            raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
-        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+            # Check if multimodal or text only
+            if not images:
+                # Send the task of inference to the model (using PROMPT mode - raw string)
+                variables.worker_manager_rkllm.inference(model_name, prompt_input, role="user", enable_thinking=enable_thinking, use_prompt_mode=True)
+            else:
+                # Send the task of multimodal inference to the model
+                variables.worker_manager_rkllm.multimodal(model_name, prompt_input, images, role="user", enable_thinking=enable_thinking)
+                # Clear the cache to prevent image embedding problems
+                variables.worker_manager_rkllm.clear_cache_worker(model_name)
 
-        while not thread_finished:
-            token = result_q.get(timeout=300)  # Block until receive any token
-            if token == finished_inference_token:
-                thread_finished = True
-                continue
+            # Wait for result queue
+            result_q = variables.worker_manager_rkllm.get_result(model_name)
+            if result_q is None:
+                raise RuntimeError(f"Model '{model_name}' is not loaded. Please load the model first.")
+            finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
 
-            count += 1
-            if count == 1:
-                prompt_eval_time = time.time()
+            while not thread_finished:
+                token = result_q.get(timeout=300)  # Block until receive any token
+                if token == finished_inference_token:
+                    thread_finished = True
+                    continue
 
-                if enable_thinking and "<think>" not in token.lower():
-                    token = "<think>" + token # Ensure correct initial format
+                count += 1
+                if count == 1:
+                    prompt_eval_time = time.time()
 
-            complete_text += token
+                    if enable_thinking and "<think>" not in token.lower():
+                        token = "<think>" + token # Ensure correct initial format
 
-        metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
-        metrics["token_count"] = count
+                complete_text += token
 
-        format_data = None
-        if format_spec and complete_text:
-            if DEBUG_MODE:
-                logger.debug("Validating format for complete text", preview=complete_text[:300])
-                if isinstance(format_spec, str):
-                    logger.debug("Format is string type", format_spec=format_spec)
+            metrics = cls.calculate_durations(start_time, prompt_eval_time)
+            metrics["prompt_tokens"] = prompt_token_count
+            metrics["token_count"] = count
 
-            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-
-            if not success and isinstance(format_spec, str) and format_spec.lower() == 'json':
+            format_data = None
+            if format_spec and complete_text:
                 if DEBUG_MODE:
-                    logger.debug("Simple JSON format validation failed, attempting additional extraction")
+                    logger.debug("Validating format for complete text", preview=complete_text[:300])
+                    if isinstance(format_spec, str):
+                        logger.debug("Format is string type", format_spec=format_spec)
 
-                json_pattern = r'\{[\s\S]*?\}'
-                matches = re.findall(json_pattern, complete_text)
+                success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
 
-                for match in matches:
-                    try:
+                if not success and isinstance(format_spec, str) and format_spec.lower() == 'json':
+                    if DEBUG_MODE:
+                        logger.debug("Simple JSON format validation failed, attempting additional extraction")
+
+                    json_pattern = r'\{[\s\S]*?\}'
+                    matches = re.findall(json_pattern, complete_text)
+
+                    for match in matches:
+                        try:
+                            fixed = match.replace("'", '"')
+                            fixed = re.sub(r'(\w+):', r'"\1":', fixed)
+                            test_parsed = json.loads(fixed)
+                            success, parsed_data, error, cleaned_json = True, test_parsed, None, fixed
+                            if DEBUG_MODE:
+                                logger.debug("Extracted valid JSON using additional methods", cleaned_json=cleaned_json)
+                            break
+                        except:
+                            continue
+
+                elif not success and isinstance(format_spec, dict) and format_spec.get('type') == 'object':
+                    if DEBUG_MODE:
+                        logger.debug("Initial validation failed, trying to fix JSON", error=error)
+
+                    json_pattern = r'\{[\s\S]*?\}'
+                    matches = re.findall(json_pattern, complete_text)
+
+                    for match in matches:
                         fixed = match.replace("'", '"')
                         fixed = re.sub(r'(\w+):', r'"\1":', fixed)
-                        test_parsed = json.loads(fixed)
-                        success, parsed_data, error, cleaned_json = True, test_parsed, None, fixed
-                        if DEBUG_MODE:
-                            logger.debug("Extracted valid JSON using additional methods", cleaned_json=cleaned_json)
-                        break
-                    except:
-                        continue
 
-            elif not success and isinstance(format_spec, dict) and format_spec.get('type') == 'object':
+                        try:
+                            test_parsed = json.loads(fixed)
+                            required_fields = format_spec.get('required', [])
+                            has_required = all(field in test_parsed for field in required_fields)
+
+                            if has_required:
+                                success, parsed_data, error, cleaned_json = validate_format_response(fixed, format_spec)
+                                if success:
+                                    if DEBUG_MODE:
+                                        logger.debug("Fixed JSON validation succeeded", cleaned_json=cleaned_json)
+                                    break
+                        except:
+                            continue
+
                 if DEBUG_MODE:
-                    logger.debug("Initial validation failed, trying to fix JSON", error=error)
+                    logger.debug("Format validation result", success=success, error=error)
+                    if cleaned_json and success:
+                        logger.debug("Cleaned JSON", cleaned_json=cleaned_json)
+                    elif not success:
+                        logger.debug("JSON validation failed, response will not include parsed data")
 
-                json_pattern = r'\{[\s\S]*?\}'
-                matches = re.findall(json_pattern, complete_text)
+                if success and parsed_data:
+                    if isinstance(format_spec, str):
+                        format_type = format_spec
+                    else:
+                        format_type = format_spec.get("type", "json") if isinstance(format_spec, dict) else "json"
 
-                for match in matches:
-                    fixed = match.replace("'", '"')
-                    fixed = re.sub(r'(\w+):', r'"\1":', fixed)
+                    format_data = {
+                        "format_type": format_type,
+                        "parsed": parsed_data,
+                        "cleaned_json": cleaned_json
+                    }
 
-                    try:
-                        test_parsed = json.loads(fixed)
-                        required_fields = format_spec.get('required', [])
-                        has_required = all(field in test_parsed for field in required_fields)
+            response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
 
-                        if has_required:
-                            success, parsed_data, error, cleaned_json = validate_format_response(fixed, format_spec)
-                            if success:
-                                if DEBUG_MODE:
-                                    logger.debug("Fixed JSON validation succeeded", cleaned_json=cleaned_json)
-                                break
-                    except:
-                        continue
+            if DEBUG_MODE and format_data:
+                logger.debug("Created formatted response with JSON content")
 
-            if DEBUG_MODE:
-                logger.debug("Format validation result", success=success, error=error)
-                if cleaned_json and success:
-                    logger.debug("Cleaned JSON", cleaned_json=cleaned_json)
-                elif not success:
-                    logger.debug("JSON validation failed, response will not include parsed data")
+            return response
 
-            if success and parsed_data:
-                if isinstance(format_spec, str):
-                    format_type = format_spec
-                else:
-                    format_type = format_spec.get("type", "json") if isinstance(format_spec, dict) else "json"
-
-                format_data = {
-                    "format_type": format_type,
-                    "parsed": parsed_data,
-                    "cleaned_json": cleaned_json
-                }
-
-        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-
-        if DEBUG_MODE and format_data:
-            logger.debug("Created formatted response with JSON content")
-
-        return response
+        finally:
+            # Always release the lock when done
+            _inference_lock.release()
+            logger.debug("Released inference lock", model=model_name)
 
 
 class EmbedEndpointHandler(EndpointHandler):

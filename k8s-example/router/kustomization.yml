@@ -9,6 +9,7 @@ resources:
   - deployment.yml
   - service.yml
   - service-pods.yml
+  - ingress.yml
 
 images:
   - name: ghcr.io/rsjames-ttrpg/rkllama-router
