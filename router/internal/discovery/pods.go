@@ -51,6 +51,19 @@ type ModelInfo struct {
 	Size       int64  `json:"size"`
 }
 
+// PsResponse represents the response from /api/ps (loaded models)
+type PsResponse struct {
+	Models []LoadedModelInfo `json:"models"`
+}
+
+// LoadedModelInfo represents a model from /api/ps
+type LoadedModelInfo struct {
+	Name     string `json:"name"`
+	Model    string `json:"model"`
+	Size     int64  `json:"size"`
+	LoadedAt string `json:"loaded_at"`
+}
+
 // New creates a new Discovery instance
 func New(ctx context.Context, namespace, labelSelector string) (*Discovery, error) {
 	// Create in-cluster config
@@ -163,9 +176,9 @@ func (d *Discovery) discover(ctx context.Context) {
 	)
 }
 
-// fetchModels gets the list of models from a pod's /api/tags endpoint
+// fetchModels gets the list of loaded models from a pod's /api/ps endpoint
 func (d *Discovery) fetchModels(ctx context.Context, podIP string) ([]string, error) {
-	url := fmt.Sprintf("http://%s:8080/api/tags", podIP)
+	url := fmt.Sprintf("http://%s:8080/api/ps", podIP)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -182,13 +195,13 @@ func (d *Discovery) fetchModels(ctx context.Context, podIP string) ([]string, er
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var tags TagsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+	var ps PsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ps); err != nil {
 		return nil, err
 	}
 
-	models := make([]string, 0, len(tags.Models))
-	for _, m := range tags.Models {
+	models := make([]string, 0, len(ps.Models))
+	for _, m := range ps.Models {
 		models = append(models, m.Name)
 	}
 

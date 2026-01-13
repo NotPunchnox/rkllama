@@ -3,6 +3,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from multiprocessing import Process, Queue
+from queue import Empty
 from operator import attrgetter
 
 import psutil
@@ -520,25 +521,32 @@ class WorkerManager:
         return None
 
 
-    def stop_worker(self, model_name):
+    def stop_worker(self, model_name, timeout: float = 30.0):
         """
         Stop/Unload a model worker
 
         Args:
             model_name (str): Workers to unload.
+            timeout (float): Seconds to wait for graceful shutdown before force killing.
 
         """
         if model_name in self.workers.keys():
-            # Get the queue of tasks of the worker
+            worker = self.workers[model_name]
 
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_q.put((WORKER_TASK_ABORT_INFERENCE, None, None, None, None, None))
+            worker.task_q.put((WORKER_TASK_ABORT_INFERENCE, None, None, None, None, None))
 
             # Send the unload task of the model
-            self.workers[model_name].task_q.put((WORKER_TASK_UNLOAD_MODEL, None, None, None, None, None))
+            worker.task_q.put((WORKER_TASK_UNLOAD_MODEL, None, None, None, None, None))
 
-            # Wait for unload
-            self.workers[model_name].process.join()
+            # Wait for unload with timeout
+            worker.process.join(timeout=timeout)
+
+            # Force kill if still alive
+            if worker.process.is_alive():
+                logger.warning("Worker did not stop gracefully, forcing termination", model=model_name)
+                worker._force_terminate_process()
+
             logger.info("Worker stopped", model=model_name)
 
             # Remove the worker from the dictionary
@@ -546,12 +554,54 @@ class WorkerManager:
 
     def stop_all(self):
         """
-        Send a inference task to the corresponding model worker
+        Stop all model workers gracefully.
         """
         # Loop over all the workers to stop/unload
         for model_name in list(self.workers.keys()):
             self.stop_worker(model_name)
 
+    def force_stop_all(self) -> dict:
+        """
+        Force kill all worker processes, including any orphaned child processes.
+        Use this when workers are stuck and normal unloading doesn't work.
+
+        Returns:
+            dict: Summary of killed processes
+        """
+        killed_tracked = []
+        killed_orphaned = []
+
+        # First, force kill all tracked workers
+        for model_name in list(self.workers.keys()):
+            worker = self.workers[model_name]
+            if worker.process is not None:
+                try:
+                    if worker.process.is_alive():
+                        worker.process.kill()
+                        worker.process.join(timeout=2.0)
+                    killed_tracked.append(model_name)
+                except Exception as e:
+                    logger.error("Error killing tracked worker", model=model_name, error=str(e))
+            del self.workers[model_name]
+
+        # Find and kill any orphaned child processes (workers that failed during init)
+        current_process = psutil.Process()
+        for child in current_process.children(recursive=True):
+            try:
+                # Check if it's a Python process that might be a stuck worker
+                cmdline = child.cmdline()
+                if any('rkllama' in arg or 'run_rkllm_worker' in arg for arg in cmdline):
+                    logger.warning("Found orphaned worker process", pid=child.pid)
+                    child.kill()
+                    killed_orphaned.append(child.pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        logger.info("Force stopped all workers", tracked=killed_tracked, orphaned=killed_orphaned)
+        return {
+            "killed_tracked": killed_tracked,
+            "killed_orphaned": killed_orphaned
+        }
 
     def clear_cache_worker(self, model_name):
         """
@@ -834,12 +884,38 @@ class Worker:
         self.process.start()
 
         # Wait to confirm initialization
-        creation_status = self.result_q.get(timeout=300)  # Timeout after 5 minutes for large models
+        try:
+            creation_status = self.result_q.get(timeout=300)  # Timeout after 5 minutes for large models
+        except Empty:
+            # Timeout waiting for worker to initialize - process is stuck
+            logger.error("Worker process timed out during initialization", model=self.worker_model_info.model)
+            self._force_terminate_process()
+            return False
 
         if creation_status == WORKER_TASK_ERROR:
             # Error loading the RKLLM Model. Wait for the worker to exit
-            self.process.terminate()
+            self._force_terminate_process()
             return False
 
         # Success loading the model
         return True
+
+    def _force_terminate_process(self, timeout: float = 5.0) -> None:
+        """
+        Force terminate the worker process with escalating signals.
+
+        Args:
+            timeout: Seconds to wait for graceful termination before killing
+        """
+        if self.process is None:
+            return
+
+        # Try graceful termination first
+        self.process.terminate()
+        self.process.join(timeout=timeout)
+
+        # If still alive, force kill
+        if self.process.is_alive():
+            logger.warning("Worker process did not terminate gracefully, forcing kill", model=self.worker_model_info.model)
+            self.process.kill()
+            self.process.join(timeout=2.0)

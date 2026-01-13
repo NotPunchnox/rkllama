@@ -202,12 +202,19 @@ def convert(
         console.print("[dim]This step may take several minutes depending on model size...[/]\n")
         converter._generate_rkllm_file()
 
-        # Step 3: Create Modelfile
-        console.print("\n[bold]Phase 3: Finalization[/]\n")
+        # Step 3: Save tokenizer for offline use
+        console.print("\n[bold]Phase 3: Tokenizer[/]\n")
+        console.print("[cyan]Saving tokenizer for offline use...[/]")
+        converter._save_tokenizer()
+        console.print("[green]✓[/] Tokenizer saved")
+
+        # Step 4: Create Modelfile
+        console.print("\n[bold]Phase 4: Finalization[/]\n")
         console.print("[cyan]Creating Modelfile...[/]")
         modelfile_config = ModelfileConfig(
             model_file=f"{model_name}.rkllm",
             huggingface_path=model_id,
+            tokenizer="./tokenizer",
             system=system_prompt or "You are a helpful AI assistant.",
             temperature=temperature,
             num_ctx=max_context,
@@ -218,7 +225,7 @@ def convert(
         save_modelfile(modelfile_config, config.output_path)
         console.print("[green]✓[/] Modelfile created")
 
-        # Step 4: Save metadata
+        # Step 5: Save metadata
         console.print("[cyan]Saving metadata...[/]")
         converter._save_metadata(config.output_path)
         console.print("[green]✓[/] Metadata saved")
@@ -239,7 +246,8 @@ def convert(
             f"Files created:\n"
             f"  - {model_name}.rkllm\n"
             f"  - Modelfile\n"
-            f"  - metadata.json\n\n"
+            f"  - metadata.json\n"
+            f"  - tokenizer/  [dim](for offline use)[/]\n\n"
             f"[dim]Copy to your RKLlama models directory to use.[/]",
             title="[bold green]Conversion Complete[/]",
             border_style="green",

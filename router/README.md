@@ -89,6 +89,31 @@ curl http://rkllama-router:8080/v1/chat/completions \
   -d '{"model": "qwen-7b", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
+### Monitor the Cluster
+
+```bash
+# Get router status overview
+curl http://rkllama-router:8080/router/status
+
+# List all pods and their loaded models
+curl http://rkllama-router:8080/router/pods
+
+# List models and which nodes have them
+curl http://rkllama-router:8080/router/models
+
+# See running models with pod/node info (Ollama-compatible)
+curl http://rkllama-router:8080/api/ps
+```
+
+### Emergency Recovery
+
+If models get stuck loading or workers hang:
+
+```bash
+# Force kill all workers on all nodes
+curl -X POST http://rkllama-router:8080/router/force_unload_all
+```
+
 ## Configuration
 
 | Flag | Default | Description |
@@ -101,13 +126,58 @@ curl http://rkllama-router:8080/v1/chat/completions \
 
 ## Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `/health` | Liveness probe |
-| `/health/ready` | Readiness probe (returns available pods/models) |
-| `/api/tags` | Aggregated list of all models across all pods |
-| `/api/ps` | Running models with pod/node info |
-| `/*` | All other requests proxied based on model |
+### Health & Probes
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Liveness probe |
+| `/health/ready` | GET | Readiness probe (returns available pods/models) |
+
+### Aggregated API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tags` | GET | Aggregated list of all models across all pods |
+| `/api/ps` | GET | Running models with pod/node info |
+
+### Router Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/router/status` | GET | Detailed router status with pod and model counts |
+| `/router/pods` | GET | List all discovered pods with their loaded models |
+| `/router/models` | GET | List all models with their pod/node locations |
+| `/router/force_unload_all` | POST | Force kill all workers on all nodes (emergency recovery) |
+
+### Proxied Requests
+
+All other requests are proxied to the appropriate pod based on the `model` field in the request body.
+
+#### Force Unload All
+
+Use this endpoint when workers are stuck and normal unloading doesn't work:
+
+```bash
+curl -X POST http://rkllama-router:8080/router/force_unload_all
+```
+
+Response:
+```json
+{
+  "message": "Force unload completed on 3/3 pods",
+  "total_pods": 3,
+  "success_count": 3,
+  "results": [
+    {
+      "pod_name": "rkllama-abc12",
+      "node_name": "node-1",
+      "success": true,
+      "killed_tracked": ["qwen-7b"],
+      "killed_orphaned": []
+    }
+  ]
+}
+```
 
 ## Local Development
 
