@@ -453,20 +453,44 @@ See the [Configuration Documentation](documentation/configuration.md) for comple
 
 ## 1.2.3-3 (Upcoming)
 
+**Inference Concurrency Control**: Added global inference lock to prevent concurrent requests from corrupting model output on the NPU.
+- Each pod now processes one inference request at a time
+- Prevents token interleaving issues when multiple requests hit the same pod
+- Router distributes requests across pods for parallelism
+
+**Tokenizer Bundling**: The converter now bundles tokenizer files with converted models for offline inference.
+- Tokenizer saved to `./tokenizer` directory during conversion
+- Server tries local tokenizer first, falls back to HuggingFace
+- Enables fully offline operation without network access
+
+**Force Unload Endpoint**: New `/force_unload_all` endpoint to kill stuck worker processes.
+- Available on both server and router
+- Router version calls all pods: `POST /router/force_unload_all`
+- Useful for recovering from stuck NPU states
+
+**Worker Process Improvements**: Enhanced worker process management.
+- Added 5-minute timeout for worker initialization
+- Force termination of stuck processes (SIGTERM → SIGKILL)
+- Better error handling during model loading
+
+**Tool Calling Enhancements**:
+- Added `tool_choice` parameter support for OpenAI API
+- Added validation/warning when tools are provided but tokenizer doesn't support them
+- Fixed `arguments` field to correctly return JSON string instead of dict
+
 **Model Router**: New model-aware request router for multi-node Kubernetes deployments:
 - Routes requests to pods that have the requested model loaded
 - Round-robin load balancing across pods with the same model
 - Automatic model placement via ConfigMap configuration
 - Aggregated endpoints: `/api/tags`, `/api/ps` show models across all pods
 - Router status endpoints: `/router/status`, `/router/pods`, `/router/models`
+- Fixed discovery to use `/api/ps` (loaded models) instead of `/api/tags` (available models)
 
 **Disable Model Unloading**: New `RKLLAMA_MODEL_DISABLE_MODEL_UNLOADING=true` option to prevent NPU memory leaks. When enabled:
 - Models load once and stay loaded permanently
 - No automatic expiration unloading
 - Unload API calls return an error
 - Restart pod to change models
-
-**Tool Calling Fix**: Fixed OpenAI API compatibility for tool calls - `arguments` field now correctly returns a JSON string instead of a dict object.
 
 **Kubernetes Improvements**:
 - Added router deployment manifests to `k8s-example/router/`
