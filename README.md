@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 1.2.3-3](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v1.2.3-3)
+### [Version: 1.2.3-4](https://github.com/rsJames-ttrpg/rkllama/releases/tag/v1.2.3-4)
 
 Video demo ( version 0.0.1 ):
 

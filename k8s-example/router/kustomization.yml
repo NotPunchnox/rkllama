@@ -13,4 +13,4 @@ resources:
 
 images:
   - name: ghcr.io/rsjames-ttrpg/rkllama-router
-    newTag: 1.2.3-3
+    newTag: 1.2.3-4
