@@ -2602,7 +2602,7 @@ wheels = [
 
 [[package]]
 name = "rkllama"
-version = "1.2.3.post2"
+version = "1.2.3.post3"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
