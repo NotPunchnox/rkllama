@@ -118,3 +118,21 @@ class NativeUnloadAllResponse(BaseModel):
         description="Success message",
         examples=["Models successfully unloaded!"],
     )
+
+
+class NativeForceUnloadAllResponse(BaseModel):
+    """Response for POST /force_unload_all endpoint."""
+
+    message: str = Field(
+        ...,
+        description="Success message",
+        examples=["Force stopped all workers"],
+    )
+    killed_tracked: list[str] = Field(
+        default_factory=list,
+        description="List of tracked model names that were killed",
+    )
+    killed_orphaned: list[int] = Field(
+        default_factory=list,
+        description="List of PIDs of orphaned worker processes that were killed",
+    )

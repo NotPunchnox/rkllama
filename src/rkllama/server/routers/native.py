@@ -12,6 +12,7 @@ from rkllama.api.model_utils import get_model_full_options
 from rkllama.api.schemas import (
     NativeDeleteRequest,
     NativeDeleteResponse,
+    NativeForceUnloadAllResponse,
     NativeLoadRequest,
     NativeLoadResponse,
     NativeModelsResponse,
@@ -271,3 +272,19 @@ async def unload_models_route(wm: WorkerManager = Depends(get_worker_manager)) -
 
     wm.stop_all()
     return NativeUnloadAllResponse(message="Models successfully unloaded!")
+
+
+@router.post("/force_unload_all")
+async def force_unload_all_route(wm: WorkerManager = Depends(get_worker_manager)) -> NativeForceUnloadAllResponse:
+    """
+    Force kill all worker processes, including stuck/orphaned ones.
+
+    Use this endpoint when normal unloading doesn't work due to stuck processes.
+    This bypasses the disable_model_unloading setting since it's an emergency recovery operation.
+    """
+    result = wm.force_stop_all()
+    return NativeForceUnloadAllResponse(
+        message="Force stopped all workers",
+        killed_tracked=result["killed_tracked"],
+        killed_orphaned=result["killed_orphaned"],
+    )

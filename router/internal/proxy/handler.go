@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/rsjames-ttrpg/rkllama/router/internal/discovery"
 )
@@ -68,6 +69,10 @@ func (h *Handler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/router/models" && r.Method == http.MethodGet {
 		h.routerModels(w, r)
+		return
+	}
+	if r.URL.Path == "/router/force_unload_all" && r.Method == http.MethodPost {
+		h.forceUnloadAll(w, r)
 		return
 	}
 
@@ -335,5 +340,97 @@ func (h *Handler) routerModels(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"models": modelInfos,
+	})
+}
+
+// forceUnloadAll calls /force_unload_all on all pods to kill stuck workers
+func (h *Handler) forceUnloadAll(w http.ResponseWriter, r *http.Request) {
+	pods := h.discovery.GetAllPods()
+	if len(pods) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"message": "No pods available",
+			"results": []any{},
+		})
+		return
+	}
+
+	type podResult struct {
+		PodName       string   `json:"pod_name"`
+		NodeName      string   `json:"node_name"`
+		Success       bool     `json:"success"`
+		Error         string   `json:"error,omitempty"`
+		KilledTracked []string `json:"killed_tracked,omitempty"`
+		KilledOrphaned []int   `json:"killed_orphaned,omitempty"`
+	}
+
+	results := make([]podResult, 0, len(pods))
+	client := &http.Client{Timeout: 60 * time.Second}
+
+	for _, pod := range pods {
+		result := podResult{
+			PodName:  pod.Name,
+			NodeName: pod.NodeName,
+		}
+
+		url := fmt.Sprintf("http://%s:8080/force_unload_all", pod.IP)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, url, nil)
+		if err != nil {
+			result.Error = err.Error()
+			results = append(results, result)
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			result.Error = err.Error()
+			results = append(results, result)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			result.Error = fmt.Sprintf("unexpected status: %d", resp.StatusCode)
+			resp.Body.Close()
+			results = append(results, result)
+			continue
+		}
+
+		var unloadResp struct {
+			KilledTracked  []string `json:"killed_tracked"`
+			KilledOrphaned []int    `json:"killed_orphaned"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&unloadResp); err != nil {
+			result.Error = fmt.Sprintf("failed to decode response: %v", err)
+			resp.Body.Close()
+			results = append(results, result)
+			continue
+		}
+		resp.Body.Close()
+
+		result.Success = true
+		result.KilledTracked = unloadResp.KilledTracked
+		result.KilledOrphaned = unloadResp.KilledOrphaned
+		results = append(results, result)
+
+		slog.Info("force unloaded pod", "pod", pod.Name, "node", pod.NodeName,
+			"killed_tracked", len(unloadResp.KilledTracked),
+			"killed_orphaned", len(unloadResp.KilledOrphaned))
+	}
+
+	// Count successes
+	successCount := 0
+	for _, r := range results {
+		if r.Success {
+			successCount++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"message":       fmt.Sprintf("Force unload completed on %d/%d pods", successCount, len(pods)),
+		"total_pods":    len(pods),
+		"success_count": successCount,
+		"results":       results,
 	})
 }
