@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 import re
 import time
 
@@ -39,7 +40,60 @@ class EndpointHandler:
 
 
     @staticmethod
-    def prepare_prompt(model_name, messages, system="", tools=None, enable_thinking=False, tokenize=True):
+    def _tokenizer_supports_tools(tokenizer) -> bool:
+        """Check if the tokenizer's chat template supports tools."""
+        if not hasattr(tokenizer, 'chat_template') or not tokenizer.chat_template:
+            return False
+        # Check for common tool-related Jinja2 patterns
+        tool_patterns = ['tools', 'tool_call', 'function', '{% for tool']
+        return any(pattern in tokenizer.chat_template for pattern in tool_patterns)
+
+    @staticmethod
+    def _load_tokenizer(model_name: str):
+        """Load tokenizer from local path or HuggingFace.
+
+        Tries local tokenizer first (from TOKENIZER property in Modelfile),
+        then falls back to HuggingFace (from HUGGINGFACE_PATH).
+
+        Returns:
+            AutoTokenizer: Loaded tokenizer
+        """
+        models_path = rkllama.config.get_path("models")
+        model_dir = os.path.join(models_path, model_name)
+
+        tokenizer = None
+
+        # Try local tokenizer first
+        tokenizer_path = get_property_modelfile(model_name, "TOKENIZER", models_path)
+        if tokenizer_path:
+            tokenizer_path = tokenizer_path.replace('"', '').replace("'", "")
+            # Handle relative paths (e.g., "./tokenizer")
+            if tokenizer_path.startswith("./"):
+                tokenizer_path = os.path.join(model_dir, tokenizer_path[2:])
+            elif not os.path.isabs(tokenizer_path):
+                tokenizer_path = os.path.join(model_dir, tokenizer_path)
+
+            if os.path.isdir(tokenizer_path):
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+                    logger.debug("Loaded tokenizer from local path", path=tokenizer_path)
+                except Exception as e:
+                    logger.warning("Failed to load local tokenizer, falling back to HuggingFace", error=str(e))
+
+        # Fallback to HuggingFace
+        if tokenizer is None:
+            model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", models_path)
+            if model_in_hf:
+                model_in_hf = model_in_hf.replace('"', '').replace("'", "")
+                tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
+                logger.debug("Loaded tokenizer from HuggingFace", model=model_in_hf)
+            else:
+                raise ValueError(f"No tokenizer path or HUGGINGFACE_PATH found for model {model_name}")
+
+        return tokenizer
+
+    @staticmethod
+    def prepare_prompt(model_name, messages, system="", tools=None, tool_choice=None, enable_thinking=False, tokenize=True):
         """Prepare prompt with proper system handling
 
         Args:
@@ -47,18 +101,24 @@ class EndpointHandler:
             messages: List of chat messages
             system: System prompt
             tools: Optional tools for function calling
+            tool_choice: Optional tool selection mode (e.g., "required", "auto")
             enable_thinking: Enable thinking/reasoning mode
             tokenize: If True, return token IDs; if False, return formatted string
 
         Returns:
             tuple: (tokenizer, prompt_tokens_or_string, token_count)
         """
+        # Load tokenizer (local first, then HuggingFace)
+        tokenizer = EndpointHandler._load_tokenizer(model_name)
 
-        # Get model specific tokenizer from Huggin Face specified in Modelfile
-        model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
+        # Warn if tools provided but tokenizer doesn't support them
+        if tools and not EndpointHandler._tokenizer_supports_tools(tokenizer):
+            logger.warning(
+                "Tools provided but tokenizer chat template does not appear to support tools",
+                model=model_name,
+                tools_count=len(tools)
+            )
 
-        # Get the tokenizer configured for the model
-        tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
 
         if system and supports_system_role:
@@ -66,7 +126,25 @@ class EndpointHandler:
         else:
             prompt_messages = messages
 
-        prompt_result = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=tokenize, add_generation_prompt=True, enable_thinking=enable_thinking)
+        # Build template parameters
+        template_params = {
+            "tokenize": tokenize,
+            "add_generation_prompt": True,
+        }
+
+        # Add tools if provided
+        if tools:
+            template_params["tools"] = tools
+
+        # Add tool_choice if provided and template supports it
+        if tool_choice and hasattr(tokenizer, 'chat_template') and tokenizer.chat_template and "tool_choice" in tokenizer.chat_template:
+            template_params["tool_choice"] = tool_choice
+
+        # Add enable_thinking if supported
+        if enable_thinking:
+            template_params["enable_thinking"] = enable_thinking
+
+        prompt_result = tokenizer.apply_chat_template(prompt_messages, **template_params)
 
         # Calculate token count - if we got a string, tokenize it to count
         if tokenize:
@@ -162,7 +240,7 @@ class ChatEndpointHandler(EndpointHandler):
         return response
 
     @classmethod
-    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False, images=None):
+    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, tool_choice=None, enable_thinking=False, is_openai_request=False, images=None):
         """Process a chat request with proper format handling"""
 
         original_system = variables.system
@@ -186,7 +264,7 @@ class ChatEndpointHandler(EndpointHandler):
             prompt_token_count = None
             if not images:
                 # Create the prompt string for text only requests (using PROMPT mode)
-                tokenizer, prompt_input, prompt_token_count = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking, tokenize=False)
+                tokenizer, prompt_input, prompt_token_count = cls.prepare_prompt(model_name, messages, system, tools, tool_choice, enable_thinking, tokenize=False)
 
             else:
                 if DEBUG_MODE:

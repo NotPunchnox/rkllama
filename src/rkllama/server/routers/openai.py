@@ -185,6 +185,7 @@ def chat_completions_openai(
         format_spec=None,
         options=options,
         tools=ollama_data.get("tools"),
+        tool_choice=ollama_data.get("tool_choice"),
         enable_thinking=enable_thinking,
         is_openai_request=True,
         images=None,

@@ -76,13 +76,35 @@ class HuggingFaceToRKLLMConverter:
         # Step 2: Convert using official toolkit
         self._generate_rkllm_file()
 
-        # Step 3: Create Modelfile
+        # Step 3: Save tokenizer for offline use
+        self._save_tokenizer()
+
+        # Step 4: Create Modelfile
         self._create_modelfile()
 
-        # Step 4: Save metadata
+        # Step 5: Save metadata
         self._save_metadata(self.config.output_path)
 
         logger.info("Conversion completed successfully")
+
+    def _save_tokenizer(self) -> None:
+        """Save tokenizer files to output directory for offline use."""
+        from transformers import AutoTokenizer
+
+        logger.info("Saving tokenizer for offline use...")
+
+        tokenizer_output = os.path.join(self.config.output_path, "tokenizer")
+        os.makedirs(tokenizer_output, exist_ok=True)
+
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                self._model_path,
+                trust_remote_code=True
+            )
+            tokenizer.save_pretrained(tokenizer_output)
+            logger.info(f"Tokenizer saved to {tokenizer_output}")
+        except Exception as e:
+            logger.warning(f"Failed to save tokenizer: {e}. Model will require HuggingFace access at runtime.")
 
     def _prepare_model(self) -> None:
         """Download or locate the HuggingFace model."""
@@ -134,6 +156,7 @@ class HuggingFaceToRKLLMConverter:
 
         modelfile_content = f'''FROM="{model_name}.rkllm"
 HUGGINGFACE_PATH="{self.config.model_id}"
+TOKENIZER="./tokenizer"
 SYSTEM="You are a helpful AI assistant."
 TEMPERATURE=0.7
 '''
@@ -146,12 +169,18 @@ TEMPERATURE=0.7
 
     def _save_metadata(self, output_dir: str) -> None:
         """Save metadata about the conversion to a JSON file."""
+        # Check if tokenizer was successfully saved
+        tokenizer_path = os.path.join(output_dir, "tokenizer")
+        tokenizer_bundled = os.path.isdir(tokenizer_path) and os.listdir(tokenizer_path)
+
         metadata = {
             "model_id": self.config.model_id,
             "quantization": self.config.quantization,
             "target_platform": self.config.target_platform,
             "conversion_date": datetime.now().isoformat(),
             "toolkit_version": "1.2.3",
+            "tokenizer_bundled": bool(tokenizer_bundled),
+            "tokenizer_path": "tokenizer" if tokenizer_bundled else None,
             "parameters": {
                 "temperature": 0.7,
                 "top_p": 0.9,
