@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.54](#New-Version)
+### [Version: 0.0.55](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -70,8 +70,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Optional Debug Mode** - Detailed debugging with `--debug` flag.
 - **Multimodal Suport** - Use Qwen2VL/Qwen2.5VL/Qwen3VL/MiniCPMV4/MiniCPMV4.5/InternVL3.5 vision models to ask questions about images (base64, local file or URL image address). More than one image in the same request is allowed.
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
-- **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN.
-- **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC running the model with RKNN.
+- **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN and MMS-TTS with RKNN.
+- **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC or whisper running the model with RKNN.
 
 
 ## Documentation
@@ -378,9 +378,12 @@ Example directory structure for multimodal:
 
 
 ### **For Speech Generation (TTS) Installation**
+
+For Piper:
+
 1. Download a voice from https://huggingface.co/danielferr85/piper-checkpoints-rknn from Hugging Face. (You can convert new ones, see below)
 2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **es_AR-daniela-high** 
-3. Copy the encoder (.onnx), decoder (.rknn) and config (.json) file from the choosed voice to the new directory model created in RKLLMA.
+3. Copy the encoder (.onnx), decoder (.rknn) and config (piper.json) file from the choosed voice to the new directory model created in RKLLMA.
 4. The structure of the model **MUST** be like this:
 
    ```
@@ -388,17 +391,37 @@ Example directory structure for multimodal:
        └── es_AR-daniela-high
            |── encoder.onnx
            └── decoder.rknn
-           └── config.json
+           └── piper.json
           
    ```
+
+For MMS-TTS:
+
+1. Download a voice from https://huggingface.co/danielferr85/mms-tts-rknn from Hugging Face. (You can convert new ones, see below)
+2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **mms_tts_spa** 
+3. Copy the encoder (.rknn), decoder (.rknn) and vocab (mms_tts.json) file from the choosed voice to the new directory model created in RKLLMA.
+4. The structure of the model **MUST** be like this:
+
+   ```
+   ~/RKLLAMA/models/
+       └── mms_tts_spa
+           |── encoder/
+               |── encoder.rknn
+           └── decoder/
+               └── decoder.rknn
+           └── mms_tts.json   
+          
+   ```
+
 
 5. Done! You are ready to test the OpenAI endpoint /v1/audio/speech to generate audio. You can add it to OpenWebUI in the Audio section for TTS.
 
 **IMPORTANT**
+For Piper:
 - You must convert only your decoder (.rknn) for your specific platform (for example rk3588).
 - The encoder can have any name but must ended with extension .onnx
 - The decoder can have any name but must ended with extension .rknn
-- The config of the model can have any name but must ended with extension .json
+- The config of the model must have the name piper.json
 - You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
 - Always **CHECK THE LICENSE** of the voice that you are going to use.
 - In OpenAI request, the argument **model** is the name of the model folder that you create and the argument **voice** is the speaker of the voice if the voice is multispeaker (For example 'F' (Female) or 'M' (Male). Check the config of the model). If the model is monospeaker, then voice can be skipped.
@@ -410,22 +433,70 @@ Example directory structure for multimodal:
    5. Execute the script export_encoder_decoder.py to export the encoder and decoder IN ONNX format.
    6. Execute the script export_rknn.py to export the decoder in RKNN format (you must uhave installed the rknn-toolkit version 2.3.2).
 
+For MMS-TTS:
+- You must convert your encoder and decoder (.rknn) for your specific platform (for example rk3588).
+- The encoder can have any name but must ended with extension .rknn and must be placed inside a folder called encoder
+- The decoder can have any name but must ended with extension .rknn and must be placed inside a folder called decoder
+- The vocab of the model must have the name mms_tts.json
+- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
+- Always **CHECK THE LICENSE** of the voice that you are going to use.
+- In OpenAI request, the argument **model** is the name of the model folder that you create and the argument **voice** is the speaker of the voice if the voice is multispeaker but in MMS-TTS always is monospeaker, then voice is skipped.
+- You can convert more mms_tts models. Check:  https://github.com/airockchip/rknn_model_zoo/tree/main/examples/mms_tts
+
+
 
 ### **For Transcriptions Generation (STT) Installation**
+
+- For OmniASR CTC models:
+
 1. Download a model from https://huggingface.co/danielferr85/omniASR-ctc-rknn from Hugging Face.
 2. Create a folder inside the models directory in RKLLAMA for the model, For example: **omniasr-ctc:300m** 
-3. Copy the model (.rknn) and vocabulary (.txt) file from the choosed model to the new directory model created in RKLLMA.
+3. Copy the model (.rknn) and vocabulary (omniasr.txt) file from the choosed model to the new directory model created in RKLLMA.
 4. The structure of the model **MUST** be like this:
 
    ```
    ~/RKLLAMA/models/
        └── omniasr-ctc:300m
            └── model.rknn
-           └── vocab.txt
+           └── omniasr.txt
           
    ```
 
-5. Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
+**IMPORTANT**
+- The model can have any name but must ended with extension .rknn
+- The vocabulary of the model must be the name omniasr.txt 
+- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
+
+
+- For Whisper models:
+
+1. Download a model from https://huggingface.co/danielferr85/whisper-with_past-models-rknn from Hugging Face.
+2. Create a folder inside the models directory in RKLLAMA for the model, For example: **whisper-large-v3-turbo** 
+3. Copy the encoder model (.rknn), decoder model (.rknn), decoder with past model (.rknn), whisper.ini and tokenizer folder from the choosed model to the new directory model created in RKLLMA.
+4. The structure of the model **MUST** be like this:
+
+   ```
+   ~/RKLLAMA/models/
+       └── whisper-large-v3-turbo
+           └── encoder
+               └── model_encoder.rknn
+           └── decoder
+               └── model_decoder.rknn 
+           └── decoder_with_past
+               └── model_decoder_with_past.rknn
+           └── tokenizer
+              └── tokenizer_config.json
+              └── tokenizer.json
+           └── whisper.ini
+          
+   ```
+**IMPORTANT**
+- The models can have any name but must ended with extension .rknn and must be in the correct folder structure
+- The tokenizer folder is the same as the original official Whisper model 
+- The whisper.ini file can be modified to adjust the properties of the VAD if needed
+- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
+
+Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
 
 **IMPORTANT**
 - The model can have any name but must ended with extension .rknn

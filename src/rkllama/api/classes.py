@@ -47,7 +47,7 @@ class RKLLMParam(ctypes.Structure):
         ("model_path", ctypes.c_char_p),
         ("max_context_len", ctypes.c_int32),
         ("max_new_tokens", ctypes.c_int32),
-        ("top_k", ctypes.c_int32),
+        ("top_k", ctypes.c_float),
         ("n_keep", ctypes.c_int32),
         ("top_p", ctypes.c_float),
         ("temperature", ctypes.c_float),

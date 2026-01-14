@@ -442,7 +442,7 @@ def list_openai_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm") or file.endswith(".rknn") or file == "unet": # Include Stable Diffusion models and Piper Voices
+                if file.endswith(".rkllm") or file.endswith(".rknn") or file == "unet": # Include Stable Diffusion models and other rknn models
                     models.append({
                         "id": subdir,      
                         "object": "model",      
@@ -1456,22 +1456,11 @@ def generate_speech_openai():
         stream_format = data.get('stream_format', 'audio')
         speed = data.get('speed', None)
         
-        # Non supported OpenAI parameters by Piper
+        # Non supported OpenAI parameters
         instructions = data.get('instructions', None)
 
-        # Not OpenAI parameters, but used by rkllama/piper
-        volume = data.get('volume', None)
-        length_scale = data.get('length_scale', None)
-        noise_scale = data.get('noise_scale', None)
-        noise_w_scale = data.get('noise_w_scale', None)
-        normalize_audio = data.get('normalize_audio', None)
-        
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
-
-        # Calculate the Piper Lenght Scale bases in speed OpenAI if requested
-        if speed:
-            length_scale = 1 / speed
 
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Speech request data: {data}")
@@ -1488,11 +1477,7 @@ def generate_speech_openai():
               voice=voice,
               response_format=response_format,
               stream_format=stream_format,
-              volume=volume,
-              length_scale=length_scale,
-              noise_scale=noise_scale,
-              noise_w_scale=noise_w_scale,
-              normalize_audio=normalize_audio)
+              speed=speed)
 
     except Exception as e:
         logger.exception("Error in generate_speech_openai")
@@ -1525,7 +1510,7 @@ def generate_transcriptions_openai():
         response_format = form.get('response_format', 'text')
         stream = form.get('stream', False)
         
-        # Non supported OpenAI parameters by Piper
+        # Non supported OpenAI parameters 
         chunking_strategy = form.get('chunking_strategy', None)
         known_speaker_names = form.get('known_speaker_names', None)
         known_speaker_references = form.get('known_speaker_references', None)

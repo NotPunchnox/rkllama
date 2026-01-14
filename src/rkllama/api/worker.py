@@ -76,9 +76,9 @@ def run_image_generator(model_input, rknn_queue):
 
 def run_speech_generator(model_input, rknn_queue):
     """
-    Run piper generator model to get the audio
+    Run tts generator model to get the audio
     Args:
-        model_input (tuple): (model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+        model_input (tuple): (model_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
         rknn_queue (Queue): Queue to return the audio
     Returns:
         str: Audio
@@ -87,10 +87,10 @@ def run_speech_generator(model_input, rknn_queue):
     from .tts import generate_speech
 
     # Get the arguments for the call
-    model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio = model_input
+    model_path,input,voice,response_format,stream_format,speed = model_input
 
-    # Run the piper
-    audio = generate_speech(model_piper_path,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+    # Run the TTS
+    audio = generate_speech(model_path,input,voice,response_format,stream_format,speed)
     
     # Send the audio bytes to the main process
     rknn_queue.put(audio)
@@ -98,9 +98,9 @@ def run_speech_generator(model_input, rknn_queue):
 
 def run_transcription_generator(model_input, rknn_queue):
     """
-    Run omniasr generator model to get the transcription
+    Run stt generator model to get the transcription
     Args:
-        model_input (tuple): (model_omniasr_path,file,language)
+        model_input (tuple): (model_stt_path,file,language)
         rknn_queue (Queue): Queue to return the transcription
     Returns:
         str: Transcription
@@ -109,10 +109,10 @@ def run_transcription_generator(model_input, rknn_queue):
     from .stt import generate_transcription
 
     # Get the arguments for the call
-    model_omniasr_path,file,language = model_input
+    model_stt_path,file,language = model_input
 
-    # Run the omniasr
-    audio = generate_transcription(model_omniasr_path,file,language)
+    # Run the stt
+    audio = generate_transcription(model_stt_path,file,language)
     
     # Send the text transcription to the main process
     rknn_queue.put(audio)
@@ -273,19 +273,19 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
 
         elif task == WORKER_TASK_GENERATE_SPEECH:
             logger.info(f"Running speech generator for model {name}...")
-            # Run piper
+            # Run TTS
             rknn_queue = Queue()
 
-            # Define the process for piper
+            # Define the process for TTS
             rknn_process = Process(target=run_speech_generator, args=(model_input,rknn_queue,))
 
-            # Start the piper worker
+            # Start the TTS worker
             rknn_process.start() 
 
             # Get the audio from the queue
             audio = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
 
-            # Terminate the process piper after use
+            # Terminate the process tts after use
             rknn_process.terminate()
 
             # Send the audio 
@@ -293,19 +293,19 @@ def run_rknn_process(name, task, model_input, result_queue: Queue):
 
         elif task == WORKER_TASK_GENERATE_TRANSCRIPTION:
             logger.info(f"Running transcription generator for model {name}...")
-            # Run omniasr
+            # Run stt
             rknn_queue = Queue()
 
-            # Define the process for omniasr
+            # Define the process for stt
             rknn_process = Process(target=run_transcription_generator, args=(model_input,rknn_queue,))
 
-            # Start the omniasr worker
+            # Start the stt worker
             rknn_process.start() 
 
             # Get the text from the queue
             text = rknn_queue.get(timeout=300)  # Timeout after 300 seconds
 
-            # Terminate the process omniasr after use
+            # Terminate the process stt after use
             rknn_process.terminate()
 
             # Send the text 
@@ -718,7 +718,7 @@ class WorkerManager:
         return image_list;   
 
 
-    def generate_speech(self, model_name, model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio) -> None:
+    def generate_speech(self, model_name, model_dir, input,voice,response_format,stream_format,speed) -> None:
         """
         Send a generate speech task to the corresponding model worker
         
@@ -728,8 +728,8 @@ class WorkerManager:
  
         """
 
-        # Prepare the input for piper
-        model_input = (model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+        # Prepare the input for TTS
+        model_input = (model_dir, input,voice,response_format,stream_format,speed)
 
         # Result queue for the RKNN process
         result_queue = Queue()
@@ -757,7 +757,7 @@ class WorkerManager:
  
         """
 
-        # Prepare the input for omniasr
+        # Prepare the input for stt
         model_input = (model_dir, file, language)
 
         # Result queue for the RKNN process
