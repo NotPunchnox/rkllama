@@ -25,7 +25,7 @@ class RKLLM(object):
         self.rkllm_param.model_path = bytes(model_path, 'utf-8')
         self.rkllm_param.max_context_len =  int(float((options.get("num_ctx", rkllama.config.get("model", "default_num_ctx")))))
         self.rkllm_param.max_new_tokens = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
-        self.rkllm_param.top_k = int(options.get("top_k", rkllama.config.get("model", "default_top_k")))
+        self.rkllm_param.top_k = float(options.get("top_k", rkllama.config.get("model", "default_top_k")))
         self.rkllm_param.top_p = float(options.get("top_p", rkllama.config.get("model", "default_top_p")))
         self.rkllm_param.temperature = float(options.get("temperature", rkllama.config.get("model", "default_temperature")))
         self.rkllm_param.repeat_penalty = float(options.get("repeat_penalty", rkllama.config.get("model", "default_repeat_penalty")))

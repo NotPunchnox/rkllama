@@ -911,7 +911,7 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, model_name,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio):
+    def handle_request(cls, model_name,input,voice,response_format,stream_format,speed):
         """Process a generate request with proper format handling"""
         
         def stream_bytes(data: bytes, chunk_size: int = 1024): # 1024 CHunk sizes
@@ -930,7 +930,7 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
 
         else:
             # Audio output 
-            audio_bytes, media_type =  cls.handle_complete(model_name,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+            audio_bytes, media_type =  cls.handle_complete(model_name,input,voice,response_format,stream_format,speed)
         
             # COnstruct the response
             response = Response(
@@ -946,14 +946,14 @@ class GenerateSpeechEndpointHandler(EndpointHandler):
             return response
     
     @classmethod
-    def handle_complete(cls, model_name,input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio):
+    def handle_complete(cls, model_name,input,voice,response_format,stream_format,speed):
         """Handle complete generate speech response"""
 
         # Use config for models path
         model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
 
         # Send the task of generate speech to the model
-        audio = variables.worker_manager_rkllm.generate_speech(model_name, model_dir, input,voice,response_format,stream_format,volume,length_scale,noise_scale,noise_w_scale,normalize_audio)
+        audio = variables.worker_manager_rkllm.generate_speech(model_name, model_dir, input,voice,response_format,stream_format,speed)
         
         # Return the audio
         return audio
