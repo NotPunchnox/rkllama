@@ -8,6 +8,7 @@ import time
 import soxr
 import webrtcvad
 import configparser
+import ast
 from transformers import WhisperTokenizerFast
 from rknnlite.api import RKNNLite
 
@@ -424,7 +425,7 @@ class WhisperSTTModelRKNN:
         self.decoder_with_past_rknn.release()
 
 
-    def get_transcription(self,file,language) -> str:
+    def get_transcription(self,file,language, is_translation=False) -> str:
         """
         Generate a transcription
         
@@ -434,16 +435,69 @@ class WhisperSTTModelRKNN:
         Returns:
             str: Transcription text
         """
+        
+        
+        
         # Create the initial instruction
-        instructions = [int(self.configuration["DEFAULT"]["START_TOKEN_ID"])]
+        start_token_id = int(self.configuration["DEFAULT"]["START_TOKEN_ID"])
+        
+        # CHeck the type of task
+        logger.debug(f"Is it a translation?: {is_translation}")
+        if is_translation:
+            # Get the transcribe token
+            task_token_id = self.configuration["DEFAULT"]["TRANSLATE_TOKEN_ID"]
+        
+        else:    
+            # Get the transcribe token
+            task_token_id = self.configuration["DEFAULT"]["TRANSCRIBE_TOKEN_ID"]
+        
+        # CHeck if laguage not provided
+        if not language:
+            # Get the default language if provided
+            language = self.configuration["DEFAULT"]["LANGUAGE"]
 
-        # Check if language provided to add to the instrctions
-        #TODO
-        #if language:
-        #    instructions.append("hola")
+        # Get instructions override
+        instructions_str = self.configuration["DEFAULT"]["INSTRUCTIONS"]
+        instructions = ast.literal_eval(instructions_str) if instructions_str else None
 
-        # Read the bytes from the audio file
+        # CHeck if not override default instruction for construct default
+        if not instructions:
+
+            # Check if languge supplied in request
+            if language:
+                # Get the token id for the specified lamguage
+                language_token_id = self.tokenizer.encode(f"<|{language.lower()}|>", add_special_tokens = False)[0]
+
+                # Construct the instruction
+                instructions = [start_token_id,language_token_id,task_token_id]
+            
+            else:
+                instructions = [start_token_id,task_token_id]
+
+        logger.debug(f"Instructions to execute: {instructions}")
+        
+        
+        # Send the transcription job
         transcription = self.transcribe(instructions, file)
 
         # Return the transcription
         return transcription
+    
+
+    def get_translation(self,file,language) -> str:
+        """
+        Generate a translation
+        
+        file (file): Audio file to translate
+        language: Language of the text
+
+        Returns:
+            str: Translation text
+        """
+
+        # Send the translation job
+        translation = self.get_transcription(file,language, is_translation=True)
+
+        # Return the translation
+        return translation
+    
