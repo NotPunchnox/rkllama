@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.55](#New-Version)
+### [Version: 0.0.56](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -53,6 +53,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/v1/images/generations`
    * `/v1/audio/speech`
    * `/v1/audio/transcriptions`
+   * `/v1/audio/translations` (to English only for now like OpenAI with Whisper models)
 - **Tool/Function Calling** - Complete support for tool calls with multiple LLM formats (Qwen, Llama 3.2+, others).
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
