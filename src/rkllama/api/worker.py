@@ -179,19 +179,19 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
                 while not thread_finished:
                     tokens_processed = False
                     while len(global_text) > 0:
-                        tokens_processed = False
                         token = global_text.pop(0)
                         result_queue.put(token)
+                        tokens_processed = True
 
-                    # Update status of the thread    
-                    thread_model.join(timeout=0.005)
+                    # Update status of the thread
+                    thread_model.join(timeout=0.001)
                     thread_finished = not thread_model.is_alive()
                     
-                    # If inference not started yet, wait some time to start.
-                    if not tokens_processed:
-                        time.sleep(0.01)
+                    # Only sleep if no tokens were processed and thread is still alive
+                    if not tokens_processed and not thread_finished:
+                        time.sleep(0.001)
 
-                # CLear the cache after inference
+                # Clear the cache after inference
                 model_rkllm.clear_cache()
 
                 # Send final signal of the inference
