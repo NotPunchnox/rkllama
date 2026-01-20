@@ -1017,3 +1017,42 @@ class GenerateTranscriptionsEndpointHandler(EndpointHandler):
         # Return the transcription text
         return transcription_text
     
+
+class GenerateTranslationsEndpointHandler(EndpointHandler):
+    """Handler for v1/audio/translations endpoint requests"""
+    
+    @staticmethod
+    def format_complete_response(text, response_format):
+        """Format a complete non-streaming response for generate endpoint"""
+
+        response ={
+            "text": text,
+        }
+        
+        return response
+    
+    @classmethod
+    def handle_request(cls, model_name,file, language, response_format):
+        """Process a generate request with proper format handling"""
+        
+        if DEBUG_MODE:
+            logger.debug(f"GenerateTranslationsEndpointHandler: processing request for {model_name}")
+        
+        # Translation output 
+        translation_text =  cls.handle_complete(model_name,file, language, response_format)
+    
+        # Return response
+        return cls.format_complete_response(translation_text, response_format)
+    
+    @classmethod
+    def handle_complete(cls, model_name,file, language, response_format):
+        """Handle complete generate translation response"""
+
+        # Use config for models path
+        model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
+
+        # Send the task of generate translation to the model
+        translation_text = variables.worker_manager_rkllm.generate_translation(model_name, model_dir, file, language, response_format)
+        
+        # Return the translation text
+        return translation_text

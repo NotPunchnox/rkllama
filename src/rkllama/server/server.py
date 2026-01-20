@@ -1518,8 +1518,6 @@ def generate_transcriptions_openai():
         temperature = form.get('temperature', None)
         timestamp_granularities = form.get('timestamp_granularities', None)
 
-        # Not OpenAI parameters, but used by rkllama/omnilingual
-
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
 
@@ -1552,6 +1550,59 @@ def generate_transcriptions_openai():
             if DEBUG_MODE:
                 logger.debug("Releasing lock in generate_transcriptions_openai")
             variables.verrou.release()
+
+
+@app.route('/v1/audio/translations', methods=['POST'])
+def generate_translations_openai():
+    
+    lock_acquired = False  # Track lock status
+
+    try:
+        form = request.form
+
+        # CHeck the file uploaded file
+        if "file" not in request.files:
+            return jsonify({"error": "file field missing"}), 400
+        
+        # Supported OpenAI parameters by RKNN
+        file = request.files["file"]
+        model_name = form.get('model', None)
+        language = form.get('language', None)        
+        response_format = form.get('response_format', 'text')
+        
+        # Non supported OpenAI parameters 
+        prompt = form.get('prompt', None)
+        temperature = form.get('temperature', None)
+        
+        # Remove possible namespace in model name. Ollama API allows namespace/model
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
+        if DEBUG_MODE:
+            logger.debug(f"API OpenAI Generate Transcription request data: {form}")
+
+        # Acquire lock before processing the request
+        variables.verrou.acquire()
+        lock_acquired = True  # Mark lock as acquired
+        
+        # Process the request - this won't release the lock
+        from rkllama.api.server_utils import GenerateTranslationsEndpointHandler
+        return GenerateTranslationsEndpointHandler.handle_request(
+              model_name=model_name,
+              file=file,
+              language=language,
+              response_format=response_format)
+
+    except Exception as e:
+        logger.exception("Error in generate_translations_openai")
+        return jsonify({"error": str(e)}), 500
+    
+    finally:
+        # Only release if we acquired it
+        if lock_acquired and variables.verrou.locked():
+            if DEBUG_MODE:
+                logger.debug("Releasing lock in generate_translations_openai")
+            variables.verrou.release()
+
 
 
 # Default route
