@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.56](#New-Version)
+### [Version: 0.0.57](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -256,7 +256,6 @@ This will automatically download the specified model file and prepare it for use
     HUGGINGFACE_PATH="huggingface_repository"
     SYSTEM="Your system prompt"
     TEMPERATURE=1.0
-    TOKENIZER="path-to-tokenizer"
     ```
 
    Example directory structure:
@@ -267,7 +266,7 @@ This will automatically download the specified model file and prepare it for use
            └── TinyLlama-1.1B-Chat-v1.0.rkllm
    ```
 
-   *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs.*
+   *You must provide a link to a HuggingFace repository to retrieve the tokenizer and chattemplate. An internet connection is required for the tokenizer initialization (only once), and you can use a repository different from that of the model as long as the tokenizer is compatible and the chattemplate meets your needs. Tokenizer gets downloaded for the first time in the models directory*
 
 
 ### **For Multimodal Encoder Model (.rknn) Installation**

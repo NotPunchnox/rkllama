@@ -42,11 +42,8 @@ class EndpointHandler:
     def prepare_prompt(model_name, messages, system="", tools=None, enable_thinking=False):
         """Prepare prompt with proper system handling"""
 
-        # Get model specific tokenizer from Huggin Face specified in Modelfile
-        model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
-
-        # Get the tokenizer configured for the model
-        tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
+        # Get the tokenizer configured for the model (locally or remote)
+        tokenizer = EndpointHandler.get_tokenizer(model_name)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
         if system and supports_system_role:
@@ -58,6 +55,35 @@ class EndpointHandler:
 
         return tokenizer, prompt_tokens, len(prompt_tokens)
     
+
+    @staticmethod
+    def get_tokenizer(model_name):
+        """Get the tokenizer for the model. First try to get from local filesystem and then from HF"""
+
+        # Construct the path for the local tokenizer
+        local_tokenizer_path = os.path.join(rkllama.config.get_path("models"),model_name, "tokenizer")
+        
+        if not os.path.isdir(local_tokenizer_path):
+            logger.debug("Local Tokenizer doesn't exists!")
+
+            # Get model specific tokenizer from Huggin Face specified in Modelfile
+            model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
+            logger.info(f"Download the tokenizer only one time from Hugging face repo: {model_in_hf}")
+            
+            # Get the tokenizer configured for the model
+            tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
+
+            # Save to the disk the local tokenizer for future use
+            tokenizer.save_pretrained(local_tokenizer_path)
+
+        else:     
+            logger.debug("Local Tokenizer found! Using it...")
+            # Get the local tokenizer for the model
+            tokenizer = AutoTokenizer.from_pretrained(local_tokenizer_path)    
+
+        # Return the tokenizer
+        return tokenizer
+
 
     @staticmethod
     def calculate_durations(start_time, prompt_eval_time, current_time=None):
