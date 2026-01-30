@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.57](#New-Version)
+### [Version: 0.0.58](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -315,14 +315,14 @@ Example directory structure for multimodal:
 1. In a temporary folder, clone the repository https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 or https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 from Hugging Face for the desired SD model
 2. Execute the ONNX to RKNN convertion of the models for your needs **WITH RKNN TOOLKIT LIBRARY VERSION 2.3.2**. For example:
    
-   For LCM SD 1.5
+   **For LCM SD 1.5**
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 512x512 --components "text_encoder,unet,vae_decoder" --target_platform rk3588
    ```
    
    or
 
-   For LCM SSD1B
+   **For LCM SSD1B**
    ```
     python convert-onnx-to-rknn.py --model-dir <directory_download_model> --resolutions 1024x1024 --components "text_encoder,text_encoder_2,unet,vae_decoder" --target_platform rk3588
    ```
@@ -379,7 +379,7 @@ Example directory structure for multimodal:
 
 ### **For Speech Generation (TTS) Installation**
 
-For Piper:
+**For Piper**:
 
 1. Download a voice from https://huggingface.co/danielferr85/piper-checkpoints-rknn from Hugging Face. (You can convert new ones, see below)
 2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **es_AR-daniela-high** 
@@ -395,7 +395,7 @@ For Piper:
           
    ```
 
-For MMS-TTS:
+**For MMS-TTS**:
 
 1. Download a voice from https://huggingface.co/danielferr85/mms-tts-rknn from Hugging Face. (You can convert new ones, see below)
 2. Create a folder inside the models directory in RKLLAMA for the piper Audio model, For example: **mms_tts_spa** 
@@ -417,7 +417,7 @@ For MMS-TTS:
 5. Done! You are ready to test the OpenAI endpoint /v1/audio/speech to generate audio. You can add it to OpenWebUI in the Audio section for TTS.
 
 **IMPORTANT**
-For Piper:
+**For Piper**:
 - You must convert only your decoder (.rknn) for your specific platform (for example rk3588).
 - The encoder can have any name but must ended with extension .onnx
 - The decoder can have any name but must ended with extension .rknn
@@ -433,7 +433,7 @@ For Piper:
    5. Execute the script export_encoder_decoder.py to export the encoder and decoder IN ONNX format.
    6. Execute the script export_rknn.py to export the decoder in RKNN format (you must uhave installed the rknn-toolkit version 2.3.2).
 
-For MMS-TTS:
+**For MMS-TTS**:
 - You must convert your encoder and decoder (.rknn) for your specific platform (for example rk3588).
 - The encoder can have any name but must ended with extension .rknn and must be placed inside a folder called encoder
 - The decoder can have any name but must ended with extension .rknn and must be placed inside a folder called decoder
@@ -447,7 +447,7 @@ For MMS-TTS:
 
 ### **For Transcriptions Generation (STT) Installation**
 
-- For OmniASR CTC models:
+- **For OmniASR CTC models**:
 
 1. Download a model from https://huggingface.co/danielferr85/omniASR-ctc-rknn from Hugging Face.
 2. Create a folder inside the models directory in RKLLAMA for the model, For example: **omniasr-ctc:300m** 
@@ -468,7 +468,7 @@ For MMS-TTS:
 - You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
 
 
-- For Whisper models:
+- **For Whisper models**:
 
 1. Download a model from https://huggingface.co/danielferr85/whisper-with_past-models-rknn from Hugging Face.
 2. Create a folder inside the models directory in RKLLAMA for the model, For example: **whisper-large-v3-turbo** 
@@ -497,11 +497,6 @@ For MMS-TTS:
 - You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
 
 Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
-
-**IMPORTANT**
-- The model can have any name but must ended with extension .rknn
-- The vocabulary of the model can have any name but must ended with extension .txt 
-- You must use rknn-toolkit 2.3.2 for RKNN conversion because is the one used by RKLLAMA
 
 
 ## Configuration
