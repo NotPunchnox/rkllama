@@ -442,7 +442,7 @@ def list_openai_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm") or file.endswith(".rknn") or file == "unet": # Include Stable Diffusion models and other rknn models
+                if file.endswith(".rkllm") or file.endswith(".rknn") or file in ("unet","whisper.ini","mms_tts.json","omniasr.txt", "piper.json") : # Include Stable Diffusion models and other rknn models
                     models.append({
                         "id": subdir,      
                         "object": "model",      
