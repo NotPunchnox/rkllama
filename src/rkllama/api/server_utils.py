@@ -810,6 +810,11 @@ class EmbedEndpointHandler(EndpointHandler):
         
         # Send the task of embedding to the model
         variables.worker_manager_rkllm.embedding(model_name, input_tokens)
+
+        # Clear the cache to prevent embedding problems
+        variables.worker_manager_rkllm.clear_cache_worker(model_name)
+        
+        # Get the result from the input
         result_q = variables.worker_manager_rkllm.get_result(model_name)
 
         # Wait for the last_embedding hidden layer return
