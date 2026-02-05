@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.58](#New-Version)
+### [Version: 0.0.59](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
