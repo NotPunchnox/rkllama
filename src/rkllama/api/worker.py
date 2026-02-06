@@ -236,7 +236,7 @@ def run_rkllm_worker(name, task_queue: Queue, result_queue: Queue, model_path, m
 
                 if last_embeddings:
                     # Send the embedding shapes of the input
-                    result_queue.put(last_embeddings[0])
+                    result_queue.put(last_embeddings[-1])
             
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
@@ -627,7 +627,7 @@ class WorkerManager:
         """
         if model_name in self.workers.keys():
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))        
+            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
             
     
     def multimodal(self, model_name, prompt_input, images):
