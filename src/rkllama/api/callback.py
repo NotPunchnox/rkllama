@@ -58,23 +58,27 @@ def callback_impl(result, userdata, status):
                         pass
             
             # --- EMBEDDINGS Part---
-            if result and result.contents and result.contents.last_hidden_layer.hidden_states:
+            if result and result.contents and result.contents.last_hidden_layer.hidden_states and result.contents.last_hidden_layer.embd_size > 0:
                 num_tokens = result.contents.last_hidden_layer.num_tokens
                 embd_size = result.contents.last_hidden_layer.embd_size
-                total_size = num_tokens * embd_size
 
-                # Convert pointer to numpy
-                array_type = ctypes.c_float * total_size
-                raw = array_type.from_address(
-                    ctypes.addressof(result.contents.last_hidden_layer.hidden_states.contents)
-                )
-                embeddings = np.ctypeslib.as_array(raw)
-                embeddings = embeddings.reshape(num_tokens, embd_size)
+                # Only if tokens generated
+                if num_tokens > 0:
+                    # Construct the embed array
+                    last_token_embedding = np.array([
+                        result.contents.last_hidden_layer.hidden_states[(num_tokens-1) * embd_size + i] 
+                        for i in range(embd_size)
+                    ])
+                    # Save the values
+                    embeddings = {
+                        'embedding': last_token_embedding,
+                        'embd_size': embd_size,
+                        'num_tokens': num_tokens
+                    }
 
-                # Save global
-                #last_embeddings = embeddings.copy()
-                last_embeddings.append(embeddings)
-                print(f"\n✅ Embeddings Shape: {embeddings.shape}")
+                    # Send to the global variable
+                    last_embeddings.append(embeddings)
+                    print(f"\n✅ Embeddings Shape: {last_token_embedding.shape}")
         
         except Exception as e:
             print(f"\nError processing callback: {str(e)}", end='')

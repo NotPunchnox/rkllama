@@ -1,6 +1,6 @@
 [project]
 name = "rkllama"
-version = "0.0.58"
+version = "0.0.59"
 authors = [
     { name="NotPunchnox", email="punchnoxpro@gmail.com" },
     { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
