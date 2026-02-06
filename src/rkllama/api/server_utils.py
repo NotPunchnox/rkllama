@@ -807,24 +807,46 @@ class EmbedEndpointHandler(EndpointHandler):
         start_time = time.time()
         prompt_eval_time = None
         
-        # Send the task of embedding to the model
-        variables.worker_manager_rkllm.embedding(model_name, input_text)
+        # Define a list of inputs to manage request for input text and list of inputs texts to embedd
+        all_inputs = []
+        all_embeddings = []
 
-        # Clear the cache to prevent embedding problems
-        variables.worker_manager_rkllm.clear_cache_worker(model_name)
-        
-        # Get the result from the input
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        # Check the type of input
+        if isinstance(input_text, list):
+            all_inputs.extend(input_text)
+        else:
+            all_inputs.append(input_text)   
 
-        # Wait for the last_embedding hidden layer return
-        last_embeddings = result_q.get(timeout=300)  
+        # Initialize metricts
+        total_tokens=0
+
+        # Loop over each input
+        for input in all_inputs:
+            
+            # Send the task of embedding to the model
+            variables.worker_manager_rkllm.embedding(model_name, input)
+
+            # Clear the cache to prevent embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+            
+            # Get the result from the input
+            result_q = variables.worker_manager_rkllm.get_result(model_name)
+
+            # Wait for the last_embedding hidden layer return
+            last_embeddings = result_q.get(timeout=300)  
+
+            # Add the embedding to the list of result
+            all_embeddings.append(last_embeddings["embedding"].tolist())
         
+            # Increase the number of tokens
+            total_tokens= total_tokens + last_embeddings["num_tokens"]
+            
         # Calculate metrics
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = last_embeddings["num_tokens"]
-        
+        metrics["prompt_tokens"] = total_tokens
+            
         # Format response
-        response = cls.format_complete_response(model_name, last_embeddings["embedding"].tolist(), metrics, None)
+        response = cls.format_complete_response(model_name, all_embeddings, metrics, None)
         
         # Return response
         return jsonify(response), 200
