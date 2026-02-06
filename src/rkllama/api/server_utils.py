@@ -787,11 +787,10 @@ class EmbedEndpointHandler(EndpointHandler):
         
         variables.global_status = -1
 
-        # Create the prompts
-        _, prompt_tokens, prompt_token_count = cls.prepare_prompt(model_name=model_name, messages=input_text)
+        logger.debug(f"Skipping tokenization for embedding")
 
         # Ollama request handling 
-        ollama_response, code =  cls.handle_complete(model_name, prompt_tokens, prompt_token_count)
+        ollama_response, code =  cls.handle_complete(model_name, input_text)
         
         if is_openai_request:
             # Convert Ollama response to OpenAI format
@@ -802,14 +801,14 @@ class EmbedEndpointHandler(EndpointHandler):
     
     
     @classmethod
-    def handle_complete(cls, model_name, input_tokens, prompt_token_count):
+    def handle_complete(cls, model_name, input_text):
         """Handle complete embedding response"""
 
         start_time = time.time()
         prompt_eval_time = None
         
         # Send the task of embedding to the model
-        variables.worker_manager_rkllm.embedding(model_name, input_tokens)
+        variables.worker_manager_rkllm.embedding(model_name, input_text)
 
         # Clear the cache to prevent embedding problems
         variables.worker_manager_rkllm.clear_cache_worker(model_name)
@@ -818,14 +817,14 @@ class EmbedEndpointHandler(EndpointHandler):
         result_q = variables.worker_manager_rkllm.get_result(model_name)
 
         # Wait for the last_embedding hidden layer return
-        embeddings = result_q.get(timeout=300)  
+        last_embeddings = result_q.get(timeout=300)  
         
         # Calculate metrics
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
+        metrics["prompt_tokens"] = last_embeddings["num_tokens"]
         
         # Format response
-        response = cls.format_complete_response(model_name, embeddings.tolist(), metrics, None)
+        response = cls.format_complete_response(model_name, last_embeddings["embedding"].tolist(), metrics, None)
         
         # Return response
         return jsonify(response), 200
