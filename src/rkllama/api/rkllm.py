@@ -168,6 +168,13 @@ class RKLLM(object):
             rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))
             rkllm_input.input_data.token_input.n_tokens = ctypes.c_size_t(len(token_input))
             
+        elif model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
+            input_text = input
+            logger.debug(f"Running prompt inference for: {input_text}.")
+            
+            # Prompt
+            rkllm_input.input_data.prompt_input = input_text.encode("utf-8")
+        
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_EMBED:
             embed_input = input
             num_tokens, embd_size = embed_input.shape
