@@ -4,6 +4,7 @@ import sys
 import os
 import configparser
 import re
+import subprocess
 
 import rkllama.config
 
@@ -81,9 +82,46 @@ def list_running_models():
         response = requests.get(API_URL + "api/ps")
         if response.status_code == 200:
             models = response.json().get("models", [])
-            print(f"{GREEN}{BOLD}Running models:{RESET}")
-            for model in models:
-                print(f"- {model}")
+            if not models:
+                print(f"{YELLOW}No model currently loaded.{RESET}")
+                return
+
+            _ansi_re = re.compile(r'\033\[[0-9;]*m')
+
+            def visible_len(s):
+                return len(_ansi_re.sub('', s))
+
+            W = 55
+
+            def row(label, value):
+                prefix = f"  {label:<22} "
+                pad = W - len(prefix) - visible_len(str(value))
+                return f"{YELLOW}│{RESET}{prefix}{value}{' ' * max(pad, 0)}{YELLOW}│{RESET}"
+
+            sep_top = f"{YELLOW}┌{'─' * W}┐{RESET}"
+            sep_mid = f"{YELLOW}├{'─' * W}┤{RESET}"
+            sep_bot = f"{YELLOW}└{'─' * W}┘{RESET}"
+
+            print(f"\n{CYAN}{BOLD}Running models:{RESET}")
+
+            for i, model in enumerate(models):
+                details  = model.get("details", {})
+                size_mb  = model.get("size", 0) / 1_073_741_824
+
+                print(sep_top)
+                print(row("Model",           f"{BOLD}{model.get('name', '?')}{RESET}"))
+                print(row("Format",          f"{details.get('format', '?')}"))
+                print(row("Family",          f"{details.get('family', '?')}"))
+                print(row("Parameter size",  f"{details.get('parameter_size', '?')}"))
+                print(row("Quantization",    f"{details.get('quantization_level', '?')}"))
+                print(row("Size (GB)",       f"{GREEN}{size_mb:.2f} GB{RESET}"))
+                print(sep_mid)
+                print(row("Loaded at",       f"{CYAN}{model.get('loaded_at', '?')}{RESET}"))
+                print(row("Last call",       f"{CYAN}{model.get('last_call', '?')}{RESET}"))
+                print(row("Expiration",      f"{CYAN}{model.get('expires_at', '?')}{RESET}"))
+                print(sep_bot)
+                if i < len(models) - 1:
+                    print()
         else:
             print(f"{RED}Error retrieving running models: {response.status_code} - {response.text}{RESET}")
     except requests.RequestException as e:
@@ -151,17 +189,17 @@ def _print_verbose(usage, model_name="?", finish_reason="?"):
     sep_bot = f"{YELLOW}└{'─' * W}┘{RESET}"
 
     print(f"\n{sep_top}")
-    print(row("Modèle", f"{BOLD}{model_name}{RESET}"))
-    print(row("Fin de génération", f"{BOLD}{finish_reason}{RESET}"))
+    print(row("Model", f"{BOLD}{model_name}{RESET}"))
+    print(row("Finish reason", f"{BOLD}{finish_reason}{RESET}"))
     print(sep_mid)
-    print(row("Tokens prompt",  f"{GREEN}{prompt_tokens}{RESET}"))
-    print(row("Tokens générés", f"{GREEN}{completion_tokens}{RESET}  (total: {GREEN}{total_tokens}{RESET})"))
-    print(row("Tokens / sec",   f"{GREEN}{tps}{RESET}"))
+    print(row("Prompt tokens",  f"{GREEN}{prompt_tokens}{RESET}"))
+    print(row("Generated tokens", f"{GREEN}{completion_tokens}{RESET}  (total: {GREEN}{total_tokens}{RESET})"))
+    print(row("Tokens/sec",   f"{GREEN}{tps}{RESET}"))
     print(sep_mid)
-    print(row("Chargement modèle",     f"{CYAN}{load_dur:.3f}s{RESET}"))
-    print(row("Tokenisation prompt",   f"{CYAN}{prompt_dur:.3f}s{RESET}"))
-    print(row("Génération réponse",    f"{CYAN}{eval_dur:.3f}s{RESET}"))
-    print(row("Durée totale",          f"{CYAN}{total_dur:.3f}s{RESET}"))
+    print(row("Model load",     f"{CYAN}{load_dur:.3f}s{RESET}"))
+    print(row("Prompt tokenization",   f"{CYAN}{prompt_dur:.3f}s{RESET}"))
+    print(row("Response generation",    f"{CYAN}{eval_dur:.3f}s{RESET}"))
+    print(row("Total duration",          f"{CYAN}{total_dur:.3f}s{RESET}"))
     print(sep_bot)
 
 
@@ -343,25 +381,87 @@ def chat(model):
             send_message(model, user_input)
 
 def update():
-    setup_path = os.path.join(rkllama.config.get_path(), 'setup.sh')
-    
-    # Check if setup.sh exists
-    if not os.path.exists(setup_path):
-        print("setup.sh not found. Downloading the setup script...")
-        url = "https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/setup.sh"
-        
-        # Download setup.sh
-        try:
-            urllib.request.urlretrieve(url, setup_path)
-            print("setup.sh downloaded successfully.")
-        except Exception as e:
-            print(f"Failed to download setup.sh: {e}")
-            return
+    README_URL   = "https://raw.githubusercontent.com/NotPunchnox/rkllama/refs/heads/main/README.md"
+    INSTALL_URL  = "git+https://github.com/NotPunchnox/rkllama.git"
 
-    # Run git pull and setup.sh
-    print("Updating the repository and running setup.sh...")
-    os.system('git pull')
-    os.system(f'bash {setup_path}')
+    # current installed version
+    try:
+        import importlib.metadata
+        current_version = importlib.metadata.version("rkllama")
+    except Exception:
+        current_version = "unknown"
+
+    # fetch README and extract remote version
+    try:
+        readme_response = requests.get(README_URL, timeout=10)
+        readme_response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"{RED}Unable to reach GitHub: {e}{RESET}")
+        return
+
+    match = re.search(r'###\s*\[Version:\s*([\d.]+)\]', readme_response.text)
+    if not match:
+        print(f"{RED}Could not find version in remote README.{RESET}")
+        return
+
+    remote_version = match.group(1)
+
+    # version comparison
+    def parse_version(v):
+        try:
+            return tuple(int(x) for x in str(v).split("."))
+        except Exception:
+            return (0,)
+
+    status_text = ""
+    if parse_version(remote_version) <= parse_version(current_version):
+        status_text = f"{GREEN}Up to date{RESET}"
+    else:
+        status_text = f"{YELLOW}Update available{RESET}"
+
+    # Pretty table display
+    _ansi_re = re.compile(r'\033\[[0-9;]*m')
+
+    def visible_len(s):
+        return len(_ansi_re.sub('', str(s)))
+
+    W = 76  # inner visible width
+
+    def row(label, value):
+        prefix = f"  {label:<18} "
+        pad = W - len(prefix) - visible_len(value)
+        return f"{YELLOW}│{RESET}{prefix}{value}{' ' * max(pad,0)}{YELLOW}│{RESET}"
+
+    sep_top = f"{YELLOW}┌{'─' * W}┐{RESET}"
+    sep_bot = f"{YELLOW}└{'─' * W}┘{RESET}"
+
+    print(f"\n{CYAN}{BOLD}Update check:{RESET}")
+    print(sep_top)
+    print(row("Installed version", f"{BOLD}{current_version}{RESET}"))
+    print(row("Latest version",    f"{BOLD}{remote_version}{RESET}"))
+    print(row("Status",            f"{status_text}"))
+    print(sep_bot)
+
+    if parse_version(remote_version) <= parse_version(current_version):
+        print(f"\n{GREEN}Already up to date.{RESET}")
+        return
+
+    print(f"\n{GREEN}A new version is available: {BOLD}{remote_version}{RESET}{GREEN} (current: {current_version}){RESET}")
+
+    # confirmation
+    confirm = input(f"{CYAN}Update now? [y/N]:{RESET} ").strip().lower()
+    if confirm not in ("y", "yes"):
+        print(f"{RED}Update cancelled.{RESET}")
+        return
+
+    # install
+    print(f"\n{YELLOW}Installing latest version...{RESET}")
+    install = subprocess.run([sys.executable, "-m", "pip", "install", INSTALL_URL])
+    if install.returncode == 0:
+        print(f"\n{GREEN}{BOLD}Update successful!{RESET} Restart rkllama_client to use version {remote_version}.")
+    else:
+        print(f"\n{RED}Installation failed. Check the output above.{RESET}")
+
 
 def show_model_info(model_name):
     try:
@@ -374,39 +474,85 @@ def show_model_info(model_name):
         if response.status_code == 200:
             model_info = response.json()
             
-            # Afficher les informations du modèle de manière formatée
-            print(f"{GREEN}{BOLD}Model Information: {model_info['name']}{RESET}")
-            print(f"{'-' * 50}")
-            print(f"{BOLD}Family:{RESET} {model_info['details']['family']}")
-            print(f"{BOLD}Parameter Size:{RESET} {model_info['parameters']}")
-            print(f"{BOLD}Quantization Level:{RESET} {model_info['details']['quantization_level']}")
-            print(f"{BOLD}Size:{RESET} {model_info['size'] / (1024**3):.2f} GB")
-            print(f"{BOLD}Modified At:{RESET} {model_info['modified_at']}")
-            print(f"{BOLD}License:{RESET} {model_info['license']}")
-            print(f"{BOLD}System Prompt:{RESET} {model_info['system'] or 'None'}")
-            print(f"{BOLD}Template:{RESET} {model_info['template']}")
-            
-            # Afficher les informations Hugging Face si disponibles
-            if "huggingface" in model_info:
-                print(f"{BOLD}Hugging Face Info:{RESET}")
-                print(f"  Repo ID: {model_info['huggingface']['repo_id']}")
-                print(f"  Description: {model_info['huggingface']['description'][:100]}{'...' if len(model_info['huggingface']['description']) > 100 else ''}")
-                print(f"  Tags: {', '.join(model_info['huggingface']['tags'][:5])}")
-                print(f"  Downloads: {model_info['huggingface']['downloads']}")
-                print(f"  Likes: {model_info['huggingface']['likes']}")
-            
-            # Afficher les informations avancées du modèle
-            print(f"{BOLD}Advanced Model Info:{RESET}")
-            for key, value in model_info['model_info'].items():
-                print(f"  {key}: {value}")
-            
+            # Display model information as an English table
+            _ansi_re = re.compile(r'\033\[[0-9;]*m')
+
+            def visible_len(s):
+                return len(_ansi_re.sub('', str(s)))
+
+            W = 80  # inner visible width
+
+            def row(label, value):
+                prefix = f"  {label:<20} "
+                pad = W - len(prefix) - visible_len(value)
+                return f"{YELLOW}│{RESET}{prefix}{value}{' ' * max(pad,0)}{YELLOW}│{RESET}"
+
+            sep_top = f"{YELLOW}┌{'─' * W}┐{RESET}"
+            sep_mid = f"{YELLOW}├{'─' * W}┤{RESET}"
+            sep_bot = f"{YELLOW}└{'─' * W}┘{RESET}"
+
+            name = model_info.get("name", "?")
+            details = model_info.get("details", {})
+            parameters = model_info.get("parameters", "?")
+            quant = details.get("quantization_level", "?")
+            family = details.get("family", "?")
+            size_bytes = model_info.get("size", 0)
+            size_gb = size_bytes / (1024 ** 3) if isinstance(size_bytes, (int, float)) else "?"
+            modified_at = model_info.get("modified_at", "?")
+            license_ = model_info.get("license", "?")
+            system_prompt = model_info.get("system") or "None"
+            template = model_info.get("template", "?")
+            model_meta = model_info.get("model_info", {})
+
+            print(f"\n{CYAN}{BOLD}Model Information: {name}{RESET}")
+            print(sep_top)
+            print(row("Name", f"{BOLD}{name}{RESET}"))
+            print(row("Family", f"{family}"))
+            print(row("Parameter size", f"{parameters}"))
+            print(row("Quantization", f"{quant}"))
+            print(row("Size (GB)", f"{GREEN}{size_gb:.2f} GB{RESET}" if isinstance(size_gb, float) else f"{size_gb}"))
+            print(sep_mid)
+            print(row("Modified at", f"{CYAN}{modified_at}{RESET}"))
+            print(row("License", f"{license_}"))
+            print(row("System prompt", f"{system_prompt}"))
+            print(row("Template", f"{template}"))
+            print(sep_mid)
+
+            # Hugging Face info (if present)
+            hf = model_info.get("huggingface")
+            if hf:
+                hf_repo = hf.get("repo_id", "?")
+                hf_desc = hf.get("description", "") or ""
+                hf_desc_short = (hf_desc[:80] + "...") if len(hf_desc) > 80 else hf_desc
+                hf_tags = ", ".join(hf.get("tags", [])[:5]) or "?"
+                hf_downloads = hf.get("downloads", "?")
+                hf_likes = hf.get("likes", "?")
+
+                print(row("HF repo", f"{hf_repo}"))
+                print(row("HF desc", f"{hf_desc_short}"))
+                print(row("HF tags", f"{hf_tags}"))
+                print(row("HF downloads", f"{hf_downloads}"))
+                print(row("HF likes", f"{hf_likes}"))
+                print(sep_mid)
+
+            # Advanced model info
+            print(row("Advanced info", ""))
+            for i, (k, v) in enumerate(model_meta.items()):
+                label = f"  {k}"
+                # For long values, convert to short string
+                val_str = str(v)
+                if len(val_str) > W - 30:
+                    val_str = val_str[:W - 33] + "..."
+                print(row(k, val_str))
+
+            print(sep_bot)
+
         elif response.status_code == 400:
             print(f"{RED}Error: Missing model name{RESET}")
         elif response.status_code == 404:
             print(f"{RED}Error: Model '{model_name}' not found{RESET}")
         else:
             print(f"{RED}Error retrieving model info: {response.status_code} - {response.text}{RESET}")
-            
     except requests.RequestException as e:
         print(f"{RED}Query error: {e}{RESET}")
 
