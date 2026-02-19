@@ -477,6 +477,9 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
         usage["completion_tokens"] = ollama_response["eval_count"]
     if usage:
         usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+    eval_duration_ns = ollama_response.get("eval_duration", 0)
+    eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
+    usage["tokens_per_second"] = round(usage.get("completion_tokens", 0) / eval_duration, 2) if eval_duration > 0 else 0
 
     # Build full response
     openai_response = {
@@ -649,12 +652,24 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
 
         if ollama_chunk.get("done") is True:
             # Final chunk — stop streaming
+            eval_count = ollama_chunk.get("eval_count", 0)
+            eval_duration_ns = ollama_chunk.get("eval_duration", 0)
+            eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
+            tokens_per_second = round(eval_count / eval_duration, 2) if eval_duration > 0 else 0
+            prompt_tokens = ollama_chunk.get("prompt_eval_count", 0)
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": eval_count,
+                "total_tokens": prompt_tokens + eval_count,
+                "tokens_per_second": tokens_per_second,
+            }
             final_chunk = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": []
+                "choices": [],
+                "usage": usage
             }
             yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
