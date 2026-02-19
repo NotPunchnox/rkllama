@@ -470,16 +470,26 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     }
 
     # Handle token usage if present
-    usage = {}
-    if "prompt_eval_count" in ollama_response:
-        usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
-    if "eval_count" in ollama_response:
-        usage["completion_tokens"] = ollama_response["eval_count"]
-    if usage:
-        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+    prompt_tokens = ollama_response.get("prompt_eval_count", 0)
+    completion_tokens = ollama_response.get("eval_count", 0)
     eval_duration_ns = ollama_response.get("eval_duration", 0)
+    prompt_eval_duration_ns = ollama_response.get("prompt_eval_duration", 0)
+    total_duration_ns = ollama_response.get("total_duration", 0)
+    load_duration_ns = ollama_response.get("load_duration", 0)
     eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
-    usage["tokens_per_second"] = round(usage.get("completion_tokens", 0) / eval_duration, 2) if eval_duration > 0 else 0
+    prompt_eval_duration = prompt_eval_duration_ns / 1_000_000_000 if prompt_eval_duration_ns > 0 else 0
+    total_duration = total_duration_ns / 1_000_000_000 if total_duration_ns > 0 else 0
+    load_duration = load_duration_ns / 1_000_000_000 if load_duration_ns > 0 else 0
+    usage = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "tokens_per_second": round(completion_tokens / eval_duration, 2) if eval_duration > 0 else 0,
+        "prompt_eval_duration": round(prompt_eval_duration, 4),
+        "eval_duration": round(eval_duration, 4),
+        "total_duration": round(total_duration, 4),
+        "load_duration": round(load_duration, 4),
+    }
 
     # Build full response
     openai_response = {
@@ -653,15 +663,25 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
         if ollama_chunk.get("done") is True:
             # Final chunk — stop streaming
             eval_count = ollama_chunk.get("eval_count", 0)
-            eval_duration_ns = ollama_chunk.get("eval_duration", 0)
-            eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
-            tokens_per_second = round(eval_count / eval_duration, 2) if eval_duration > 0 else 0
             prompt_tokens = ollama_chunk.get("prompt_eval_count", 0)
+            eval_duration_ns = ollama_chunk.get("eval_duration", 0)
+            prompt_eval_duration_ns = ollama_chunk.get("prompt_eval_duration", 0)
+            total_duration_ns = ollama_chunk.get("total_duration", 0)
+            load_duration_ns = ollama_chunk.get("load_duration", 0)
+            eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
+            prompt_eval_duration = prompt_eval_duration_ns / 1_000_000_000 if prompt_eval_duration_ns > 0 else 0
+            total_duration = total_duration_ns / 1_000_000_000 if total_duration_ns > 0 else 0
+            load_duration = load_duration_ns / 1_000_000_000 if load_duration_ns > 0 else 0
+            tokens_per_second = round(eval_count / eval_duration, 2) if eval_duration > 0 else 0
             usage = {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": eval_count,
                 "total_tokens": prompt_tokens + eval_count,
                 "tokens_per_second": tokens_per_second,
+                "prompt_eval_duration": round(prompt_eval_duration, 4),
+                "eval_duration": round(eval_duration, 4),
+                "total_duration": round(total_duration, 4),
+                "load_duration": round(load_duration, 4),
             }
             final_chunk = {
                 "id": completion_id,

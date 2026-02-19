@@ -3,6 +3,7 @@ import json
 import sys
 import os
 import configparser
+import re
 
 import rkllama.config
 
@@ -122,6 +123,48 @@ def unload_model(model_name):
         print(f"{RED}Query error: {e}{RESET}")
 
 
+def _print_verbose(usage, model_name="?", finish_reason="?"):
+    """Display a formatted verbose statistics block after a response."""
+    W = 49  # inner visible width
+
+    prompt_tokens     = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens      = usage.get("total_tokens", 0)
+    tps               = usage.get("tokens_per_second", 0)
+    prompt_dur        = usage.get("prompt_eval_duration", 0)
+    eval_dur          = usage.get("eval_duration", 0)
+    total_dur         = usage.get("total_duration", 0)
+    load_dur          = usage.get("load_duration", 0)
+
+    _ansi_re = re.compile(r'\033\[[0-9;]*m')
+
+    def visible_len(s):
+        return len(_ansi_re.sub('', s))
+
+    def row(label, value):
+        prefix = f"  {label:<26} "
+        pad = W - len(prefix) - visible_len(str(value))
+        return f"{YELLOW}│{RESET}{prefix}{value}{' ' * max(pad, 0)}{YELLOW}│{RESET}"
+
+    sep_top = f"{YELLOW}┌{'─' * W}┐{RESET}"
+    sep_mid = f"{YELLOW}├{'─' * W}┤{RESET}"
+    sep_bot = f"{YELLOW}└{'─' * W}┘{RESET}"
+
+    print(f"\n{sep_top}")
+    print(row("Modèle", f"{BOLD}{model_name}{RESET}"))
+    print(row("Fin de génération", f"{BOLD}{finish_reason}{RESET}"))
+    print(sep_mid)
+    print(row("Tokens prompt",  f"{GREEN}{prompt_tokens}{RESET}"))
+    print(row("Tokens générés", f"{GREEN}{completion_tokens}{RESET}  (total: {GREEN}{total_tokens}{RESET})"))
+    print(row("Tokens / sec",   f"{GREEN}{tps}{RESET}"))
+    print(sep_mid)
+    print(row("Chargement modèle",     f"{CYAN}{load_dur:.3f}s{RESET}"))
+    print(row("Tokenisation prompt",   f"{CYAN}{prompt_dur:.3f}s{RESET}"))
+    print(row("Génération réponse",    f"{CYAN}{eval_dur:.3f}s{RESET}"))
+    print(row("Durée totale",          f"{CYAN}{total_dur:.3f}s{RESET}"))
+    print(sep_bot)
+
+
 # Sends a message to the loaded model and displays the response.
 def send_message(model, message):
     global HISTORY
@@ -145,11 +188,9 @@ def send_message(model, message):
                 if response.status_code == 200:
                     print(f"{CYAN}{BOLD}Assistant:{RESET} ", end="")
                     assistant_message = ""
+                    finish_reason     = ""
                     final_json        = {
-                        "usage": {
-                            "tokens_per_second": 0,
-                            "completion_tokens": 0
-                        }
+                        "usage": {}
                     }
 
                     for line in response.iter_lines(decode_unicode=True):
@@ -166,15 +207,16 @@ def send_message(model, message):
                                         sys.stdout.write(content_chunk)
                                         sys.stdout.flush()
                                         assistant_message += content_chunk
+                                        fr = response_json["choices"][0].get("finish_reason")
+                                        if fr:
+                                            finish_reason = fr
                             except json.JSONDecodeError:
                                 print(f"{RED}Error detecting JSON response.{RESET}")
 
                     if VERBOSE == True:
                         usage = final_json.get("usage", {})
-                        tokens_per_second = usage.get("tokens_per_second", 0)
-                        completion_tokens = usage.get("completion_tokens", 0)
-                        print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
-                        print(f"{GREEN}Number of tokens  {RESET}: {completion_tokens}")
+                        model_name = final_json.get("model", "?")
+                        _print_verbose(usage, model_name, finish_reason)
 
                     HISTORY.append({"role": "assistant", "content": assistant_message})
 
@@ -194,10 +236,11 @@ def send_message(model, message):
 
                 if VERBOSE == True:
                         usage = response_json.get("usage", {})
-                        tokens_per_second = usage.get("tokens_per_second", 0)
-                        completion_tokens = usage.get("completion_tokens", 0)
-                        print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
-                        print(f"{GREEN}Number of Tokens  {RESET}: {completion_tokens}")
+                        model_name = response_json.get("model", "?")
+                        finish_reason = ""
+                        if response_json.get("choices"):
+                            finish_reason = response_json["choices"][0].get("finish_reason", "?")
+                        _print_verbose(usage, model_name, finish_reason)
                         
                 HISTORY.append({"role": "assistant", "content": assistant_message})
             else:
