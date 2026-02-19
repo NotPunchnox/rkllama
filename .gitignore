@@ -3,6 +3,8 @@ src/__pycache__
 *.log
 config/config.env
 tests
+build
+src/rkllama.egg-info/*
 
 # macOS system files
 .DS_Store
