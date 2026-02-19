@@ -175,8 +175,11 @@ rkllama_client run <model_name>
 **Output:**
 ![Image](./documentation/ressources/launch_chat.png)
 
-Then start chatting *( **verbose mode**: display formatted history and statistics )*
+Then start chatting *( **verbose mode**: display statistics )*
 ![Image](./documentation/ressources/chat.gif)
+
+*In version `0.0.60`, the verbose command returns this information:*
+![Image](./documentation/ressources/verbose-chat.png)
 
 ## Tool Calling Quick Start
 
