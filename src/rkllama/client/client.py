@@ -170,8 +170,9 @@ def send_message(model, message):
                                 print(f"{RED}Error detecting JSON response.{RESET}")
 
                     if VERBOSE == True:
-                        tokens_per_second = final_json["usage"]["tokens_per_second"]
-                        completion_tokens = final_json["usage"]["completion_tokens"]
+                        usage = final_json.get("usage", {})
+                        tokens_per_second = usage.get("tokens_per_second", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
                         print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
                         print(f"{GREEN}Number of tokens  {RESET}: {completion_tokens}")
 
@@ -192,8 +193,9 @@ def send_message(model, message):
                 print(f"{CYAN}{BOLD}Assistant:{RESET} {assistant_message}")
 
                 if VERBOSE == True:
-                        tokens_per_second = final_json["usage"]["tokens_per_second"]
-                        completion_tokens = final_json["usage"]["completion_tokens"]
+                        usage = response_json.get("usage", {})
+                        tokens_per_second = usage.get("tokens_per_second", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
                         print(f"\n\n{GREEN}Tokens per second{RESET}: {tokens_per_second}")
                         print(f"{GREEN}Number of Tokens  {RESET}: {completion_tokens}")
                         
