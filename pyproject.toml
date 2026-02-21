@@ -1,6 +1,6 @@
 [project]
 name = "rkllama"
-version = "0.0.60"
+version = "0.0.61"
 authors = [
     { name="NotPunchnox", email="punchnoxpro@gmail.com" },
     { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
@@ -15,7 +15,7 @@ dependencies = [
     "huggingface_hub",
     "python-dotenv",
     "transformers==4.57.6",
-    "torch",
+    "torch==2.8.0",
     "flask-cors",
     "pydantic>=2.0.0",
     "psutil",
