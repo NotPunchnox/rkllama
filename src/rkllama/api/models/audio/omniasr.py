@@ -16,6 +16,7 @@ BLANK_ID = 0
 class OmniCtcSTTModelRKNN:
     def __init__(
         self,
+        model_runtime: dict,
         model_path: str,
     ):
 
@@ -23,9 +24,7 @@ class OmniCtcSTTModelRKNN:
         model_name, tokens_file = self.find_model_files(model_path)
 
         # Prepare the RKNN runtime model
-        self.model_rknn = RKNNLite(verbose=False)
-        self.model_rknn.load_rknn(model_name)
-        self.model_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
+        self.model_rknn = model_runtime[model_name]
 
         # Save the tokens file
         self.tokens = self.load_tokens(tokens_file)
@@ -226,7 +225,7 @@ class OmniCtcSTTModelRKNN:
         self.model_rknn.release()
 
 
-    def get_transcription(self,file,language) -> str:
+    def get_transcription(self,audio_bytes,language) -> str:
         """
         Generate a transcription
         
@@ -237,9 +236,6 @@ class OmniCtcSTTModelRKNN:
             str: Transcription text
         """
         
-        # read the bytes from the audio file
-        audio_bytes = file.read()
-
         # Get the samples of the auido
         samples = self.load_audio_from_bytes(audio_bytes)
 

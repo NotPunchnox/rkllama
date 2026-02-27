@@ -5,6 +5,9 @@ RUN apt-get update \
     && apt-get install -y ffmpeg libsm6 libxext6 \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
+# Fix setupttols version to prevent error: No module named 'pkg_resources' 
+RUN python -m pip --no-cache-dir install "setuptools<82.0.0"
+
 WORKDIR /opt/rkllama
 
 # Copy RKLLM runtime library explicitly
@@ -15,11 +18,12 @@ RUN chmod 755 /usr/lib/librkllmrt.so && ldconfig
 COPY ./src/rkllama/lib/librknnrt.so /usr/lib/
 RUN chmod 755 /usr/lib/librknnrt.so && ldconfig
 
+# Copy the source and other resourvces of the RKllama project
 COPY ./src /opt/rkllama/src
 RUN mkdir /opt/rkllama/models
 COPY README.md LICENSE pyproject.toml /opt/rkllama/
 
-# Install RKNNLite toolkit
+# Install RKLlama project
 RUN python -m pip --no-cache-dir install .
 
 EXPOSE 8080

@@ -170,7 +170,6 @@ class RKLLM(object):
             
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
             input_text = input
-            logger.debug(f"Running prompt inference for: {input_text}.")
             
             # Prompt
             rkllm_input.input_data.prompt_input = input_text.encode("utf-8")
