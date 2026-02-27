@@ -3,6 +3,7 @@ import soundfile as sf
 import logging
 from typing import Tuple
 import os
+import io
 import whisper
 import time
 import soxr
@@ -17,6 +18,7 @@ logger = logging.getLogger("rkllama.audio.whisper")
 class WhisperSTTModelRKNN:
     def __init__(
         self,
+        model_runtime: dict,
         model_path: str,
     ):
 
@@ -24,19 +26,10 @@ class WhisperSTTModelRKNN:
         encoder, decoder, decoder_with_past, tokenizer, configuration = self.find_model_files(model_path)
 
         # Prepare the RKNN runtime model
-        # Encoder
-        self.encoder_rknn = RKNNLite(verbose=False)
-        self.encoder_rknn.load_rknn(encoder)
-        self.encoder_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_ALL) # Best performance ( 25% faster in whisper large-v3-turbo)
-        # Decoder
-        self.decoder_rknn = RKNNLite(verbose=False)
-        self.decoder_rknn.load_rknn(decoder)
-        self.decoder_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-        # Decoder with past
-        self.decoder_with_past_rknn = RKNNLite(verbose=False)
-        self.decoder_with_past_rknn.load_rknn(decoder_with_past)
-        self.decoder_with_past_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-
+        self.encoder_rknn = model_runtime[encoder]
+        self.decoder_rknn = model_runtime[decoder]
+        self.decoder_with_past_rknn = model_runtime[decoder_with_past]
+        
         # Save the tokenizer of the  model
         self.tokenizer = WhisperTokenizerFast.from_pretrained(tokenizer)
 
@@ -145,7 +138,7 @@ class WhisperSTTModelRKNN:
 
 
 
-    def vad_chunks_for_whisper(self, wav_file):
+    def vad_chunks_for_whisper(self, wav_bytes):
         
         # Get configuration variables
         sample_rate=int(self.configuration["DEFAULT"]["SAMPLE_RATE"])
@@ -159,7 +152,7 @@ class WhisperSTTModelRKNN:
         vad = webrtcvad.Vad(vad_mode)
 
         # Load audio
-        audio, sr = sf.read(wav_file, always_2d=False)
+        audio, sr = sf.read(io.BytesIO(wav_bytes), always_2d=False)
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
 

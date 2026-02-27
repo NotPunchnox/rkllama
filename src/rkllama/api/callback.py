@@ -7,13 +7,29 @@ global_status = -1
 global_text = []
 split_byte_data = bytes(b"")
 last_embeddings = []
+global_metrics = []
+
 
 # Definir la fonction de rappel
 def callback_impl(result, userdata, status):
-    global split_byte_data, global_status, global_text, last_embeddings
+    global split_byte_data, global_status, global_text, last_embeddings, global_metrics
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
         global_status = status
+        
+        # Get the metrics for the current inference
+        prefill_tokens = result.contents.perf.prefill_tokens
+        generate_tokens = result.contents.perf.generate_tokens
+        prefill_time_ms = result.contents.perf.prefill_time_ms
+        generate_time_ms = result.contents.perf.generate_time_ms
+
+        # Add the metrics to the global variable
+        global_metrics.clear()
+        global_metrics.append(prefill_tokens)
+        global_metrics.append(generate_tokens)
+        global_metrics.append(prefill_time_ms)
+        global_metrics.append(generate_time_ms)
+        
         print("\n")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_ERROR:
