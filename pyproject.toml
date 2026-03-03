@@ -1,6 +1,6 @@
 [project]
 name = "rkllama"
-version = "0.0.61"
+version = "0.0.62"
 authors = [
     { name="NotPunchnox", email="punchnoxpro@gmail.com" },
     { name="TomJacobsUK", email="tom@tomjacobs.co.uk" },
@@ -12,24 +12,24 @@ requires-python = ">=3.9"
 dependencies = [
     "Flask==2.3.2",
     "requests==2.31.0",
-    "huggingface_hub",
-    "python-dotenv",
+    "huggingface_hub==0.35.1",
+    "python-dotenv==1.1.1",
     "transformers==4.57.6",
     "torch==2.8.0",
-    "flask-cors",
-    "pydantic>=2.0.0",
-    "psutil",
-    "pillow",
-    "diffusers",
-    "numpy<2",
-    "opencv-python",
+    "flask-cors==6.0.1",
+    "pydantic==2.11.9",
+    "psutil==7.1.0",
+    "pillow==11.3.0",
+    "diffusers==0.35.1",
+    "numpy==1.26.4",
+    "opencv-python==4.11.0.86",
     "piper-tts==1.3.0",
-    "pydub",
-    "ffmpeg",
-    "soxr",
-    "soundfile",
-    "openai-whisper",
-    "webrtcvad",
+    "pydub==0.25.1",
+    "ffmpeg==1.4",
+    "soxr==1.0.0",
+    "soundfile==0.13.1",
+    "openai-whisper==20250625",
+    "webrtcvad==2.0.10",
     "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.12'",
     "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.11'",
     "rknn-toolkit-lite2 @ file:./src/rkllama/lib/rknn_toolkit_lite2-2.3.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl ; python_version == '3.10'",
@@ -55,17 +55,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 "rkllama.lib" = ["*.so", "*.sh"]
 
-#[tool.setuptools.data-files]
-#"rkllama/config/lib" = [
-#    "lib/*"
-#]
-
 [project.urls]
 Homepage = "https://github.com/NotPunchnox/rkllama"
 Issues = "https://github.com/NotPunchnox/rkllama/issues"
 
 [build-system]
-requires = ["setuptools >= 77.0.3"]
+requires = ["setuptools < 82.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]

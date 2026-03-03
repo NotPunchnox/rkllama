@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.61](#New-Version)
+### [Version: 0.0.62](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -33,6 +33,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Hardware**: Orange Pi 5 Pro: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **Hardware**: Orange Pi 5 Plus: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
 - **Hardware**: Orange Pi 5 Max: (Rockchip RK3588S, NPU 6 TOPS), 16GB RAM.
+- **Hardware**: Radxa Rock 4d: (Rockchip RK3576, NPU 6 TOPS), 16GB RAM.
 - **OS**: [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
 - **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
 
@@ -58,7 +59,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
 - **Listing available models.**
-- **Multiples RKLLM models running in memory simultaniusly (parallels executions between distintct models in stream mode, FIFO if non stream)**
+- **Multiples RKLLM and RKNN models running in memory simultaniusly (parallels executions between distintct models in stream mode, FIFO if non stream)**
 - **Dynamic loading and unloading of models:**
     * Load the model after new request (if not in memory already)
     * Unload when model expires after inactivity (default 30 min)
@@ -376,7 +377,7 @@ Example directory structure for multimodal:
 
 
 6. Done! You are ready to test the OpenAI endpoint /v1/images/generations to generate images. You can add it to OpenWebUI in the Image Generation section.
-7. Available converted models for RK3588 and RKNN 2.3.2 at: https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 (only 512x512 resolutions) and https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 (only 1024x1024 resolutions)
+7. Available converted models for RK3588/RK3576 and RKNN 2.3.2 at: https://huggingface.co/danielferr85/lcm-sd-1.5-rknn-2.3.2-rk3588 (only 512x512 resolutions) and https://huggingface.co/danielferr85/lcm-ssd-1b-rknn-2.3.2-rk3588 (only 1024x1024 resolutions)
 
 
 
