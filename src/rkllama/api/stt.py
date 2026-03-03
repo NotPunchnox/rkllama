@@ -7,7 +7,7 @@ logger = logging.getLogger("rkllama.stt")
 WHISPER = "whisper.ini"
 OMNI_ASR = "omniasr.txt"
     
-def generate_transcription(model_path,file,language) -> str:
+def generate_transcription(model_runtime,model_path,file,language) -> str:
     """
     Generate a transcription
     
@@ -27,11 +27,11 @@ def generate_transcription(model_path,file,language) -> str:
     if model_type == WHISPER:
         # It is whisper model call whisper logic
         from .models.audio.whisper import WhisperSTTModelRKNN
-        model = WhisperSTTModelRKNN(model_path)
+        model = WhisperSTTModelRKNN(model_runtime,model_path)
     else:
         # Default OmniASR. Call this logic
         from .models.audio.omniasr import OmniCtcSTTModelRKNN
-        model = OmniCtcSTTModelRKNN(model_path)
+        model = OmniCtcSTTModelRKNN(model_runtime,model_path)
 
     # Generate the transcription
     transcription = model.get_transcription(file,language)
@@ -41,7 +41,7 @@ def generate_transcription(model_path,file,language) -> str:
     return transcription
 
 
-def generate_translation(model_path,file,language) -> str:
+def generate_translation(model_runtime,model_path,file,language) -> str:
     """
     Generate a translation
     

@@ -17,7 +17,7 @@ from rkllama.api.format_utils import strtobool, openai_to_ollama_chat_request, o
 from rkllama.api.model_utils import (
     extract_model_details, 
     get_huggingface_model_info,
-    get_property_modelfile, get_model_full_options, find_rkllm_model_name
+    get_property_modelfile, get_model_full_options, find_rkllm_model_name, is_rkllm_model
 )
 from rkllama.api.worker import WorkerManager
 
@@ -116,34 +116,39 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
     if not os.path.exists(model_dir):
         return None, f"Model directory '{model_name}' not found."
     
-    if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
-        return None, f"Modelfile not found in '{model_name}' directory."
-    elif huggingface_path is not None and From is not None:
-        create_modelfile(huggingface_path=huggingface_path, From=From, system=system, model_name=model_name)
-        time.sleep(0.1)
-    
-    # Load modelfile
-    load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
-    
-    from_value = os.getenv("FROM")
-    huggingface_path = os.getenv("HUGGINGFACE_PATH")
-    vision_encoder = os.getenv("VISION_ENCODER")
+    # Check if model is RKLLM to download tokenizer (if not locally exists already)
+    rkllm_model_path = None
+    if is_rkllm_model(model_name):
+        if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
+            return None, f"Modelfile not found in '{model_name}' directory."
+        elif huggingface_path is not None and From is not None:
+            create_modelfile(huggingface_path=huggingface_path, From=From, system=system, model_name=model_name)
+            time.sleep(0.1)
+        
+        # Load modelfile
+        load_dotenv(os.path.join(model_dir, "Modelfile"), override=True)
+        
+        from_value = os.getenv("FROM")
+        huggingface_path = os.getenv("HUGGINGFACE_PATH")
+        
+        # View config Vars
+        print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
+        
+        if not from_value or not huggingface_path:
+            return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
 
-    # View config Vars
-    print_color(f"FROM: {from_value}\nHuggingFace Path: {huggingface_path}", "green")
-    
-    if not from_value or not huggingface_path:
-        return None, "FROM or HUGGINGFACE_PATH not defined in Modelfile."
+        # Change value of model_id with huggingface_path
+        variables.model_id = huggingface_path
 
-    # Change value of model_id with huggingface_path
-    variables.model_id = huggingface_path
+        # Construct the rkllm model path
+        rkllm_model_path = os.path.join(model_dir, from_value)
 
     # Get model parameters if not provided
     if not request_options:
         request_options = get_model_full_options(model_name, rkllama.config.get_path("models"), request_options)
 
     # Model loaded into memory
-    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, os.path.join(model_dir, from_value), model_dir, options=request_options)
+    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, rkllm_model_path, model_dir, options=request_options)
 
     if not model_loaded:
         return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
@@ -388,16 +393,16 @@ def get_current_models():
                     "name": model,
                     "model": model,
                     "size": worker_model_info.size,
-                    "digest": models_info[model]["digest"],
+                    "digest": models_info[model]["digest"] if model in models_info.keys() else None,
                     "details": {
                         "parent_model": "",
-                        "format": models_info[model]["details"]["format"],
-                        "family": models_info[model]["details"]["family"],
+                        "format": models_info[model]["details"]["format"] if model in models_info.keys() else "rknn",
+                        "family": models_info[model]["details"]["family"] if model in models_info.keys() else "rockchip",
                         "families": [
-                            models_info[model]["details"]["family"]
+                            models_info[model]["details"]["family"] if model in models_info.keys() else "rockchip"
                         ],
-                        "parameter_size": models_info[model]["details"]["parameter_size"],
-                        "quantization_level": models_info[model]["details"]["quantization_level"]
+                        "parameter_size": models_info[model]["details"]["parameter_size"] if model in models_info.keys() else None,
+                        "quantization_level": models_info[model]["details"]["quantization_level"] if model in models_info.keys() else None
                     },
                     "expires_at": worker_model_info.expires_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
                     "loaded_at": worker_model_info.loaded_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
@@ -1396,6 +1401,14 @@ def generate_image_openai():
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Image request data: {data}")
 
+        
+        # All the model doesnt fit in RKNN memory. GO with regular process flow
+        # Load model if needed
+        #if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+        #    _, error = load_model(model_name, request_options=None)
+        #    if error:
+        #        return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
@@ -1465,6 +1478,13 @@ def generate_speech_openai():
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Speech request data: {data}")
 
+
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+            _, error = load_model(model_name, request_options=None)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+        
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
@@ -1524,9 +1544,18 @@ def generate_transcriptions_openai():
         # Format bool values
         stream = strtobool(stream) if bool(stream) else False # Disabled by default
 
+        # Change the type of the input file to bytes
+        file = file.read()
+
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Transcription request data: {form}")
 
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+            _, error = load_model(model_name, request_options=None)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired
@@ -1580,6 +1609,12 @@ def generate_translations_openai():
         if DEBUG_MODE:
             logger.debug(f"API OpenAI Generate Transcription request data: {form}")
 
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+            _, error = load_model(model_name, request_options=None)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            
         # Acquire lock before processing the request
         variables.verrou.acquire()
         lock_acquired = True  # Mark lock as acquired

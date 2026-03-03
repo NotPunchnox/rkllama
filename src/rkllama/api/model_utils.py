@@ -432,7 +432,7 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
     modelfile = os.path.join(models_path, model_name, "Modelfile")
     
     # First overrride default values with the ModelFile Parameters
-    if os.path.isfile(modelfile):
+    if os.path.exists(modelfile) and os.path.isfile(modelfile):
        # Try to read the Modelfile
        with open(modelfile, 'r') as file:
             # Looping through each line in the Modelfile
@@ -469,14 +469,65 @@ def get_model_size(model_name) -> int:
     models_dir = rkllama.config.get_path("models")
     model_path = os.path.join(models_dir, model_name)
     
-    # check for the RKLLM file to get his size
+    # Check for the RKLLM and RKNN files to get the total size
+    size = 0
     if os.path.isdir(model_path):
-        for file in os.listdir(model_path):
-            if file.endswith(".rkllm"):
-                size = os.path.getsize(os.path.join(model_path, file))
-                return size
+        for root, dirs, files in os.walk(model_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.endswith(".rkllm") or file_path.endswith(".rknn"):
+                    size = size + os.path.getsize(file_path)
+
+    # Return the size    
+    return size
+
+
+def get_rknn_onnx_files_from_model(model_dir) -> int:
+    """
+    Get the RKNN and ONNX files path
+    Args:
+        model_dir: The path of the model directory
+    Returns:
+        The list of files
+    """
+
+    # Loop over model directory for ONNX and RKNN files
+    models_path = []
+    if os.path.isdir(model_dir):
+        for root, dirs, files in os.walk(model_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.endswith(".onnx") or file_path.endswith(".rknn"):
+                    models_path.append(file_path)
+
+    # Return the models  
+    return models_path
+
+
+
+def is_rkllm_model(model_name) -> int:
+    """
+    CHeck if the model is RKLLM or RKNN
+    Args:
+        model_name: The name of the model directory
+    Returns:
+        True if it is RKLLM. False if RKNN
+    """
+
+    # Get the models directory
+    models_dir = rkllama.config.get_path("models")
+    model_path = os.path.join(models_dir, model_name)
     
-    return None
+    # Search for the RKLLM and RKNN files
+    if os.path.isdir(model_path):
+        for root, dirs, files in os.walk(model_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.endswith(".rkllm"):
+                    return True
+
+    # RKLLM not found   
+    return False
 
 
 def read_data_from_file(path: str) -> bytes:

@@ -19,6 +19,7 @@ logger = logging.getLogger("rkllama.audio.mms_tts")
 class MMSTTSModelRKNN:
     def __init__(
         self,
+        model_runtime: dict,
         model_path: str,
     ):
 
@@ -27,14 +28,9 @@ class MMSTTSModelRKNN:
 
         # Prepare the RKNN runtime model
         # Encoder
-        self.encoder_rknn = RKNNLite(verbose=False)
-        self.encoder_rknn.load_rknn(encoder)
-        self.encoder_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-        # Decoder
-        self.decoder_rknn = RKNNLite(verbose=False)
-        self.decoder_rknn.load_rknn(decoder)
-        self.decoder_rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-
+        self.encoder_rknn = model_runtime[encoder]
+        self.decoder_rknn = model_runtime[decoder]
+        
         # Save the vocab of the  model
         self.vocab= self.read_json_file(vocab)
 

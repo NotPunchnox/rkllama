@@ -60,6 +60,7 @@ class PiperVoiceRKNN(PiperVoice):
 
     @staticmethod
     def load(
+        model_runtime: dict,
         model_path: Union[str, Path],
         config_path: Optional[Union[str, Path]] = None,
         use_cuda: bool = False,
@@ -67,7 +68,7 @@ class PiperVoiceRKNN(PiperVoice):
     ) -> "PiperVoiceRKNN":
         """
         Load an ONNX model and config.
-
+        :param model_runtime = Models ONNX /RKNN runtime
         :param model_path: Path to ONNX voice model.
         :param config_path: Path to JSON voice config (defaults to model_path + ".json").
         :param use_cuda: True if CUDA (GPU) should be used instead of CPU.
@@ -79,19 +80,6 @@ class PiperVoiceRKNN(PiperVoice):
             config_path = f"{model_path}.json"
             _LOGGER.debug("Guessing voice config path: %s", config_path)
 
-        providers: list[Union[str, tuple[str, dict[str, Any]]]]
-        if use_cuda:
-            providers = [
-                (
-                    "CUDAExecutionProvider",
-                    {"cudnn_conv_algo_search": "HEURISTIC"},
-                )
-            ]
-            _LOGGER.debug("Using CUDA")
-        else:
-            providers = ["CPUExecutionProvider"]
-
-
         # Get encoder, decoder and config file from models path
         encoder, decoder, config_path = find_model_files(model_path)
 
@@ -99,19 +87,10 @@ class PiperVoiceRKNN(PiperVoice):
         with open(config_path, "r", encoding="utf-8") as config_file:
             config_dict = json.load(config_file)
 
-        # Load RKNN
-        decoder_rknn = RKNNLite(verbose=False)
-        decoder_rknn.load_rknn(decoder)
-
-
         return PiperVoiceRKNN(
             config=PiperConfig.from_dict(config_dict),
-            session=onnxruntime.InferenceSession(
-                str(encoder),
-                sess_options=onnxruntime.SessionOptions(),
-                providers=providers,
-            ),
-            session_rknn = decoder_rknn,
+            session=model_runtime[encoder],
+            session_rknn=model_runtime[decoder],
             model_path = model_path, 
             espeak_data_dir=Path(espeak_data_dir),
         )
@@ -136,9 +115,6 @@ class PiperVoiceRKNN(PiperVoice):
         :return: Phoneme/audio alignments if include_alignments is True, otherwise None.
         """
 
-        # Init runtime RKNN for inference
-        self.session_rknn.init_runtime()
-
         alignments: list[PhonemeAlignment] = []
         first_chunk = True
         for audio_chunk in self.synthesize(
@@ -150,7 +126,7 @@ class PiperVoiceRKNN(PiperVoice):
                     wav_file.setframerate(audio_chunk.sample_rate)
                     wav_file.setsampwidth(audio_chunk.sample_width)
                     wav_file.setnchannels(audio_chunk.sample_channels)
-
+                    
                 first_chunk = False
 
             wav_file.writeframes(audio_chunk.audio_int16_bytes)
@@ -228,7 +204,7 @@ class PiperVoiceRKNN(PiperVoice):
             None,
             args,
         )
-        
+    
         # Get the encoder outputs
         if speaker_id is not None:
             z, y_mask, _ = encoder_output
