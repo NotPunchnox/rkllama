@@ -20,8 +20,8 @@ def callback_impl(result, userdata, status):
         # Get the metrics for the current inference
         prefill_tokens = result.contents.perf.prefill_tokens
         generate_tokens = result.contents.perf.generate_tokens
-        prefill_time_ms = result.contents.perf.prefill_time_ms
-        generate_time_ms = result.contents.perf.generate_time_ms
+        prefill_time_ms = int(result.contents.perf.prefill_time_ms) # Float to Int for compliance Ollama Pyhton package
+        generate_time_ms = int(result.contents.perf.generate_time_ms) # Float to Int for compliance Ollama Pyhton package
 
         # Add the metrics to the global variable
         global_metrics.clear()

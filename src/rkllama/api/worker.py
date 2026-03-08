@@ -2,7 +2,8 @@ import logging
 import psutil
 import rkllama.config
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+import os
 import threading
 import random
 from multiprocessing import Process, Pipe
@@ -434,10 +435,15 @@ class WorkerManager:
         def execute():
             while True:
                 try:
-                    # Call the process to unload expired models
-                    self.unload_expired_models()
                     # Wait for the next execution
                     time.sleep(interval)  # Check every 60 seconds expired models
+
+                    # Call the process to unload expired models
+                    self.unload_expired_models()
+
+                    # Call the process to clear old cache prompts
+                    self.clear_old_cache_prompts()
+
                 except Exception as e:
                     logger.error(f"Exception in monitor models: {e}")
  
@@ -458,6 +464,44 @@ class WorkerManager:
         for model_name in expired_models:
             logger.info(f"Detected expired model: {model_name}")
             self.stop_worker(model_name)
+
+
+    def clear_old_cache_prompts(self) -> int | None:
+
+        # Files to _delete
+        files_to_delete = []
+
+        # Loop over the all the models (not only the running ones)
+        for model in os.listdir(rkllama.config.get_path("models")):
+
+            # Get the model cache dir
+            model_cache_dir = os.path.join(rkllama.config.get_path("models"), model, "cache")
+
+            # Loop the prompt cache directory if exists
+            if os.path.exists(model_cache_dir) and os.path.isdir(model_cache_dir):
+
+                # Loop through all files in the directory
+                for filename in os.listdir(model_cache_dir):
+
+                    # Get the prompt cache file
+                    file_path = os.path.join(model_cache_dir, filename)
+                    
+                    # Check if it's a file and modified more than configured days ago
+                    if os.path.isfile(file_path):
+
+                        # Get Modification date of the prompt file
+                        last_modified = os.path.getmtime(file_path)
+                            
+                        # CHeck if older thn the expected
+                        if (time.time() - last_modified) > int(rkllama.config.get("model", "max_days_prompt_cache")) * 86400:
+                            logger.info(f"Prompt Cache file {filename} from model {model} is older than {int(rkllama.config.get("model", "max_days_prompt_cache"))} days.")
+                            files_to_delete.append(file_path)
+
+        # Loop over the prompt cache files to delete
+        for prompt_file in files_to_delete:
+            # Remove the file
+            logger.info(f"Deleting Prompt Cache file {prompt_file}...")
+            os.remove(prompt_file)
 
 
     def get_available_base_domain_id(self, reverse_order=False) -> int | None:
@@ -729,36 +773,45 @@ class WorkerManager:
             
 
 
-    def inference(self, model_name, model_input):
+    def inference(self, model_name, prompt_input, prompt_cache_file):
         """
         Send a inference task to the corresponding model worker
         
         Args:
             model_name (str): Model name to invoke
-            model_input (str): Input of the model
+            prompt_input (str): Input of the model
+            prompt_cache_file (str): Prompt cache file
 
         """
         if model_name in self.workers.keys():
-            # Send the inference task
-            #self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))
 
-    
-    def embedding(self, model_name, model_input):
+            # Construct model input
+            model_input = (prompt_input, prompt_cache_file)
+            
+            # Send the inference task
+            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            
+
+    def embedding(self, model_name, text_input, prompt_cache_file = None):
         """
         Send a prepare embedding task to the corresponding model worker
         
         Args:
             model_name (str): Model name to invoke
-            model_input (str): Input of the model
+            text_input (str): Input of the model
+            prompt_cache_file (str): Prompt cache file
 
         """
         if model_name in self.workers.keys():
+
+            # Construct model input
+            model_input = (text_input, prompt_cache_file)
+
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
             
     
-    def multimodal(self, model_name, prompt_input, images):
+    def multimodal(self, model_name, prompt_input, images, prompt_cache_file):
         """
         Send a inference task to the corresponding model worker for multimodal input
         
@@ -769,6 +822,7 @@ class WorkerManager:
             n_image_tokens (int): Number of image tokens
             image_width (int): Width of the image
             image_height (int): Height of the image
+            prompt_cache_file (str): Prompt cache file
 
         """
 
@@ -797,7 +851,7 @@ class WorkerManager:
                 raise RuntimeError(f"Unexpected error encoding image for model : {model_name}")
             
             # Prepare all the inputs for the multimodal inference
-            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images)
+            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, prompt_cache_file)
             
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
