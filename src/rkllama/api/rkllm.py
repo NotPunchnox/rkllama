@@ -16,9 +16,14 @@ class RKLLM(object):
         self.format_type = None
         self.format_options = {}
         self.model_dir = model_dir
+        self.prompt_cache_dir =f"{self.model_dir}/cache"
         
         # Multi Load model attributes
         self.base_domain_id = base_domain_id
+
+        # Create prompt cache directory if not exists
+        if not os.path.exists(self.prompt_cache_dir):
+            os.makedirs(self.prompt_cache_dir)
         
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
@@ -127,19 +132,27 @@ class RKLLM(object):
         self.rkllm_infer_params.keep_history = 0
 
 
-        self.prompt_cache_path = None
-        if prompt_cache_path:
-            self.prompt_cache_path = prompt_cache_path
-
-            rkllm_load_prompt_cache = rkllm_lib.rkllm_load_prompt_cache
-            rkllm_load_prompt_cache.argtypes = [RKLLM_Handle_t, ctypes.c_char_p]
-            rkllm_load_prompt_cache.restype = ctypes.c_int
-            rkllm_load_prompt_cache(self.handle, ctypes.c_char_p((prompt_cache_path).encode('utf-8')))
+        self.rkllm_load_prompt_cache = rkllm_lib.rkllm_load_prompt_cache
+        self.rkllm_load_prompt_cache.argtypes = [RKLLM_Handle_t, ctypes.c_char_p]
+        self.rkllm_load_prompt_cache.restype = ctypes.c_int
         
         self.tools = None
 
     def tokens_to_ctypes_array(self, tokens, ctype):
         return (ctype * len(tokens))(*tokens)
+    
+    def increase_prompt_cache_num_messages(self, file_id: str, delta: int = 1) -> str:
+        """
+        Add a value to the 3-digit message counter of a chat session ID.
+        Example: Ab3Kf91LpQx2_002 + 1 -> Ab3Kf91LpQx2_003
+        """
+
+        base = file_id[:-4]          # remove "_NNN"
+        count = int(file_id[-3:])    # extract NNN
+        new_count = count + delta
+
+        # Return the new name to save
+        return f"{base}_{new_count:03d}"
 
     def set_function_tools(self, system_prompt, tools, tool_response_str):
         if self.tools is None or not self.tools == tools:
@@ -151,31 +164,32 @@ class RKLLM(object):
         # Get the arguments
         inference_mode, model_input_type, input = param
 
+        # Declare Empty Prompt Cache
+        prompt_cache_file = None
+
         # Define the input object
         rkllm_input = RKLLMInput()
         rkllm_input.input_type = model_input_type
-
+        
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
         
         # CHeck the model type to construct parameters
         if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
-            token_input = input
-            if token_input[-1] != 2:  
-                token_input.append(2)
+            token_input, prompt_cache_file = input
             token_array = (ctypes.c_int * len(token_input))(*token_input)
             
             rkllm_input.input_data.token_input.input_ids = ctypes.cast(token_array, ctypes.POINTER(ctypes.c_int32))
             rkllm_input.input_data.token_input.n_tokens = ctypes.c_size_t(len(token_input))
             
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_PROMPT:
-            input_text = input
+            input_text, prompt_cache_file = input
             
             # Prompt
             rkllm_input.input_data.prompt_input = input_text.encode("utf-8")
         
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_EMBED:
-            embed_input = input
+            embed_input, prompt_cache_file = input
             num_tokens, embd_size = embed_input.shape
 
             flat = embed_input.ravel().astype(np.float32)
@@ -185,7 +199,7 @@ class RKLLM(object):
             rkllm_input.input_data.embed_input.n_tokens = ctypes.c_size_t(num_tokens)
         
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_MULTIMODAL:
-            prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images = input
+            prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, prompt_cache_file = input
             logger.debug(f"Running multimodal inference with {num_images} images, each of size {image_width}x{image_height}, and {n_image_tokens} image tokens.")
             
             # Prompt
@@ -199,9 +213,34 @@ class RKLLM(object):
             rkllm_input.input_data.multimodal_input.image_width = ctypes.c_size_t(image_width)
             rkllm_input.input_data.multimodal_input.image_height = ctypes.c_size_t(image_height)
         
+        # Prepare prompt caching
+        if prompt_cache_file:
+
+            # Setting the flags to save the prompt cache
+            prompt_cache_file_path =f"{self.prompt_cache_dir}/{prompt_cache_file}"
+
+            # Load cache if already exists
+            if os.path.isfile(prompt_cache_file_path):
+                self.rkllm_load_prompt_cache(self.handle, ctypes.c_char_p((prompt_cache_file_path).encode('utf-8')))
+
+            # Prepare the new cache filename to save
+            new_prompt_cache_file = self.increase_prompt_cache_num_messages(prompt_cache_file, 2) # Assistant Response + Future User Message
+            new_prompt_cache_file_path =f"{self.prompt_cache_dir}/{new_prompt_cache_file}"
+
+            # Set the prompt cache setting for the new inference
+            self.prompt_cache_params = RKLLMPromptCacheParam()
+            self.prompt_cache_params.save_prompt_cache = 1 
+            self.prompt_cache_params.prompt_cache_path = ctypes.c_char_p((new_prompt_cache_file_path).encode('utf-8'))
+            self.rkllm_infer_params.prompt_cache_params = ctypes.pointer(self.prompt_cache_params)
+
 
         # Run the RKLLM model with the input
         self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
+
+        # Delete previous old prompt cache if exists
+        if os.path.exists(f"{self.prompt_cache_dir}/{prompt_cache_file}"):
+            os.remove(f"{self.prompt_cache_dir}/{prompt_cache_file}")
+
         return
 
     def abort(self):
