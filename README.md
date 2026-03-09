@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.62](#New-Version)
+### [Version: 0.0.63](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -65,6 +65,10 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
     * Unload when model expires after inactivity (default 30 min)
     * Unload the oldest model in memory if new model is required to be loaded and there is not memory available in the server
     * 
+- **Automatically Prompt Cache file saving for each chat sessions of the same llm model:**
+    * Allow fast response in large context chat sessions when swiching between them for the same model. Usefull if you are using a model in Openclaw (large context chat sessions) and other agents or tools (like OpenWebui) with the same model without affecting performance in any chat session.
+    * Allow to restore previous chat sessions for fast inference even if the model was unloaded previously from memory
+    * Prompt cache files are saved for 7 days by default (configurable) and then deleted automatically if not used.
 - **Inference requests with streaming and non-streaming modes.**
 - **Message history.**
 - **Simplified custom model naming** - Use models with familiar names like "qwen2.5:3b".

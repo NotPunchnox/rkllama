@@ -2,6 +2,8 @@ import json
 import time
 import datetime
 import logging
+import hashlib
+import base64
 import os
 import re  # Add import for regex used in JSON extraction
 import rkllama.api.variables as variables
@@ -51,12 +53,23 @@ class EndpointHandler:
         else:
             prompt_messages = messages
         
-        # Apply the template to the message without tokenize
+        # Apply the template to the message without tokenize for debuging
         final_prompt = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=False, add_generation_prompt=True, enable_thinking=enable_thinking)
         logger.debug(f"Chat Template generated:\n{final_prompt}")
         
-        # Return the prepared prompt
-        return final_prompt
+        # Tokenize the prompt
+        tokenized = tokenizer(
+            final_prompt,
+            add_special_tokens=False,
+        )["input_ids"]
+
+        # Get the prompt file for the chat session
+        prompt_cache_file = EndpointHandler.build_prompt_chat_session_file_id(prompt_messages)
+        logger.debug(f"Prompt Cache File expected for the model {model_name} in this session:\n{prompt_cache_file}")
+        
+
+        # Return the tokens
+        return tokenized, prompt_cache_file
     
 
     @staticmethod
@@ -108,7 +121,49 @@ class EndpointHandler:
             "eval": int(eval_duration * 1_000_000_000),
             "load": int(0.1 * 1_000_000_000)
         }
+
+
+    @staticmethod
+    def build_prompt_chat_session_file_id(messages, hash_len=50):
+        """
+        Generate a deterministic file ID for a prompt chat session.
+
+        The ID is based on the first two messages of the chat (or the first one
+        if only one exists) and includes a 3-digit padded message count.
+
+        Example output:
+            ksdfJld38dh4k887fJgfKnjsd38j4ss99djP8sd9LmQa21_005
+        """
+
+        if not messages:
+            raise ValueError("messages list cannot be empty")
+
+        # Build deterministic base string using up to the first two messages
+        parts = []
+        for msg in messages[:2]:
+            role = msg.get("role", "")
+            if role.lower() in ("system", "user"):
+                content = msg.get("content", "")
+                parts.append(f"{role}:{content}")
+
+        base_string = "|".join(parts)
+
+        # Compute SHA256 hash
+        digest = hashlib.sha256(base_string.encode("utf-8")).digest()
+
+        # Convert to URL-safe base64 (safe for filenames)
+        short_hash = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+        # Truncate to desired length
+        short_hash = short_hash[:hash_len]
+
+        # Message count padded to 3 digits
+        message_count = f"{len(messages):03d}"
+
+        # Return the generated prompt cache file name
+        return f"{short_hash}_{message_count}"
     
+
 class ChatEndpointHandler(EndpointHandler):
     """Handler for /api/chat endpoint requests"""
     
@@ -193,9 +248,10 @@ class ChatEndpointHandler(EndpointHandler):
             
             # If Multimodal request, do not use tokenizer
             final_prompt = None
+            prompt_cache_file = None
             if not images:    
                 # Create the final prompt for text only requests
-                final_prompt = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
+                final_prompt, prompt_cache_file = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
             
             else:
                 if DEBUG_MODE:
@@ -209,7 +265,7 @@ class ChatEndpointHandler(EndpointHandler):
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, final_prompt, 
-                                          format_spec, tools, enable_thinking, images)
+                                          format_spec, tools, enable_thinking, images, prompt_cache_file)
                 if is_openai_request:
 
                     # Use unified handler
@@ -222,7 +278,7 @@ class ChatEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
-                                         format_spec, tools, enable_thinking,images)
+                                         format_spec, tools, enable_thinking,images, prompt_cache_file)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -235,16 +291,16 @@ class ChatEndpointHandler(EndpointHandler):
             variables.system = original_system
             
     @classmethod
-    def handle_streaming(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None):
+    def handle_streaming(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None):
         """Handle streaming chat response"""
 
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt)
+            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images)
+            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
         # Wait for result pipe
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
@@ -380,7 +436,7 @@ class ChatEndpointHandler(EndpointHandler):
     
 
     @classmethod
-    def handle_complete(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None):
+    def handle_complete(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None):
         """Handle complete non-streaming chat response"""
         
         start_time = time.time()
@@ -397,10 +453,10 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt)
+            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images)
+            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
         # Wait for result pipe
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
@@ -539,9 +595,10 @@ class GenerateEndpointHandler(EndpointHandler):
             
             # If Multimodal request, do not use tokenizer
             final_prompt = None
+            prompt_cache_file = None
             if not images:    
                 # Create the final prompts  for text only requests
-                final_prompt = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
+                final_prompt, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
@@ -551,7 +608,7 @@ class GenerateEndpointHandler(EndpointHandler):
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, final_prompt, 
-                                           format_spec, enable_thinking, images)
+                                           format_spec, enable_thinking, images, None) # No cache for generation (it is not a chat conversation)
                 if is_openai_request:
 
                     # Use unified handler
@@ -564,7 +621,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
-                                          format_spec, enable_thinking, images)
+                                          format_spec, enable_thinking, images, None) # No cache for generation (it is not a chat conversation)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -577,16 +634,16 @@ class GenerateEndpointHandler(EndpointHandler):
             variables.system = original_system
     
     @classmethod
-    def handle_streaming(cls, model_name, final_prompt, format_spec, enable_thinking, images=None):
+    def handle_streaming(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None):
         """Handle streaming generate response"""
 
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt)
+            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images)
+            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
         # Wait for result pipe
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
@@ -665,7 +722,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, model_name, final_prompt, format_spec, enable_thinking, images=None):
+    def handle_complete(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None):
         """Handle complete generate response"""
 
         start_time = time.time()
@@ -682,10 +739,10 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt)
+            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images)
+            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
         # Wait for result pipe
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
