@@ -69,7 +69,7 @@ class EndpointHandler:
         
 
         # Return the tokens
-        return tokenized, prompt_cache_file
+        return tokenized, prompt_cache_file, final_prompt
     
 
     @staticmethod
@@ -95,7 +95,7 @@ class EndpointHandler:
         else:     
             logger.debug("Local Tokenizer found! Using it...")
             # Get the local tokenizer for the model
-            tokenizer = AutoTokenizer.from_pretrained(local_tokenizer_path)    
+            tokenizer = AutoTokenizer.from_pretrained(local_tokenizer_path, trust_remote_code=True)    
 
         # Return the tokenizer
         return tokenizer
@@ -250,17 +250,16 @@ class ChatEndpointHandler(EndpointHandler):
             final_prompt = None
             prompt_cache_file = None
             if not images:    
-                # Create the final prompt for text only requests
-                final_prompt, prompt_cache_file = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
+                # Create the final prompt for token input requests
+                final_prompt, prompt_cache_file, _ = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
             
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
                 
-                for message in messages:
-                    if "images" in message:
-                        message.pop("images")  # Remove images from messages to avoid context length reach with base64 images
-                final_prompt = f"<image>{str(messages)}"
+                # Create the final prompt for text only requests
+                _ , prompt_cache_file, final_prompt = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
+                final_prompt = f"<image>{final_prompt}"
             
             # Ollama request handling 
             if stream:
@@ -334,8 +333,13 @@ class ChatEndpointHandler(EndpointHandler):
                 if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
                     token = manager_pipe.recv()
                 else:
-                    raise TimeoutError(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
-                    
+                    # Abort the current inference
+                    variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                    # Raise Exception
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    # Send message to the user
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
@@ -465,8 +469,13 @@ class ChatEndpointHandler(EndpointHandler):
             if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
                 token = manager_pipe.recv()
             else:
-                raise TimeoutError(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
-            
+                # Abort the current inference
+                variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                # Raise Exception
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                # Send message to the user
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+ 
             # Checking if finished inference
             if isinstance(token, tuple):    
                 thread_finished = True
@@ -595,16 +604,17 @@ class GenerateEndpointHandler(EndpointHandler):
             
             # If Multimodal request, do not use tokenizer
             final_prompt = None
-            prompt_cache_file = None
             if not images:    
-                # Create the final prompts  for text only requests
-                final_prompt, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
+                # Create the final prompts for token input requests
+                final_prompt, _, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
-                final_prompt = f"<image>{prompt}"
-                
 
+                # Create the final prompt for text only requests
+                _ , _, final_prompt = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
+                final_prompt = f"<image>{final_prompt}"
+                
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, final_prompt, 
@@ -667,7 +677,12 @@ class GenerateEndpointHandler(EndpointHandler):
                 if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
                     token = manager_pipe.recv()
                 else:
-                    raise TimeoutError(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    # Abort the current inference
+                    variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                    # Raise Exception
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    # Send message to the user
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
                 
                 # Checking if finished inference
                 if isinstance(token, tuple):      
@@ -751,7 +766,12 @@ class GenerateEndpointHandler(EndpointHandler):
             if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
                 token = manager_pipe.recv()
             else:
-                raise TimeoutError(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                # Abort the current inference
+                variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                # Raise Exception
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                # Send message to the user
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
             
             # Checking if finished inference
             if isinstance(token, tuple):  
@@ -927,7 +947,16 @@ class EmbedEndpointHandler(EndpointHandler):
             if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
                 last_embeddings = manager_pipe.recv()
             else:
-                raise TimeoutError(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                # Abort the current inference
+                variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                # Raise Exception
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                # Send empty embedding
+                last_embeddings = embeddings = {
+                        'embedding': [],
+                        'embd_size': 0,
+                        'num_tokens': 0
+                    }
 
             # Add the embedding to the list of result
             all_embeddings.append(last_embeddings["embedding"].tolist())

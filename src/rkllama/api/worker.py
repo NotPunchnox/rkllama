@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 import threading
 import random
-from multiprocessing import Process, Pipe
+from multiprocessing import Process, Pipe, Value
 from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile, is_rkllm_model, get_rknn_onnx_files_from_model
 from .classes import *
@@ -147,7 +147,7 @@ def run_translation_generator(model_runtime, model_input, rknn_pipe):
     
 
 # RKLLM Worker 
-def run_rkllm_worker(name, worker_pipe, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
+def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
     
     # Initialize individual callback for each worker to prevent error from RKLLM
     from .callback import callback_impl, global_text, last_embeddings, global_metrics
@@ -205,6 +205,12 @@ def run_rkllm_worker(name, worker_pipe, model_path, model_dir, options=None, lor
                 # Looping until execution of the thread
                 thread_finished = False
                 while not thread_finished:
+
+                    # Check for abort of inference
+                    if abort_flag.value:
+                        # Exit the current loop
+                        break 
+
                     tokens_processed = False
                     while len(global_text) > 0:
                         token = global_text.pop(0)
@@ -219,11 +225,24 @@ def run_rkllm_worker(name, worker_pipe, model_path, model_dir, options=None, lor
                     if not tokens_processed and not thread_finished:
                         time.sleep(0.001)
 
-                # Get the metricts of the inference
-                prompt_token_count = global_metrics[0]
-                token_count = global_metrics[1]
-                prompt_eval = global_metrics[2]
-                eval = global_metrics[3]
+                # Check for abort of inference
+                if abort_flag.value:
+                    # Abort the current inference of the model
+                    logger.info(f"Aborting inference for model {name}...")
+                    model_rkllm.abort()
+                    # Reset the flag
+                    abort_flag.value = False
+                    # Empty stats
+                    prompt_token_count=0
+                    token_count=0
+                    prompt_eval=0
+                    eval=0
+                else:
+                    # Get the metricts of the inference
+                    prompt_token_count = global_metrics[0]
+                    token_count = global_metrics[1]
+                    prompt_eval = global_metrics[2]
+                    eval = global_metrics[3]
                 
                 # Send final signal of the inference
                 worker_pipe.send((WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval))   
@@ -1075,7 +1094,7 @@ class Worker:
         self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id)
         self.process = None
         self.manager_pipe, self.worker_pipe = Pipe() 
-
+        self.abort_flag = Value('b', False)
 
 
     def create_worker_process(self, base_domain_id, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
@@ -1087,7 +1106,7 @@ class Worker:
         # Check if it is a RKLLM or RKNN model
         if is_rkllm_model(self.worker_model_info.model): 
             # RKLLM
-            self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.worker_pipe, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
+            self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.worker_pipe, self.abort_flag, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
         
         else:
             # RKNN

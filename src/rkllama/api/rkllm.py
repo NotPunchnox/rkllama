@@ -222,7 +222,9 @@ class RKLLM(object):
             # Load cache if already exists
             if os.path.isfile(prompt_cache_file_path):
                 self.rkllm_load_prompt_cache(self.handle, ctypes.c_char_p((prompt_cache_file_path).encode('utf-8')))
-
+            else:
+                logger.warning(f"Not found expected prompt cache file for fast inference: {prompt_cache_file_path}!!!")
+   
             # Prepare the new cache filename to save
             new_prompt_cache_file = self.increase_prompt_cache_num_messages(prompt_cache_file, 2) # Assistant Response + Future User Message
             new_prompt_cache_file_path =f"{self.prompt_cache_dir}/{new_prompt_cache_file}"
