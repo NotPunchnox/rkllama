@@ -41,7 +41,7 @@ class EndpointHandler:
     
     
     @staticmethod
-    def prepare_prompt(model_name, messages, system="", tools=None, enable_thinking=False):
+    def prepare_prompt(model_name, messages, system="", tools=None, enable_thinking=False, images= None):
         """Prepare prompt with proper system handling"""
 
         # Get the tokenizer configured for the model (locally or remote)
@@ -53,10 +53,14 @@ class EndpointHandler:
         else:
             prompt_messages = messages
         
+        # Tokenize the <image> required token by rkllm
+        if images:
+            prompt_messages = messages + [{"role": "user", "content": "<image>"}]
+
         # Apply the template to the message without tokenize for debuging
         final_prompt = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=False, add_generation_prompt=True, enable_thinking=enable_thinking)
         logger.debug(f"Chat Template generated:\n{final_prompt}")
-        
+
         # Tokenize the prompt
         tokenized = tokenizer(
             final_prompt,
@@ -66,7 +70,6 @@ class EndpointHandler:
         # Get the prompt file for the chat session
         prompt_cache_file = EndpointHandler.build_prompt_chat_session_file_id(prompt_messages)
         logger.debug(f"Prompt Cache File expected for the model {model_name} in this session:\n{prompt_cache_file}")
-        
 
         # Return the tokens
         return tokenized, prompt_cache_file, final_prompt
@@ -251,15 +254,14 @@ class ChatEndpointHandler(EndpointHandler):
             prompt_cache_file = None
             if not images:    
                 # Create the final prompt for token input requests
-                final_prompt, prompt_cache_file, _ = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
+                final_prompt, prompt_cache_file, _ = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking, images)
             
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
                 
                 # Create the final prompt for text only requests
-                _ , prompt_cache_file, final_prompt = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking)
-                final_prompt = f"<image>{final_prompt}"
+                _ , prompt_cache_file , final_prompt = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking, images)
             
             # Ollama request handling 
             if stream:
@@ -335,10 +337,15 @@ class ChatEndpointHandler(EndpointHandler):
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                    
                     # Raise Exception
                     logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    
                     # Send message to the user
                     token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+
+                    # Set finished state of the thread inference
+                    thread_finished = True
 
                 # Checking if finished inference
                 if isinstance(token, tuple):      
@@ -458,10 +465,11 @@ class ChatEndpointHandler(EndpointHandler):
         if not images:
             # Send the task of inference to the model
             variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            
         else:
             # Send the task of multimodal inference to the model
             variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
-        
+
         # Wait for result pipe
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
 
@@ -471,16 +479,23 @@ class ChatEndpointHandler(EndpointHandler):
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+
                 # Raise Exception
                 logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                
                 # Send message to the user
                 token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+
+                # Set finished state of the thread inference
+                thread_finished = True
  
             # Checking if finished inference
             if isinstance(token, tuple):    
                 thread_finished = True
                 # Get the stats from the inference
                 _, prompt_token_count, token_count, prompt_eval, eval = token
+
+                # Exit the loop    
                 continue
             
             count += 1
@@ -606,14 +621,13 @@ class GenerateEndpointHandler(EndpointHandler):
             final_prompt = None
             if not images:    
                 # Create the final prompts for token input requests
-                final_prompt, _, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
+                final_prompt, _, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking, images=images)
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
 
                 # Create the final prompt for text only requests
-                _ , _, final_prompt = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking)
-                final_prompt = f"<image>{final_prompt}"
+                _ , _, final_prompt = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking, images=images)
                 
             # Ollama request handling 
             if stream:
@@ -679,17 +693,22 @@ class GenerateEndpointHandler(EndpointHandler):
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                    
                     # Raise Exception
                     logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    
                     # Send message to the user
                     token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
-                
+
+                    # Set finished state of the thread inference
+                    thread_finished = True
+               
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
                     # Get the stats from the inference
                     _, prompt_token_count, token_count, prompt_eval, eval = token
-            
+                
                 if not thread_finished:
                     count += 1
 
@@ -768,16 +787,23 @@ class GenerateEndpointHandler(EndpointHandler):
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+                
                 # Raise Exception
                 logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                
                 # Send message to the user
                 token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
-            
+
+                # Set finished state of the thread inference
+                thread_finished = True
+
             # Checking if finished inference
             if isinstance(token, tuple):  
                 thread_finished = True
                 # Get the stats from the inference
                 _, prompt_token_count, token_count, prompt_eval, eval = token
+                
+                # Exit the loop
                 continue
             
             count += 1
