@@ -230,6 +230,7 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                     # Abort the current inference of the model
                     logger.info(f"Aborting inference for model {name}...")
                     model_rkllm.abort()
+                    model_rkllm.clear_cache()
                     # Reset the flag
                     abort_flag.value = False
                     # Empty stats
@@ -809,6 +810,9 @@ class WorkerManager:
             
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+
+            # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
+            self.clear_cache_worker(model_name)
             
 
     def embedding(self, model_name, text_input, prompt_cache_file = None):
@@ -874,6 +878,9 @@ class WorkerManager:
             
             # Send the inference task
             self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+
+            # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
+            self.clear_cache_worker(model_name)
 
 
     def get_images_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
