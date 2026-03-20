@@ -92,24 +92,50 @@ def load_image(source: str):
 
 
 def prepare_image(image_source, image_width, image_height) -> np.ndarray:
-    """ Load and preprocess an image for model input.
-        Args:
-            image_source: Path, URL, or Base64 string of the image.
-            image_width: Target width for resizing.
-            image_height: Target height for resizing.
-        Returns:
-            Preprocessed image as a numpy array (HWC, uint8).
+    """Load and preprocess an image for model input (keeps aspect ratio + padding).
+
+    Args:
+        image_source: Path, URL, or Base64 string of the image.
+        image_width: Target width.
+        image_height: Target height.
+
+    Returns:
+        Image as numpy array (1, H, W, C), float32.
     """
-    # Read image
-    img = load_image(image_source)  # BGR
+    # Read image (BGR)
+    img = load_image(image_source)
     if img is None:
         raise FileNotFoundError(image_source)
-    
-    # Preprocess Image 
-    resized = cv2.resize(img, (image_width, image_height))
-    resized = resized.astype(np.float32)
-    resized = resized[np.newaxis, :, :, :]
-    
-    # Return the image
-    return resized
 
+    h, w = img.shape[:2]
+
+    # Compute scale (same logic for upscaling & downscaling)
+    scale = min(image_width / w, image_height / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    # Choose interpolation based on scaling direction
+    if scale > 1:
+        interp = cv2.INTER_CUBIC      # better for enlarging
+    elif scale < 1:
+        interp = cv2.INTER_AREA       # better for shrinking
+    else:
+        interp = cv2.INTER_LINEAR     # no real change
+
+    # Resize
+    resized = cv2.resize(img, (new_w, new_h), interpolation=interp)
+
+    # Create padded canvas (letterbox)
+    canvas = np.zeros((image_height, image_width, 3), dtype=np.uint8)
+
+    # Center placement
+    x_offset = (image_width - new_w) // 2
+    y_offset = (image_height - new_h) // 2
+
+    canvas[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+    # Convert to float32 and add batch dimension
+    canvas = canvas.astype(np.float32)
+    canvas = canvas[np.newaxis, :, :, :]
+
+    return canvas
