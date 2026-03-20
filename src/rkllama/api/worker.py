@@ -278,10 +278,10 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                 rknn_process.start() 
 
                 # Get the encoded image from the pipe
-                if parent_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+                if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                     img_encoded = parent_pipe.recv()
                 else:
-                    logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                     # Terminate the process encoder after use
                     rknn_process.terminate()
                     worker_pipe.send(WORKER_TASK_ERROR)  
@@ -413,10 +413,10 @@ def run_rknn_process(name, task, model_input):
             rknn_process.start() 
 
             # Get the encoded image from the pipe main process
-            if parent_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds fixed for image generation
+            if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds fixed for image generation
                 img = parent_pipe.recv()
             else:
-                logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Terminate the process encoder after use
                 rknn_process.terminate()
                 return None
@@ -513,8 +513,8 @@ class WorkerManager:
                         last_modified = os.path.getmtime(file_path)
                             
                         # CHeck if older thn the expected
-                        if (time.time() - last_modified) > int(rkllama.config.get("model", "max_days_prompt_cache")) * 86400:
-                            logger.info(f"Prompt Cache file {filename} from model {model} is older than {int(rkllama.config.get("model", "max_days_prompt_cache"))} days.")
+                        if (time.time() - last_modified) > int(rkllama.config.get('model', 'max_days_prompt_cache')) * 86400:
+                            logger.info(f"Prompt Cache file {filename} from model {model} is older than {int(rkllama.config.get('model', 'max_days_prompt_cache'))} days.")
                             files_to_delete.append(file_path)
 
         # Loop over the prompt cache files to delete
@@ -910,10 +910,10 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
 
             # Wait to confirm output of the image encoder
-            if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+            if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                 image_embed  = self.workers[model_name].manager_pipe.recv()
             else:
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Error ENcoding the image. Return
                 return None
             
@@ -989,10 +989,10 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_GENERATE_SPEECH, model_input))    
             
         # Wait to confirm output of the image 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
             audio = self.workers[model_name].manager_pipe.recv()
         else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
             # Error Generating the speech. Return
             return None
         
@@ -1022,10 +1022,10 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSCRIPTION, model_input))    
             
         # Wait for output 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
             text = self.workers[model_name].manager_pipe.recv()
         else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
             # Error Generating the transcription. Return
             return None
 
@@ -1056,10 +1056,10 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSLATION, model_input))    
             
         # Wait for output 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
             text = self.workers[model_name].manager_pipe.recv()
         else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
             # Error Generating the translation. Return
             return None
 
@@ -1123,11 +1123,11 @@ class Worker:
         self.process.start() 
 
         # Wait to confirm initialization
-        if self.manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+        if self.manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
             creation_status = self.manager_pipe.recv()
         else:
             # Error loading the RKLLM Model. Wait for the worker to exit
-            logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+            logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
             self.process.terminate()
             return False
             
