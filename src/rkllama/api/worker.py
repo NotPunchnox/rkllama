@@ -32,7 +32,7 @@ WORKER_TASK_GENERATE_TRANSCRIPTION = "GENERATE_TRANSCRIPTION"
 WORKER_TASK_GENERATE_TRANSLATION = "GENERATE_TRANSLATION"
 
 
-def run_encoder(model_input, rknn_pipe):
+def run_encoder(model_input):
     """
     Run the vision encoder to get the image embedding
     Args:
@@ -51,7 +51,7 @@ def run_encoder(model_input, rknn_pipe):
     image_embeddings = run_vision_encoder(model_encoder_path, images_source, image_width, image_height)
     
     # Send the encoded image to the main process
-    rknn_pipe.send(image_embeddings)
+    return image_embeddings
 
 
 
@@ -122,13 +122,12 @@ def run_transcription_generator(model_runtime, model_input):
 
 
 
-def run_translation_generator(model_runtime, model_input, rknn_pipe):
+def run_translation_generator(model_runtime, model_input):
     """
     Run stt generator model to get the translation
     Args:
         model_runtime (list): RUntime of the RKNN/ONNX models
-        model_input (tuple): (model_stt_path,file,language)
-        rknn_pipe (Pipe): Pipe to return the translation
+        model_input (tuple): (model_stt_path,file,language
     Returns:
         str: Translation
     """
@@ -139,10 +138,10 @@ def run_translation_generator(model_runtime, model_input, rknn_pipe):
     model_stt_path,file,language = model_input
 
     # Run the stt
-    audio = generate_translation(model_runtime, model_stt_path,file,language)
+    text = generate_translation(model_runtime, model_stt_path,file,language)
     
     # Send the text translation to the main process
-    rknn_pipe.send(audio)
+    return text
 
     
 
@@ -269,25 +268,7 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
                 # Run the vision encoder to get the image embedding
-                parent_pipe, child_pipe = Pipe()
-
-                # Define the process for the encoder
-                rknn_process = Process(target=run_encoder, args=(model_input,child_pipe,))
-
-                # Start the encoder worker
-                rknn_process.start() 
-
-                # Get the encoded image from the pipe
-                if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-                    img_encoded = parent_pipe.recv()
-                else:
-                    logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-                    # Terminate the process encoder after use
-                    rknn_process.terminate()
-                    worker_pipe.send(WORKER_TASK_ERROR)  
-
-                # Terminate the process encoder after use
-                rknn_process.terminate()
+                img_encoded = run_encoder(model_input)
 
                 # Send the encoded image 
                 worker_pipe.send(img_encoded)  

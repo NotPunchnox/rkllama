@@ -55,7 +55,7 @@ class EndpointHandler:
         
         # Tokenize the <image> required token by rkllm
         if images:
-            prompt_messages = messages + [{"role": "user", "content": "<image>"}]
+            prompt_messages = EndpointHandler.add_image_tag_to_last_user_message(prompt_messages)
 
         # Apply the template to the message without tokenize for debuging
         final_prompt = tokenizer.apply_chat_template(prompt_messages, tools=tools, tokenize=False, add_generation_prompt=True, enable_thinking=enable_thinking)
@@ -74,6 +74,13 @@ class EndpointHandler:
         # Return the tokens
         return tokenized, prompt_cache_file, final_prompt
     
+    @staticmethod
+    def add_image_tag_to_last_user_message(messages):
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                msg["content"] = f"<image>{msg['content']}"
+                return messages
+        return messages  # no user message found
 
     @staticmethod
     def get_tokenizer(model_name):
