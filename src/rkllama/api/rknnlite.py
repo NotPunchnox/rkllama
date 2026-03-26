@@ -90,6 +90,9 @@ def load_image(source: str):
         
     return img
 
+import cv2
+import numpy as np
+
 
 def prepare_image(image_source, image_width, image_height) -> np.ndarray:
     """Load and preprocess an image for model input (keeps aspect ratio + padding).
