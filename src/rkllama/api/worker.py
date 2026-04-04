@@ -776,6 +776,13 @@ class WorkerManager:
             # Remove the worker from the dictionary
             del self.workers[model_name]
 
+            # Clean up per-model lock from variables module
+            try:
+                import rkllama.api.variables as variables
+                variables.remove_model_lock(model_name)
+            except Exception:
+                pass  # variables module may not be fully initialized during shutdown
+
     def stop_all(self):
         """
         Send a inference task to the corresponding model worker
