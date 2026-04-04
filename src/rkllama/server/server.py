@@ -1353,6 +1353,62 @@ def embeddings_ollama():
             variables.verrou.release()
 
 
+@app.route('/api/rerank', methods=['POST'])
+@app.route('/v1/rerank', methods=['POST'])
+def rerank():
+
+    lock_acquired = False  # Track lock status
+
+    try:
+        data = request.get_json(force=True)
+
+        model_name = data.get('model')
+        query = data.get('query')
+        documents = data.get('documents', [])
+        top_n = data.get('top_n', None)
+
+        if not model_name:
+            return jsonify({"error": "Missing model name"}), 400
+
+        if not query:
+            return jsonify({"error": "Missing query"}), 400
+
+        if not documents or not isinstance(documents, list):
+            return jsonify({"error": "Missing or invalid documents list"}), 400
+
+        # Remove possible namespace in model name
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
+        # Get all model options
+        options = data.get('options', {})
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options)
+
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
+            _, error = load_model(model_name, request_options=options)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+
+        variables.verrou.acquire()
+        lock_acquired = True
+
+        from rkllama.api.server_utils import RerankEndpointHandler
+        return RerankEndpointHandler.handle_request(
+            model_name=model_name,
+            query=query,
+            documents=documents,
+            top_n=top_n,
+            options=options,
+        )
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error in rerank: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if lock_acquired and variables.verrou.locked():
+            variables.verrou.release()
+
+
 # Version endpoint for Ollama API compatibility
 @app.route('/api/version', methods=['GET'])
 def ollama_version():
