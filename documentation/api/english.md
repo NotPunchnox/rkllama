@@ -393,7 +393,69 @@ For complete documentation, see the [Tool Calling Guide](./tools.md).
 
 ---
 
-### **8. GET /**
+### **8. POST /api/rerank**
+#### **Description**
+Reranks a list of documents against a query using logit-based cross-encoder scoring on the RK3588 NPU. Also available at `/v1/rerank`. Documents are truncated to 14,000 characters for optimal NPU speed.
+
+#### **Request**
+```http
+POST /api/rerank
+Content-Type: application/json
+```
+
+##### **Parameters**
+```json
+{
+  "query": "search query",
+  "documents": [
+    {"text": "first document text"},
+    {"text": "second document text"}
+  ],
+  "model": "qwen3-reranker-0.6b"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | The search query to rank documents against |
+| `documents` | array | Yes | List of objects with a `text` field |
+| `model` | string | Yes | The reranker model to use |
+
+#### **Response**
+- **200 OK**: Documents ranked by relevance.
+  ```json
+  {
+    "results": [
+      {"index": 0, "relevance_score": 0.95},
+      {"index": 1, "relevance_score": 0.12}
+    ]
+  }
+  ```
+
+- **400 Bad Request**: Missing or invalid parameters.
+  ```json
+  {
+    "error": "Missing required field: query"
+  }
+  ```
+
+#### **Example**
+```bash
+curl -X POST http://localhost:8080/api/rerank \
+-H "Content-Type: application/json" \
+-d '{
+  "query": "What is the capital of France?",
+  "documents": [
+    {"text": "Paris is the capital of France."},
+    {"text": "Berlin is the capital of Germany."}
+  ],
+  "model": "qwen3-reranker-0.6b"
+}'
+```
+
+---
+
+### **9. GET /**
 #### **Description**
 Displays a welcome message and a link to the GitHub project.
 
