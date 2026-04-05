@@ -1074,10 +1074,14 @@ class GenerateImageEndpointHandler(EndpointHandler):
 
         # Send the task of generate image to the model
         image_list = variables.worker_manager_rkllm.generate_image(model_name, model_dir, prompt, size, num_images, seed, num_inference_steps, guidance_scale)
-        
+
+        # Check if image generation succeeded (fixes #76)
+        if image_list is None or len(image_list) == 0:
+            return jsonify({"error": f"Image generation failed for model '{model_name}'. Check server logs for details."}), 500
+
         # Calculate metrics
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        
+
         # Format response
         response = cls.format_complete_response(image_list, model_name, model_dir, output_format, response_format, metrics)
 

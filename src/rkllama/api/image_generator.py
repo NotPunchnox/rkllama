@@ -179,17 +179,17 @@ class RKNN2Model:
         if not self.loaded:
             self.load_model()      
         
-       # Construct the list of input and transform them to Numpy if needed
+       # Construct the list of input and transform them to Numpy float32
+        # RKNN runtime only supports float32 — float64 inputs cause
+        # "E Unsupport inputs[0].dtype: float64" (fixes #113, #76)
         input_list = [value for key, value in kwargs.items()]
         input_list_np = []
         for i, input in enumerate(input_list):
-            print(f"INPUT {i}: type={type(input)}, shape={None if not hasattr(input, 'shape') else input.shape}")
             if isinstance(input, np.ndarray):
-                input_list_np.append(input)
+                input_list_np.append(input.astype(np.float32, copy=False))
             else:
                 input_np = input.detach().cpu().numpy().astype(np.float32)
                 input_list_np.append(input_np)
-                print(f"** TRANSFORMED** -> INPUT {i}: type={type(input_np)}, shape={None if not hasattr(input_np, 'shape') else input_np.shape}")
 
         # Call the RKNN model wit the input
         results = self.rknnlite.inference(inputs=input_list_np, data_format='nchw')
