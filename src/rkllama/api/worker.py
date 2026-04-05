@@ -266,6 +266,14 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                     # Send the embedding shapes of the input
                     worker_pipe.send(last_embeddings[-1])
 
+                # Clear KV cache after each embedding to prevent NPU performance degradation.
+                # Without this, repeated embedding requests accumulate KV state causing
+                # response times to degrade from ~1.5s to 26s+ over hours of operation.
+                try:
+                    model_rkllm.clear_cache()
+                except Exception:
+                    pass
+
             elif task == WORKER_TASK_RERANK:
                 logger.info(f"Running rerank (get_logits) for model {name}...")
                 # Clear any previous logits
@@ -289,6 +297,12 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                     text_output = "".join(global_text)
                     worker_pipe.send({"text_fallback": text_output})
                     global_text.clear()
+
+                # Clear KV cache after each rerank to prevent NPU performance degradation
+                try:
+                    model_rkllm.clear_cache()
+                except Exception:
+                    pass
 
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
