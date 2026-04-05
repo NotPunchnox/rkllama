@@ -1,6 +1,16 @@
 # RKLLAMA Changelog
 
 
+## Unreleased (feat/rerank-logprobs-endpoint)
+
+### New Features
+- **Rerank Endpoint**: Added `/api/rerank` and `/v1/rerank` endpoints for logit-based cross-encoder scoring on the RK3588 NPU. Documents are truncated to 14,000 characters for optimal NPU speed.
+- **Per-model Locking**: Added `--preload model1,model2,model3` flag to preload multiple models at startup. Each model gets its own lock, enabling concurrent requests to different models without blocking.
+
+### Bug Fixes
+- **KV Cache Clearing**: Fixed critical performance regression where KV cache was not cleared after embed/rerank calls, causing response times to degrade from 0.3s to 26s per request. Cache is now cleared automatically after each call.
+
+
 ## Version 0.0.41 (Current)
 
 ### New Commands

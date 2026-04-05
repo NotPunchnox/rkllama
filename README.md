@@ -45,12 +45,14 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
    * `/api/ps`
    * `/api/tags`
    * `/api/embed` (and legacy `/api/embeddings`)
+   * `/api/rerank`
    * `/api/version` 
    * `/api/pull` 
 - **Partial OpenAI API compatibility** - Support for:
    * `/v1/completions`
    * `/v1/chat/completions`
    * `/v1/embeddings`
+   * `/v1/rerank`
    * `/v1/images/generations`
    * `/v1/audio/speech`
    * `/v1/audio/transcriptions`
@@ -59,6 +61,8 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Pull models directly from Huggingface.**
 - **Include a API REST with documentation.**
 - **Listing available models.**
+- **Reranking** - Logit-based cross-encoder scoring on NPU via `/api/rerank` and `/v1/rerank` endpoints.
+- **Per-model locking** - Preload multiple models with `--preload model1,model2,model3` for concurrent multi-model NPU serving without blocking.
 - **Multiples RKLLM and RKNN models running in memory simultaniusly (parallels executions between distintct models in stream mode, FIFO if non stream)**
 - **Dynamic loading and unloading of models:**
     * Load the model after new request (if not in memory already)
@@ -185,6 +189,25 @@ Then start chatting *( **verbose mode**: display statistics )*
 
 *In version `0.0.60`, the verbose command returns this information:*
 ![Image](./documentation/ressources/verbose-chat.png)
+
+## Reranking
+
+RKLLama supports logit-based cross-encoder reranking on the NPU, useful for RAG pipelines. Documents are truncated to 14,000 characters for optimal NPU speed.
+
+```bash
+curl -X POST http://localhost:8080/api/rerank \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is the capital of France?",
+    "documents": [
+      {"text": "Paris is the capital of France."},
+      {"text": "Berlin is the capital of Germany."}
+    ],
+    "model": "qwen3-reranker-0.6b"
+  }'
+```
+
+The OpenAI-compatible endpoint `/v1/rerank` is also available with the same request format.
 
 ## Tool Calling Quick Start
 

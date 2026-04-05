@@ -435,6 +435,8 @@ def recevoir_message():
     # define modelfile path
     modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
 
+    # Legacy endpoint: use global lock for backward compatibility since
+    # modele_rkllm is a single global model reference (not model-name based)
     variables.verrou.acquire()
     return Request(modele_rkllm, modelfile)
 
@@ -1069,10 +1071,11 @@ def generate_ollama():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
         
-        # Acquire lock before processing
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True
-        
+
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
@@ -1092,8 +1095,10 @@ def generate_ollama():
         return jsonify({"error": str(e)}), 500
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                model_lock.release()
 
 
 # Also update the chat endpoint for consistency
@@ -1225,10 +1230,11 @@ def chat_ollama():
         #    rkllm_model_request.format_schema = format_spec
         #    rkllm_model_request.format_options = options
         
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Create custom request for processing
         custom_req = type('obj', (object,), {
             'json': {
@@ -1269,10 +1275,12 @@ def chat_ollama():
     
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in chat_ollama")
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                if DEBUG_MODE:
+                    logger.debug(f"Releasing per-model lock for '{model_name}' in chat_ollama")
+                model_lock.release()
 
 
 # Only include debug endpoint if in debug mode
@@ -1339,9 +1347,11 @@ def embeddings_ollama():
             _, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True
-        
+
         # DIRECTLY use the EmbedEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import EmbedEndpointHandler
         return EmbedEndpointHandler.handle_request(
@@ -1358,8 +1368,70 @@ def embeddings_ollama():
         return jsonify({"error": str(e)}), 500
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                model_lock.release()
+
+
+@app.route('/api/rerank', methods=['POST'])
+@app.route('/v1/rerank', methods=['POST'])
+def rerank():
+
+    lock_acquired = False  # Track lock status
+
+    try:
+        data = request.get_json(force=True)
+
+        model_name = data.get('model')
+        query = data.get('query')
+        documents = data.get('documents', [])
+        top_n = data.get('top_n', None)
+
+        if not model_name:
+            return jsonify({"error": "Missing model name"}), 400
+
+        if not query:
+            return jsonify({"error": "Missing query"}), 400
+
+        if not documents or not isinstance(documents, list):
+            return jsonify({"error": "Missing or invalid documents list"}), 400
+
+        # Remove possible namespace in model name
+        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
+
+        # Get all model options
+        options = data.get('options', {})
+        options = get_model_full_options(model_name, rkllama.config.get_path("models"), options)
+
+        # Load model if needed
+        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
+            _, error = load_model(model_name, request_options=options)
+            if error:
+                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
+        lock_acquired = True
+
+        from rkllama.api.server_utils import RerankEndpointHandler
+        return RerankEndpointHandler.handle_request(
+            model_name=model_name,
+            query=query,
+            documents=documents,
+            top_n=top_n,
+            options=options,
+        )
+    except Exception as e:
+        if DEBUG_MODE:
+            logger.exception(f"Error in rerank: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                model_lock.release()
 
 
 # Version endpoint for Ollama API compatibility
@@ -1418,10 +1490,11 @@ def generate_image_openai():
         #    if error:
         #        return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateImageEndpointHandler
         return GenerateImageEndpointHandler.handle_request(
@@ -1439,13 +1512,15 @@ def generate_image_openai():
     except Exception as e:
         logger.exception("Error in generate_image_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_image_openai")
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                if DEBUG_MODE:
+                    logger.debug(f"Releasing per-model lock for '{model_name}' in generate_image_openai")
+                model_lock.release()
 
 
 # Default route
@@ -1494,10 +1569,11 @@ def generate_speech_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
         
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateSpeechEndpointHandler
         return GenerateSpeechEndpointHandler.handle_request(
@@ -1511,13 +1587,15 @@ def generate_speech_openai():
     except Exception as e:
         logger.exception("Error in generate_speech_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_speech_openai")
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                if DEBUG_MODE:
+                    logger.debug(f"Releasing per-model lock for '{model_name}' in generate_speech_openai")
+                model_lock.release()
 
 
 @app.route('/v1/audio/transcriptions', methods=['POST'])
@@ -1565,10 +1643,11 @@ def generate_transcriptions_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateTranscriptionsEndpointHandler
         return GenerateTranscriptionsEndpointHandler.handle_request(
@@ -1581,13 +1660,15 @@ def generate_transcriptions_openai():
     except Exception as e:
         logger.exception("Error in generate_transcriptions_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_transcriptions_openai")
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                if DEBUG_MODE:
+                    logger.debug(f"Releasing per-model lock for '{model_name}' in generate_transcriptions_openai")
+                model_lock.release()
 
 
 @app.route('/v1/audio/translations', methods=['POST'])
@@ -1624,10 +1705,11 @@ def generate_translations_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
+        # Acquire per-model lock (allows different models to run concurrently)
+        model_lock = variables.get_model_lock(model_name)
+        model_lock.acquire()
         lock_acquired = True  # Mark lock as acquired
-        
+
         # Process the request - this won't release the lock
         from rkllama.api.server_utils import GenerateTranslationsEndpointHandler
         return GenerateTranslationsEndpointHandler.handle_request(
@@ -1639,13 +1721,15 @@ def generate_translations_openai():
     except Exception as e:
         logger.exception("Error in generate_translations_openai")
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_translations_openai")
-            variables.verrou.release()
+        if lock_acquired:
+            model_lock = variables.get_model_lock(model_name)
+            if model_lock.locked():
+                if DEBUG_MODE:
+                    logger.debug(f"Releasing per-model lock for '{model_name}' in generate_translations_openai")
+                model_lock.release()
 
 
 
@@ -1665,6 +1749,9 @@ def main():
     parser.add_argument('--port', type=str, help="Port for the server")
     parser.add_argument('--debug', action='store_true', help="Enable debug mode")
     parser.add_argument('--models', type=str, help="Path whe models will be loaded from")
+    parser.add_argument('--preload', type=str, default=None,
+                        help="Comma-separated model names to pre-load at startup (e.g. 'model-a,model-b,model-c'). "
+                             "Each model is pinned to its own NPU domain for concurrent serving.")
     args = parser.parse_args()
 
     # Load arguments into the config
@@ -1707,6 +1794,23 @@ def main():
     # Set the resource limits
     if os.getuid() == 0:
         resource.setrlimit(resource.RLIMIT_NOFILE, (102400, 102400))
+
+    # Pre-load models if --preload flag was provided
+    if args.preload:
+        preload_model_names = [name.strip() for name in args.preload.split(",") if name.strip()]
+        if preload_model_names:
+            print_color(f"Pre-loading {len(preload_model_names)} model(s): {', '.join(preload_model_names)}", "cyan")
+            for model_name in preload_model_names:
+                if variables.worker_manager_rkllm.exists_model_loaded(model_name):
+                    print_color(f"  Model '{model_name}' is already loaded, skipping.", "yellow")
+                    continue
+                print_color(f"  Loading model '{model_name}'...", "cyan")
+                _, error = load_model(model_name)
+                if error:
+                    print_color(f"  Failed to pre-load model '{model_name}': {error}", "red")
+                else:
+                    print_color(f"  Model '{model_name}' loaded successfully (domain_id={variables.worker_manager_rkllm.workers[model_name].worker_model_info.base_domain_id})", "green")
+            print_color(f"Pre-load complete. {len(variables.worker_manager_rkllm.workers)} model(s) active.", "green")
 
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")

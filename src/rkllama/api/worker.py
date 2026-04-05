@@ -98,6 +98,7 @@ WORKER_TASK_GENERATE_IMAGE = "GENERATE_IMAGE"
 WORKER_TASK_GENERATE_SPEECH = "GENERATE_SPEECH"
 WORKER_TASK_GENERATE_TRANSCRIPTION = "GENERATE_TRANSCRIPTION"
 WORKER_TASK_GENERATE_TRANSLATION = "GENERATE_TRANSLATION"
+WORKER_TASK_RERANK = "RERANK"
 
 
 def run_encoder(model_input):
@@ -219,7 +220,7 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
     _set_parent_death_signal()
 
     # Initialize individual callback for each worker to prevent error from RKLLM
-    from .callback import callback_impl, global_text, last_embeddings, global_metrics
+    from .callback import callback_impl, global_text, last_embeddings, last_logits, global_metrics
     from .rkllm import RKLLM
 
     # Connect the callback function between Python and C++ independently for each worker
@@ -323,18 +324,56 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
                 thread_model.start()
-                
+
                 # Looping until execution of the thread finished
                 thread_finished = False
                 while not thread_finished:
-                    # Update status of the thread    
+                    # Update status of the thread
                     thread_model.join(timeout=0.005)
                     thread_finished = not thread_model.is_alive()
 
                 if last_embeddings:
                     # Send the embedding shapes of the input
-                    worker_pipe.send(last_embeddings[-1])  
-            
+                    worker_pipe.send(last_embeddings[-1])
+
+                # Clear KV cache after each embedding to prevent NPU performance degradation.
+                # Without this, repeated embedding requests accumulate KV state causing
+                # response times to degrade from ~1.5s to 26s+ over hours of operation.
+                try:
+                    model_rkllm.clear_cache()
+                except Exception:
+                    pass
+
+            elif task == WORKER_TASK_RERANK:
+                logger.info(f"Running rerank (get_logits) for model {name}...")
+                # Clear any previous logits
+                last_logits.clear()
+
+                # Run inference in GET_LOGITS mode
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model.start()
+
+                # Wait until execution of the thread finishes
+                thread_finished = False
+                while not thread_finished:
+                    thread_model.join(timeout=0.005)
+                    thread_finished = not thread_model.is_alive()
+
+                if last_logits:
+                    # Send the last logits result
+                    worker_pipe.send(last_logits[-1])
+                else:
+                    # Fallback: send text output for text-based scoring
+                    text_output = "".join(global_text)
+                    worker_pipe.send({"text_fallback": text_output})
+                    global_text.clear()
+
+                # Clear KV cache after each rerank to prevent NPU performance degradation
+                try:
+                    model_rkllm.clear_cache()
+                except Exception:
+                    pass
+
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
                 # Run the vision encoder to get the image embedding
@@ -959,6 +998,13 @@ class WorkerManager:
         except Exception:
             pass  # variables module may not be fully initialized during shutdown
 
+            # Clean up per-model lock from variables module
+            try:
+                import rkllama.api.variables as variables
+                variables.remove_model_lock(model_name)
+            except Exception:
+                pass  # variables module may not be fully initialized during shutdown
+
     def stop_all(self):
         """
         Send a inference task to the corresponding model worker
@@ -1020,9 +1066,27 @@ class WorkerManager:
             model_input = (text_input, prompt_cache_file)
 
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
-            
-    
+            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))
+
+
+    def rerank(self, model_name, prompt_input, prompt_cache_file=None):
+        """
+        Send a rerank task (get_logits mode) to the corresponding model worker
+
+        Args:
+            model_name (str): Model name to invoke
+            prompt_input (str): Formatted rerank prompt
+            prompt_cache_file (str): Prompt cache file (optional)
+        """
+        if model_name in self.workers.keys():
+
+            # Construct model input
+            model_input = (prompt_input, prompt_cache_file)
+
+            # Send the rerank task using GET_LOGITS inference mode
+            self.send_task(model_name, (WORKER_TASK_RERANK, RKLLMInferMode.RKLLM_INFER_GET_LOGITS, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))
+
+
     def multimodal(self, model_name, prompt_input, images, prompt_cache_file):
         """
         Send a inference task to the corresponding model worker for multimodal input

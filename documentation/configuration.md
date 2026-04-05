@@ -69,7 +69,20 @@ python -m rkllama --config /path/to/config.ini
 
 # Set server section values
 python -m rkllama --server_port 8080 --server_debug
+
+# Preload multiple models for concurrent multi-model serving
+rkllama_server --preload model1,model2,model3
 ```
+
+### `--preload`
+
+Preloads one or more models into NPU memory at server startup. Each preloaded model gets its own lock, allowing concurrent requests to different models without blocking each other.
+
+```bash
+rkllama_server --preload qwen2.5:3b,qwen3-reranker-0.6b
+```
+
+This is useful when serving multiple models simultaneously (e.g., a chat model and a reranker) and you want requests to different models to be handled in parallel rather than sequentially.
 
 ## Using the Configuration API
 

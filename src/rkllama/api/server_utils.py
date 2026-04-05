@@ -6,6 +6,7 @@ import hashlib
 import base64
 import os
 import re  # Add import for regex used in JSON extraction
+import numpy as np
 import rkllama.api.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
@@ -1073,10 +1074,14 @@ class GenerateImageEndpointHandler(EndpointHandler):
 
         # Send the task of generate image to the model
         image_list = variables.worker_manager_rkllm.generate_image(model_name, model_dir, prompt, size, num_images, seed, num_inference_steps, guidance_scale)
-        
+
+        # Check if image generation succeeded (fixes #76)
+        if image_list is None or len(image_list) == 0:
+            return jsonify({"error": f"Image generation failed for model '{model_name}'. Check server logs for details."}), 500
+
         # Calculate metrics
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        
+
         # Format response
         response = cls.format_complete_response(image_list, model_name, model_dir, output_format, response_format, metrics)
 
@@ -1264,3 +1269,191 @@ class GenerateTranslationsEndpointHandler(EndpointHandler):
         
         # Return the translation text
         return translation_text
+
+
+# Cache for tokenizer yes/no token IDs per model
+_rerank_token_ids_cache = {}
+
+def _get_yes_no_token_ids(model_name):
+    """Get token IDs for 'yes' and 'no' from the model's tokenizer, cached per model."""
+    if model_name in _rerank_token_ids_cache:
+        return _rerank_token_ids_cache[model_name]
+
+    tokenizer = EndpointHandler.get_tokenizer(model_name)
+
+    # Try multiple variants to find the right token IDs
+    yes_candidates = ["yes", "Yes", "YES"]
+    no_candidates = ["no", "No", "NO"]
+
+    yes_id = None
+    no_id = None
+
+    for candidate in yes_candidates:
+        ids = tokenizer.encode(candidate, add_special_tokens=False)
+        if len(ids) == 1:
+            yes_id = ids[0]
+            break
+    if yes_id is None:
+        # Fallback: take first token of "yes"
+        ids = tokenizer.encode("yes", add_special_tokens=False)
+        yes_id = ids[0] if ids else None
+
+    for candidate in no_candidates:
+        ids = tokenizer.encode(candidate, add_special_tokens=False)
+        if len(ids) == 1:
+            no_id = ids[0]
+            break
+    if no_id is None:
+        ids = tokenizer.encode("no", add_special_tokens=False)
+        no_id = ids[0] if ids else None
+
+    logger.info(f"Rerank token IDs for model {model_name}: yes={yes_id}, no={no_id}")
+    _rerank_token_ids_cache[model_name] = (yes_id, no_id)
+    return yes_id, no_id
+
+
+def _format_rerank_prompt(query, document, task_instruction=None):
+    """Format a query-document pair as a Qwen3-Reranker cross-encoder prompt."""
+    if task_instruction is None:
+        task_instruction = "Given a web search query, retrieve relevant passages that answer the query"
+
+    prompt = (
+        "<|im_start|>system\n"
+        "Judge whether the Document is relevant to the Query. Answer only \"yes\" or \"no\".<|im_end|>\n"
+        "<|im_start|>user\n"
+        f"<Instruct>: {task_instruction}\n"
+        f"<Query>: {query}\n"
+        f"<Document>: {document}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    return prompt
+
+
+def _softmax_pair(logit_a, logit_b):
+    """Compute softmax over two logits and return probability of the first."""
+    max_val = max(logit_a, logit_b)
+    exp_a = np.exp(logit_a - max_val)
+    exp_b = np.exp(logit_b - max_val)
+    return float(exp_a / (exp_a + exp_b))
+
+
+class RerankEndpointHandler(EndpointHandler):
+    """Handler for /api/rerank endpoint requests"""
+
+    @staticmethod
+    def format_complete_response(model_name, results, metrics):
+        """Format the rerank response in Jina/Cohere-compatible format."""
+        response = {
+            "model": model_name,
+            "results": results,
+            "usage": {
+                "total_tokens": metrics.get("total_tokens", 0),
+            }
+        }
+        return response
+
+    @classmethod
+    def handle_request(cls, model_name, query, documents, top_n=None, options=None):
+        """Process a rerank request."""
+
+        if DEBUG_MODE:
+            logger.debug(f"RerankEndpointHandler: processing request for {model_name} with {len(documents)} documents")
+
+        # Get yes/no token IDs for scoring
+        yes_id, no_id = _get_yes_no_token_ids(model_name)
+
+        if yes_id is None or no_id is None:
+            return jsonify({"error": "Could not determine yes/no token IDs from tokenizer"}), 500
+
+        # Get optional task instruction
+        task_instruction = None
+        if options and isinstance(options, dict):
+            task_instruction = options.get("task_instruction", None)
+
+        results = []
+        total_tokens = 0
+        start_time = time.time()
+
+        for idx, doc in enumerate(documents):
+            # Handle documents that may be strings or dicts with a "text" field
+            if isinstance(doc, dict):
+                doc_text = doc.get("text", str(doc))
+            else:
+                doc_text = str(doc)
+
+            # Truncate document to fit within reranker context window.
+            # The prompt template + query use ~400 tokens (~1600 chars).
+            # With 4096 context, ~3600 tokens (~14400 chars) left for document.
+            MAX_DOC_CHARS = 14000
+            if len(doc_text) > MAX_DOC_CHARS:
+                doc_text = doc_text[:MAX_DOC_CHARS]
+
+            # Format the cross-encoder prompt
+            prompt = _format_rerank_prompt(query, doc_text, task_instruction)
+
+            # Send rerank task to the worker
+            variables.worker_manager_rkllm.rerank(model_name, prompt)
+
+            # Get the result
+            manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+
+            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):
+                logits_result = manager_pipe.recv()
+            else:
+                logger.error(f"Timeout waiting for rerank result for document {idx}")
+                # Return a low score on timeout
+                results.append({"index": idx, "relevance_score": 0.0})
+                continue
+
+            # Process the logits result
+            if isinstance(logits_result, dict) and "logits" in logits_result:
+                # We got actual logits - extract yes/no scores
+                logits_array = logits_result["logits"]
+                vocab_size = logits_result["vocab_size"]
+
+                if yes_id < vocab_size and no_id < vocab_size:
+                    logit_yes = float(logits_array[yes_id])
+                    logit_no = float(logits_array[no_id])
+                    score = _softmax_pair(logit_yes, logit_no)
+                else:
+                    logger.warning(f"Token IDs out of range: yes={yes_id}, no={no_id}, vocab_size={vocab_size}")
+                    score = 0.0
+
+                total_tokens += logits_result.get("num_tokens", 0)
+
+            elif isinstance(logits_result, dict) and "text_fallback" in logits_result:
+                # Fallback: parse text output
+                text = logits_result["text_fallback"].strip().lower()
+                if text.startswith("yes"):
+                    score = 1.0
+                elif text.startswith("no"):
+                    score = 0.0
+                else:
+                    # Ambiguous - assign a middle score
+                    logger.warning(f"Unexpected text output for rerank: '{text}'")
+                    score = 0.5
+            else:
+                logger.warning(f"Unexpected result type from rerank worker: {type(logits_result)}")
+                score = 0.0
+
+            results.append({
+                "index": idx,
+                "relevance_score": round(score, 6)
+            })
+
+        # Sort results by relevance_score descending
+        results.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+        # Apply top_n filter if specified
+        if top_n is not None and isinstance(top_n, int) and top_n > 0:
+            results = results[:top_n]
+
+        # Calculate metrics
+        elapsed = time.time() - start_time
+        metrics = {
+            "total_tokens": total_tokens,
+            "total_duration_ms": int(elapsed * 1000),
+        }
+
+        response = cls.format_complete_response(model_name, results, metrics)
+        return jsonify(response), 200
