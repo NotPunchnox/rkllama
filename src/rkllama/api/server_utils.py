@@ -1377,6 +1377,13 @@ class RerankEndpointHandler(EndpointHandler):
             else:
                 doc_text = str(doc)
 
+            # Truncate document to fit within reranker context window.
+            # The prompt template + query use ~400 tokens (~1600 chars).
+            # With 4096 context, ~3600 tokens (~14400 chars) left for document.
+            MAX_DOC_CHARS = 14000
+            if len(doc_text) > MAX_DOC_CHARS:
+                doc_text = doc_text[:MAX_DOC_CHARS]
+
             # Format the cross-encoder prompt
             prompt = _format_rerank_prompt(query, doc_text, task_instruction)
 
