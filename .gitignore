@@ -2,8 +2,8 @@ models/**/*
 src/__pycache__
 *.log
 config/config.env
-tests
 build
+tests
 src/rkllama.egg-info/*
 
 # macOS system files

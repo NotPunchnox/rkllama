@@ -183,16 +183,27 @@ class RKNN2Model:
         input_list = [value for key, value in kwargs.items()]
         input_list_np = []
         for i, input in enumerate(input_list):
-            print(f"INPUT {i}: type={type(input)}, shape={None if not hasattr(input, 'shape') else input.shape}")
+            print(
+                f"INPUT {i}: type={type(input)}, "
+                f"shape={None if not hasattr(input, 'shape') else input.shape}, "
+                f"dtype={getattr(input, 'dtype', None)}"
+            )
             if isinstance(input, np.ndarray):
-                input_list_np.append(input)
+                input_np = input.astype(np.float32, copy=False) if np.issubdtype(input.dtype, np.floating) else input
+                input_list_np.append(input_np)
             else:
                 input_np = input.detach().cpu().numpy().astype(np.float32)
                 input_list_np.append(input_np)
-                print(f"** TRANSFORMED** -> INPUT {i}: type={type(input_np)}, shape={None if not hasattr(input_np, 'shape') else input_np.shape}")
+            print(
+                f"** TRANSFORMED** -> INPUT {i}: type={type(input_np)}, "
+                f"shape={None if not hasattr(input_np, 'shape') else input_np.shape}, "
+                f"dtype={getattr(input_np, 'dtype', None)}"
+            )
 
         # Call the RKNN model wit the input
         results = self.rknnlite.inference(inputs=input_list_np, data_format='nchw')
+        if results is None:
+            raise RuntimeError("RKNN inference returned no outputs.")
         for res in results:
             print(f"Output shape: {res.shape}")
         
