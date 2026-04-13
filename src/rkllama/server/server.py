@@ -108,8 +108,16 @@ MIROSTAT_ETA={rkllama.config.get("model", "default_mirostat_eta")}
         f.write(struct_modelfile)
 
 
-def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None):
-    
+def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None, loaded_by=None):
+
+    # Auto-detect caller from request headers if not explicitly provided
+    if loaded_by is None:
+        try:
+            from flask import request as flask_request
+            loaded_by = flask_request.headers.get("X-Loaded-By") or flask_request.headers.get("User-Agent", "unknown")
+        except RuntimeError:
+            loaded_by = "internal"
+
     # Use config for models path
     model_dir = os.path.join(rkllama.config.get_path("models"), model_name)
     
@@ -148,7 +156,7 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
         request_options = get_model_full_options(model_name, rkllama.config.get_path("models"), request_options)
 
     # Model loaded into memory
-    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, rkllm_model_path, model_dir, options=request_options)
+    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, rkllm_model_path, model_dir, options=request_options, loaded_by=loaded_by)
 
     if not model_loaded:
         return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
@@ -407,7 +415,8 @@ def get_current_models():
                     "expires_at": worker_model_info.expires_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
                     "loaded_at": worker_model_info.loaded_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
                     "base_domain_id": worker_model_info.base_domain_id,
-                    "last_call": worker_model_info.last_call.strftime('%Y-%m-%d %H:%M:%S.%f')
+                    "last_call": worker_model_info.last_call.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    "loaded_by": getattr(worker_model_info, 'loaded_by', 'unknown')
                     }
         models_running.append(model_info)
 

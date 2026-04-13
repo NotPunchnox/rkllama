@@ -565,12 +565,13 @@ class WorkerManager:
         return model_name in self.workers.keys()
 
 
-    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
+    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
         """
         Add a process worker to run inferences call from a specific model
-        
+
         Args:
             model_name (str): model name to load in memory
+            loaded_by (str): identifier of the client/process that triggered the load
         """
         if model_name not in self.workers.keys():
 
@@ -582,7 +583,7 @@ class WorkerManager:
                 base_domain_id = 0
 
             # Add the worker to the dictionary of workers
-            worker_model = Worker(model_name,base_domain_id)
+            worker_model = Worker(model_name,base_domain_id,loaded_by=loaded_by)
 
             # Check if available meory in server
             if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
@@ -1123,19 +1124,20 @@ class WorkerManager:
 
 # Class to manage the information for running RKLLM models
 class WorkerModelInfo:
-    def __init__(self, model_name, base_domain_id):
+    def __init__(self, model_name, base_domain_id, loaded_by=None):
         self.model = model_name
         self.size = get_model_size(model_name)
         self.expires_at = datetime.now() + timedelta(minutes=int(rkllama.config.get("model", "max_minutes_loaded_in_memory")))
         self.loaded_at = datetime.now()
         self.base_domain_id = base_domain_id
         self.last_call = datetime.now()
+        self.loaded_by = loaded_by or "unknown"
                         
       
 # Class to manage the information for running RKLLM models
 class Worker:
-    def __init__(self, model_name, base_domain_id):
-        self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id)
+    def __init__(self, model_name, base_domain_id, loaded_by=None):
+        self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id, loaded_by=loaded_by)
         self.process = None
         self.manager_pipe, self.worker_pipe = Pipe() 
         self.abort_flag = Value('b', False)
