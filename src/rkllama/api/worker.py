@@ -536,6 +536,12 @@ class WorkerManager:
                     # Wait for the next execution
                     time.sleep(interval)  # Check every 60 seconds expired models
 
+                    # Reap any workers whose process died unexpectedly (e.g.
+                    # segfault, OOM kill) while the parent is still alive.
+                    # Without this, api/ps would keep reporting a "loaded"
+                    # model that has no real process backing it.
+                    self.reap_dead_workers()
+
                     # Call the process to unload expired models
                     self.unload_expired_models()
 
@@ -551,6 +557,50 @@ class WorkerManager:
         logger.info("Models Monitor running.")
 
     
+    def reap_dead_workers(self) -> None:
+        """
+        Remove worker entries whose subprocess has died unexpectedly.
+
+        A worker can die while the parent is alive (segfault in RKLLM C++,
+        kernel OOM, external SIGKILL). ``multiprocessing.Process.is_alive()``
+        returns False for such zombies. Without this reaper, ``self.workers``
+        would keep the stale entry forever, causing ``api/ps`` to lie and
+        preventing a fresh load of the same model.
+        """
+        dead = []
+        for model_name, worker in list(self.workers.items()):
+            proc = worker.process
+            if proc is None:
+                continue
+            if not proc.is_alive() and proc.exitcode is not None:
+                dead.append((model_name, proc.exitcode))
+
+        for model_name, exitcode in dead:
+            logger.warning(
+                "Worker for model '%s' died unexpectedly (exitcode=%s); "
+                "cleaning up stale entry.",
+                model_name, exitcode,
+            )
+            try:
+                worker = self.workers[model_name]
+                # Reap the zombie if it's still in the process table
+                try:
+                    worker.process.join(timeout=1)
+                except Exception:
+                    pass
+                try:
+                    worker.manager_pipe.close()
+                except Exception:
+                    pass
+                del self.workers[model_name]
+                try:
+                    import rkllama.api.variables as variables
+                    variables.remove_model_lock(model_name)
+                except Exception:
+                    pass
+            except KeyError:
+                pass
+
     def unload_expired_models(self) -> int | None:
         """
         Unload/stop workers for expired models
