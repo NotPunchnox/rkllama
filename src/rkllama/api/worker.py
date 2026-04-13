@@ -4,9 +4,77 @@ import rkllama.config
 import time
 from datetime import datetime, timedelta
 import os
+import signal
+import sys
 import threading
 import random
+import ctypes
+import atexit
 from multiprocessing import Process, Pipe, Value
+
+
+# --- Orphan-safe worker helpers -------------------------------------------
+#
+# Worker processes are multiprocessing.Process children. If the parent dies
+# uncleanly (SIGKILL, crash, power loss), these children survive as orphans
+# owned by init (PID 1) and keep holding NPU memory until manually killed.
+# Three mitigations run together to prevent this:
+#
+#   1. Each worker calls prctl(PR_SET_PDEATHSIG, SIGTERM) on Linux so the
+#      kernel sends it SIGTERM the moment its parent dies.
+#   2. The parent installs signal handlers + atexit to tear down all workers
+#      on clean shutdown.
+#   3. On startup, the parent scans for rkllama_server processes whose PPID
+#      is 1 (orphaned from a previous run) and kills them.
+
+PR_SET_PDEATHSIG = 1
+
+
+def _set_parent_death_signal():
+    """On Linux, ask the kernel to SIGTERM us if our parent dies.
+
+    Safe no-op on other platforms.
+    """
+    if sys.platform != "linux":
+        return
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
+    except Exception as exc:
+        logger.warning("Could not set parent-death signal: %s", exc)
+
+
+def _kill_orphaned_workers():
+    """Find and kill any rkllama_server worker processes orphaned by a
+    previous run (adopted by init, PID 1).
+
+    Only matches processes whose cmdline contains ``rkllama_server``, so
+    unrelated python processes are left alone. Called once at parent
+    startup.
+    """
+    my_pid = os.getpid()
+    killed = 0
+    for proc in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        try:
+            info = proc.info
+            if info["pid"] == my_pid:
+                continue
+            if info["ppid"] != 1:  # only orphans
+                continue
+            cmd = info.get("cmdline") or []
+            if not any("rkllama_server" in (a or "") for a in cmd):
+                continue
+            logger.warning(
+                "Killing orphaned rkllama worker pid=%s (cmd=%s)",
+                info["pid"], " ".join(cmd[:3]),
+            )
+            proc.kill()
+            killed += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if killed:
+        logger.info("Reaped %d orphaned worker(s) from previous run", killed)
+
 from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile, is_rkllm_model, get_rknn_onnx_files_from_model
 from .classes import *
@@ -147,7 +215,9 @@ def run_translation_generator(model_runtime, model_input):
 
 # RKLLM Worker 
 def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
-    
+    # Die with the parent to prevent NPU memory leaks on parent crash
+    _set_parent_death_signal()
+
     # Initialize individual callback for each worker to prevent error from RKLLM
     from .callback import callback_impl, global_text, last_embeddings, global_metrics
     from .rkllm import RKLLM
@@ -285,8 +355,10 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
 
 
 # RKNN Worker 
-def run_rknn_worker(name, worker_pipe, model_dir, options=None):    
-    
+def run_rknn_worker(name, worker_pipe, model_dir, options=None):
+    # Die with the parent to prevent NPU memory leaks on parent crash
+    _set_parent_death_signal()
+
     from rknnlite.api.rknn_lite import RKNNLite
     import onnxruntime
 
@@ -424,8 +496,32 @@ class WorkerManager:
         self.workers = {}  #  (name -> Worker)
         self._add_worker_lock = threading.Lock()
 
+        # Reap any orphaned workers left behind by a previous rkllama run
+        # (e.g. SIGKILL, power loss). Without this, restarting the server
+        # would leave NPU memory occupied until the host reboots.
+        _kill_orphaned_workers()
+
+        # Ensure clean shutdown: on SIGTERM/SIGINT/atexit, stop all workers
+        # so NPU memory is freed. Combined with PR_SET_PDEATHSIG in each
+        # worker, this covers graceful and ungraceful shutdowns.
+        atexit.register(self.stop_all)
+        try:
+            signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+            signal.signal(signal.SIGINT, self._handle_shutdown_signal)
+        except (ValueError, OSError):
+            # signal.signal only works in the main thread; Flask dev mode
+            # can spawn us in a secondary thread. Atexit still covers it.
+            pass
+
         # Start the monitor of running models
         self.start_models_monitor()
+
+    def _handle_shutdown_signal(self, signum, frame):
+        logger.info("Received signal %s, stopping all workers...", signum)
+        try:
+            self.stop_all()
+        finally:
+            sys.exit(0)
 
     def start_models_monitor(self, interval=60):
         """
