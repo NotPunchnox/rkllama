@@ -422,6 +422,7 @@ def run_rknn_process(name, task, model_input):
 class WorkerManager:
     def __init__(self):
         self.workers = {}  #  (name -> Worker)
+        self._add_worker_lock = threading.Lock()
 
         # Start the monitor of running models
         self.start_models_monitor()
@@ -573,6 +574,10 @@ class WorkerManager:
             model_name (str): model name to load in memory
             loaded_by (str): identifier of the client/process that triggered the load
         """
+        with self._add_worker_lock:
+            return self._add_worker_locked(model_name, model_path, model_dir, options, lora_model_path, prompt_cache_path, loaded_by)
+
+    def _add_worker_locked(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
         if model_name not in self.workers.keys():
 
             if is_rkllm_model(model_name):
