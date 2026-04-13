@@ -460,11 +460,29 @@ class WorkerManager:
         """
         # Get all expired models
         expired_models = [ model for model in self.workers.keys() if datetime.now() > self.workers[model].worker_model_info.expires_at ]
-        
+
         # Unload/stop the expired model
         for model_name in expired_models:
             logger.info(f"Detected expired model: {model_name}")
-            self.stop_worker(model_name)
+            try:
+                self.stop_worker(model_name)
+            except Exception as e:
+                logger.error(f"Failed to stop expired worker {model_name}: {e}")
+                # Ensure the worker entry is cleaned up even if stop_worker
+                # raised, so we don't leak dictionary entries for dead processes.
+                if model_name in self.workers:
+                    process = self.workers[model_name].process
+                    if process is not None and process.is_alive():
+                        try:
+                            process.kill()
+                            process.join(timeout=5)
+                        except Exception:
+                            pass
+                    try:
+                        self.workers[model_name].manager_pipe.close()
+                    except Exception:
+                        pass
+                    del self.workers[model_name]
 
 
     def clear_old_cache_prompts(self) -> int | None:
@@ -722,34 +740,72 @@ class WorkerManager:
         return None
 
 
-    def stop_worker(self, model_name):
+    def stop_worker(self, model_name, timeout=30):
         """
-        Stop/Unload a model worker
-        
+        Stop/Unload a model worker. Sends an unload command and waits up to
+        ``timeout`` seconds for the worker process to exit. If the process
+        does not exit in time it is forcefully killed so that NPU memory is
+        always reclaimed.
+
         Args:
             model_name (str): Workers to unload.
+            timeout (int): Seconds to wait for a graceful shutdown before
+                           force-killing the worker process. Default 30.
 
         """
-        if model_name in self.workers.keys():
-            if is_rkllm_model(model_name): 
-                # RKLLM
-                # Send the abort task of the model if currently is running some inference
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_ABORT_INFERENCE,None,None,None))
+        if model_name not in self.workers:
+            return
 
-                # Send the unload task of the model
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_UNLOAD_MODEL,None,None,None))
+        process = self.workers[model_name].process
+        pipe = self.workers[model_name].manager_pipe
+
+        # --- 1. Request graceful shutdown via pipe -------------------------
+        try:
+            if is_rkllm_model(model_name):
+                # RKLLM – abort any running inference first
+                pipe.send((WORKER_TASK_ABORT_INFERENCE, None, None, None))
+                pipe.send((WORKER_TASK_UNLOAD_MODEL, None, None, None))
             else:
                 # RKNN
-                # Send the unload task of the model
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_UNLOAD_MODEL,None))
-            
+                pipe.send((WORKER_TASK_UNLOAD_MODEL, None))
+        except (BrokenPipeError, OSError) as e:
+            # Pipe already broken – the worker may have crashed earlier.
+            logger.warning(f"Could not send unload command to worker {model_name}: {e}")
 
-            # Wait for unload
-            self.workers[model_name].process.join()
-            logger.info(f"Worker {model_name} stopped...")
+        # --- 2. Wait for the process to exit gracefully -------------------
+        if process is not None and process.is_alive():
+            process.join(timeout=timeout)
 
-            # Remove the worker from the dictionary
-            del self.workers[model_name]
+        # --- 3. Force-kill if still alive ---------------------------------
+        if process is not None and process.is_alive():
+            logger.warning(
+                f"Worker {model_name} did not exit within {timeout}s, "
+                "sending SIGKILL to reclaim resources."
+            )
+            try:
+                process.kill()       # SIGKILL on Unix
+                process.join(timeout=5)  # reap the zombie
+            except Exception as e:
+                logger.error(f"Failed to kill worker {model_name}: {e}")
+
+        logger.info(f"Worker {model_name} stopped.")
+
+        # --- 4. Cleanup bookkeeping ---------------------------------------
+        # Close our end of the pipe to avoid resource leaks
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+        # Remove the worker from the dictionary
+        del self.workers[model_name]
+
+        # Clean up per-model lock from variables module
+        try:
+            import rkllama.api.variables as variables
+            variables.remove_model_lock(model_name)
+        except Exception:
+            pass  # variables module may not be fully initialized during shutdown
 
     def stop_all(self):
         """
