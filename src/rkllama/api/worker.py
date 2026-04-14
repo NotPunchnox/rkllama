@@ -4,9 +4,77 @@ import rkllama.config
 import time
 from datetime import datetime, timedelta
 import os
+import signal
+import sys
 import threading
 import random
+import ctypes
+import atexit
 from multiprocessing import Process, Pipe, Value
+
+
+# --- Orphan-safe worker helpers -------------------------------------------
+#
+# Worker processes are multiprocessing.Process children. If the parent dies
+# uncleanly (SIGKILL, crash, power loss), these children survive as orphans
+# owned by init (PID 1) and keep holding NPU memory until manually killed.
+# Three mitigations run together to prevent this:
+#
+#   1. Each worker calls prctl(PR_SET_PDEATHSIG, SIGTERM) on Linux so the
+#      kernel sends it SIGTERM the moment its parent dies.
+#   2. The parent installs signal handlers + atexit to tear down all workers
+#      on clean shutdown.
+#   3. On startup, the parent scans for rkllama_server processes whose PPID
+#      is 1 (orphaned from a previous run) and kills them.
+
+PR_SET_PDEATHSIG = 1
+
+
+def _set_parent_death_signal():
+    """On Linux, ask the kernel to SIGTERM us if our parent dies.
+
+    Safe no-op on other platforms.
+    """
+    if sys.platform != "linux":
+        return
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
+    except Exception as exc:
+        logger.warning("Could not set parent-death signal: %s", exc)
+
+
+def _kill_orphaned_workers():
+    """Find and kill any rkllama_server worker processes orphaned by a
+    previous run (adopted by init, PID 1).
+
+    Only matches processes whose cmdline contains ``rkllama_server``, so
+    unrelated python processes are left alone. Called once at parent
+    startup.
+    """
+    my_pid = os.getpid()
+    killed = 0
+    for proc in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        try:
+            info = proc.info
+            if info["pid"] == my_pid:
+                continue
+            if info["ppid"] != 1:  # only orphans
+                continue
+            cmd = info.get("cmdline") or []
+            if not any("rkllama_server" in (a or "") for a in cmd):
+                continue
+            logger.warning(
+                "Killing orphaned rkllama worker pid=%s (cmd=%s)",
+                info["pid"], " ".join(cmd[:3]),
+            )
+            proc.kill()
+            killed += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if killed:
+        logger.info("Reaped %d orphaned worker(s) from previous run", killed)
+
 from datetime import datetime, timedelta
 from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile, is_rkllm_model, get_rknn_onnx_files_from_model
 from .classes import *
@@ -147,7 +215,9 @@ def run_translation_generator(model_runtime, model_input):
 
 # RKLLM Worker 
 def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
-    
+    # Die with the parent to prevent NPU memory leaks on parent crash
+    _set_parent_death_signal()
+
     # Initialize individual callback for each worker to prevent error from RKLLM
     from .callback import callback_impl, global_text, last_embeddings, global_metrics
     from .rkllm import RKLLM
@@ -285,8 +355,10 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
 
 
 # RKNN Worker 
-def run_rknn_worker(name, worker_pipe, model_dir, options=None):    
-    
+def run_rknn_worker(name, worker_pipe, model_dir, options=None):
+    # Die with the parent to prevent NPU memory leaks on parent crash
+    _set_parent_death_signal()
+
     from rknnlite.api.rknn_lite import RKNNLite
     import onnxruntime
 
@@ -422,9 +494,34 @@ def run_rknn_process(name, task, model_input):
 class WorkerManager:
     def __init__(self):
         self.workers = {}  #  (name -> Worker)
+        self._add_worker_lock = threading.Lock()
+
+        # Reap any orphaned workers left behind by a previous rkllama run
+        # (e.g. SIGKILL, power loss). Without this, restarting the server
+        # would leave NPU memory occupied until the host reboots.
+        _kill_orphaned_workers()
+
+        # Ensure clean shutdown: on SIGTERM/SIGINT/atexit, stop all workers
+        # so NPU memory is freed. Combined with PR_SET_PDEATHSIG in each
+        # worker, this covers graceful and ungraceful shutdowns.
+        atexit.register(self.stop_all)
+        try:
+            signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+            signal.signal(signal.SIGINT, self._handle_shutdown_signal)
+        except (ValueError, OSError):
+            # signal.signal only works in the main thread; Flask dev mode
+            # can spawn us in a secondary thread. Atexit still covers it.
+            pass
 
         # Start the monitor of running models
         self.start_models_monitor()
+
+    def _handle_shutdown_signal(self, signum, frame):
+        logger.info("Received signal %s, stopping all workers...", signum)
+        try:
+            self.stop_all()
+        finally:
+            sys.exit(0)
 
     def start_models_monitor(self, interval=60):
         """
@@ -438,6 +535,12 @@ class WorkerManager:
                 try:
                     # Wait for the next execution
                     time.sleep(interval)  # Check every 60 seconds expired models
+
+                    # Reap any workers whose process died unexpectedly (e.g.
+                    # segfault, OOM kill) while the parent is still alive.
+                    # Without this, api/ps would keep reporting a "loaded"
+                    # model that has no real process backing it.
+                    self.reap_dead_workers()
 
                     # Call the process to unload expired models
                     self.unload_expired_models()
@@ -454,17 +557,79 @@ class WorkerManager:
         logger.info("Models Monitor running.")
 
     
+    def reap_dead_workers(self) -> None:
+        """
+        Remove worker entries whose subprocess has died unexpectedly.
+
+        A worker can die while the parent is alive (segfault in RKLLM C++,
+        kernel OOM, external SIGKILL). ``multiprocessing.Process.is_alive()``
+        returns False for such zombies. Without this reaper, ``self.workers``
+        would keep the stale entry forever, causing ``api/ps`` to lie and
+        preventing a fresh load of the same model.
+        """
+        dead = []
+        for model_name, worker in list(self.workers.items()):
+            proc = worker.process
+            if proc is None:
+                continue
+            if not proc.is_alive() and proc.exitcode is not None:
+                dead.append((model_name, proc.exitcode))
+
+        for model_name, exitcode in dead:
+            logger.warning(
+                "Worker for model '%s' died unexpectedly (exitcode=%s); "
+                "cleaning up stale entry.",
+                model_name, exitcode,
+            )
+            try:
+                worker = self.workers[model_name]
+                # Reap the zombie if it's still in the process table
+                try:
+                    worker.process.join(timeout=1)
+                except Exception:
+                    pass
+                try:
+                    worker.manager_pipe.close()
+                except Exception:
+                    pass
+                del self.workers[model_name]
+                try:
+                    import rkllama.api.variables as variables
+                    variables.remove_model_lock(model_name)
+                except Exception:
+                    pass
+            except KeyError:
+                pass
+
     def unload_expired_models(self) -> int | None:
         """
         Unload/stop workers for expired models
         """
         # Get all expired models
         expired_models = [ model for model in self.workers.keys() if datetime.now() > self.workers[model].worker_model_info.expires_at ]
-        
+
         # Unload/stop the expired model
         for model_name in expired_models:
             logger.info(f"Detected expired model: {model_name}")
-            self.stop_worker(model_name)
+            try:
+                self.stop_worker(model_name)
+            except Exception as e:
+                logger.error(f"Failed to stop expired worker {model_name}: {e}")
+                # Ensure the worker entry is cleaned up even if stop_worker
+                # raised, so we don't leak dictionary entries for dead processes.
+                if model_name in self.workers:
+                    process = self.workers[model_name].process
+                    if process is not None and process.is_alive():
+                        try:
+                            process.kill()
+                            process.join(timeout=5)
+                        except Exception:
+                            pass
+                    try:
+                        self.workers[model_name].manager_pipe.close()
+                    except Exception:
+                        pass
+                    del self.workers[model_name]
 
 
     def clear_old_cache_prompts(self) -> int | None:
@@ -547,13 +712,18 @@ class WorkerManager:
         return model_name in self.workers.keys()
 
 
-    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
+    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
         """
         Add a process worker to run inferences call from a specific model
-        
+
         Args:
             model_name (str): model name to load in memory
+            loaded_by (str): identifier of the client/process that triggered the load
         """
+        with self._add_worker_lock:
+            return self._add_worker_locked(model_name, model_path, model_dir, options, lora_model_path, prompt_cache_path, loaded_by)
+
+    def _add_worker_locked(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
         if model_name not in self.workers.keys():
 
             if is_rkllm_model(model_name):
@@ -564,7 +734,7 @@ class WorkerManager:
                 base_domain_id = 0
 
             # Add the worker to the dictionary of workers
-            worker_model = Worker(model_name,base_domain_id)
+            worker_model = Worker(model_name,base_domain_id,loaded_by=loaded_by)
 
             # Check if available meory in server
             if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
@@ -722,34 +892,72 @@ class WorkerManager:
         return None
 
 
-    def stop_worker(self, model_name):
+    def stop_worker(self, model_name, timeout=30):
         """
-        Stop/Unload a model worker
-        
+        Stop/Unload a model worker. Sends an unload command and waits up to
+        ``timeout`` seconds for the worker process to exit. If the process
+        does not exit in time it is forcefully killed so that NPU memory is
+        always reclaimed.
+
         Args:
             model_name (str): Workers to unload.
+            timeout (int): Seconds to wait for a graceful shutdown before
+                           force-killing the worker process. Default 30.
 
         """
-        if model_name in self.workers.keys():
-            if is_rkllm_model(model_name): 
-                # RKLLM
-                # Send the abort task of the model if currently is running some inference
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_ABORT_INFERENCE,None,None,None))
+        if model_name not in self.workers:
+            return
 
-                # Send the unload task of the model
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_UNLOAD_MODEL,None,None,None))
+        process = self.workers[model_name].process
+        pipe = self.workers[model_name].manager_pipe
+
+        # --- 1. Request graceful shutdown via pipe -------------------------
+        try:
+            if is_rkllm_model(model_name):
+                # RKLLM – abort any running inference first
+                pipe.send((WORKER_TASK_ABORT_INFERENCE, None, None, None))
+                pipe.send((WORKER_TASK_UNLOAD_MODEL, None, None, None))
             else:
                 # RKNN
-                # Send the unload task of the model
-                self.workers[model_name].manager_pipe.send((WORKER_TASK_UNLOAD_MODEL,None))
-            
+                pipe.send((WORKER_TASK_UNLOAD_MODEL, None))
+        except (BrokenPipeError, OSError) as e:
+            # Pipe already broken – the worker may have crashed earlier.
+            logger.warning(f"Could not send unload command to worker {model_name}: {e}")
 
-            # Wait for unload
-            self.workers[model_name].process.join()
-            logger.info(f"Worker {model_name} stopped...")
+        # --- 2. Wait for the process to exit gracefully -------------------
+        if process is not None and process.is_alive():
+            process.join(timeout=timeout)
 
-            # Remove the worker from the dictionary
-            del self.workers[model_name]
+        # --- 3. Force-kill if still alive ---------------------------------
+        if process is not None and process.is_alive():
+            logger.warning(
+                f"Worker {model_name} did not exit within {timeout}s, "
+                "sending SIGKILL to reclaim resources."
+            )
+            try:
+                process.kill()       # SIGKILL on Unix
+                process.join(timeout=5)  # reap the zombie
+            except Exception as e:
+                logger.error(f"Failed to kill worker {model_name}: {e}")
+
+        logger.info(f"Worker {model_name} stopped.")
+
+        # --- 4. Cleanup bookkeeping ---------------------------------------
+        # Close our end of the pipe to avoid resource leaks
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+        # Remove the worker from the dictionary
+        del self.workers[model_name]
+
+        # Clean up per-model lock from variables module
+        try:
+            import rkllama.api.variables as variables
+            variables.remove_model_lock(model_name)
+        except Exception:
+            pass  # variables module may not be fully initialized during shutdown
 
     def stop_all(self):
         """
@@ -1067,19 +1275,20 @@ class WorkerManager:
 
 # Class to manage the information for running RKLLM models
 class WorkerModelInfo:
-    def __init__(self, model_name, base_domain_id):
+    def __init__(self, model_name, base_domain_id, loaded_by=None):
         self.model = model_name
         self.size = get_model_size(model_name)
         self.expires_at = datetime.now() + timedelta(minutes=int(rkllama.config.get("model", "max_minutes_loaded_in_memory")))
         self.loaded_at = datetime.now()
         self.base_domain_id = base_domain_id
         self.last_call = datetime.now()
+        self.loaded_by = loaded_by or "unknown"
                         
       
 # Class to manage the information for running RKLLM models
 class Worker:
-    def __init__(self, model_name, base_domain_id):
-        self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id)
+    def __init__(self, model_name, base_domain_id, loaded_by=None):
+        self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id, loaded_by=loaded_by)
         self.process = None
         self.manager_pipe, self.worker_pipe = Pipe() 
         self.abort_flag = Value('b', False)
