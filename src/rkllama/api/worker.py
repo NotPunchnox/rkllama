@@ -31,17 +31,12 @@ PR_SET_PDEATHSIG = 1
 
 
 def _set_parent_death_signal():
-    """On Linux, ask the kernel to SIGTERM us if our parent dies.
-
-    Safe no-op on other platforms.
+    """No-op: PR_SET_PDEATHSIG is bound to the forking *thread*, not the
+    process (see ``man 2 prctl``). Flask runs with ``threaded=True``, so
+    enabling it kills the worker as soon as its request-thread exits
+    (issue #117). Orphan cleanup is handled by ``_kill_orphaned_workers``.
     """
-    if sys.platform != "linux":
-        return
-    try:
-        libc = ctypes.CDLL("libc.so.6", use_errno=True)
-        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
-    except Exception as exc:
-        logger.warning("Could not set parent-death signal: %s", exc)
+    return
 
 
 def _kill_orphaned_workers():
