@@ -61,7 +61,7 @@ def print_color(message, color):
 variables.worker_manager_rkllm = WorkerManager()
 
 
-def create_modelfile(huggingface_path, From, system="", model_name=None):
+def create_modelfile(huggingface_path, From, system="", model_name=None, tokenizer_repo=None):
     struct_modelfile = f"""
 FROM="{From}"
 
@@ -96,6 +96,9 @@ MIROSTAT_ETA={rkllama.config.get("model", "default_mirostat_eta")}
 
 """
 
+    if tokenizer_repo:
+        struct_modelfile += f'TOKENIZER="{tokenizer_repo}"\n\n'
+
     # Use config for models path
     path = os.path.join(rkllama.config.get_path("models"), model_name)
 
@@ -106,6 +109,107 @@ MIROSTAT_ETA={rkllama.config.get("model", "default_mirostat_eta")}
     # Create the Modelfile and write the content
     with open(os.path.join(path, "Modelfile"), "w") as f:
         f.write(struct_modelfile)
+
+
+def hf_repo_has_config(repo: str, fs=None) -> bool:
+    fs = fs or HfFileSystem()
+    try:
+        fs.info(f"{repo}/config.json")
+        return True
+    except Exception:
+        return False
+
+
+def get_hf_model_metadata(repo: str) -> dict | None:
+    try:
+        response = requests.get(f"https://huggingface.co/api/models/{repo}", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logger.debug(f"Unable to load Hugging Face metadata for {repo}: {e}")
+    return None
+
+
+def extract_base_model_candidates(metadata: dict) -> list[str]:
+    candidates = []
+    if not metadata:
+        return candidates
+
+    base_model = metadata.get("base_model")
+    if isinstance(base_model, str) and base_model:
+        candidates.append(base_model)
+    elif isinstance(base_model, list):
+        candidates.extend([m for m in base_model if isinstance(m, str) and m])
+
+    card_data = metadata.get("cardData", {}) or {}
+    for key in ("base_model", "base model", "Base Model", "parent_model", "parent_model_id"):
+        value = card_data.get(key)
+        if isinstance(value, str) and value:
+            candidates.append(value)
+        elif isinstance(value, list):
+            candidates.extend([m for m in value if isinstance(m, str) and m])
+
+    parent = metadata.get("parent")
+    if isinstance(parent, dict):
+        parent_model = parent.get("modelId") or parent.get("id")
+        if isinstance(parent_model, str) and parent_model:
+            candidates.append(parent_model)
+
+    parents = metadata.get("parents")
+    if isinstance(parents, list):
+        for item in parents:
+            if isinstance(item, str):
+                candidates.append(item)
+            elif isinstance(item, dict):
+                parent_model = item.get("modelId") or item.get("id")
+                if isinstance(parent_model, str) and parent_model:
+                    candidates.append(parent_model)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    return [c for c in candidates if c not in seen and not seen.add(c)]
+
+
+def resolve_tokenizer_repo(repo: str, fs=None, max_depth=3) -> str | None:
+    """Resolve the best tokenizer repo by searching for config.json in the repo hierarchy."""
+    fs = fs or HfFileSystem()
+
+    if hf_repo_has_config(repo, fs):
+        return repo
+
+    checked = {repo}
+    queue = [repo]
+    depth = 0
+
+    while queue and depth < max_depth:
+        next_queue = []
+        for current in queue:
+            metadata = get_hf_model_metadata(current)
+            if not metadata:
+                continue
+
+            candidates = extract_base_model_candidates(metadata)
+            for candidate in candidates:
+                if candidate in checked:
+                    continue
+                checked.add(candidate)
+
+                if hf_repo_has_config(candidate, fs):
+                    return candidate
+
+                next_queue.append(candidate)
+
+        queue = next_queue
+        depth += 1
+
+    # Last-resort heuristics for common RKLLM/finetune repo naming
+    for pattern in ("-rk3588", "-rkllm", "-rkllama", "-w8a8", "-w8a8_g128", "-w8a8_opt"):
+        if pattern in repo:
+            candidate = repo.replace(pattern, "")
+            if candidate not in checked and hf_repo_has_config(candidate, fs):
+                return candidate
+
+    return None
 
 
 def load_model(model_name, huggingface_path=None, system="", From=None, request_options=None, loaded_by=None):
@@ -278,8 +382,19 @@ def pull_model():
             # Define a file to download
             local_filename = os.path.join(model_dir, file)
 
-            # Create fonfiguration file for model
-            create_modelfile(huggingface_path=repo, From=file, model_name=model_name)
+            # Determine whether the target repo already contains a valid Hugging Face config
+            tokenizer_repo = None
+            if hf_repo_has_config(repo):
+                yield f"Repository {repo} contains config.json; TOKENIZER not required.\n"
+            else:
+                tokenizer_repo = resolve_tokenizer_repo(repo)
+                if tokenizer_repo:
+                    yield f"Repository {repo} does not expose config.json. Using tokenizer repo {tokenizer_repo}.\n"
+                else:
+                    yield f"Repository {repo} does not contain config.json and no upstream tokenizer repo was resolved. TOKENIZER will not be set.\n"
+
+            # Create configuration file for model
+            create_modelfile(huggingface_path=repo, From=file, model_name=model_name, tokenizer_repo=tokenizer_repo)
 
             yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
