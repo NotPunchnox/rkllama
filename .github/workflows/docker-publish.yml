@@ -72,22 +72,34 @@ jobs:
       #
       # Using plain `docker build` against the host daemon avoids the indirection and
       # guarantees a native ARM64 build.  The architecture is verified before pushing.
+      # --platform linux/arm64 forces Docker to pull the arm64 variant of the
+      # base image from the registry, bypassing any stale amd64 layers that may
+      # be present in the runner's local layer cache from a previous buildx run.
       - name: Build image
         run: |
           docker build \
+            --platform linux/arm64 \
             $(echo "${{ steps.meta.outputs.tags }}" | sed 's/^/-t /') \
             --label "${{ steps.meta.outputs.labels }}" \
             .
 
-      - name: Verify architecture
+      # Verify ELF machine type, NOT uname -m.
+      # uname -m under QEMU/binfmt_misc always returns the host architecture,
+      # so it cannot detect wrong-arch images.  Read ELF header byte 18 of
+      # /usr/local/bin/python3 instead:
+      #   0xb7 = EM_AARCH64 (arm64, correct)
+      #   0x3e = EM_X86_64  (amd64, build is broken)
+      - name: Verify ELF architecture is arm64
         run: |
           FIRST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
-          ARCH=$(docker run --rm "$FIRST_TAG" uname -m)
-          echo "Container architecture: $ARCH"
-          if [ "$ARCH" != "aarch64" ]; then
-            echo "ERROR: expected aarch64, got $ARCH — aborting push"
+          machine_byte=$(docker run --rm --entrypoint /bin/sh "$FIRST_TAG" \
+            -c 'od -An -j18 -N1 -tx1 /usr/local/bin/python3 | tr -d " \n"')
+          echo "ELF machine byte at offset 18: 0x${machine_byte}"
+          if [ "$machine_byte" != "b7" ]; then
+            echo "ERROR: expected 0xb7 (EM_AARCH64), got 0x${machine_byte} — image is wrong architecture"
             exit 1
           fi
+          echo "Confirmed: image is linux/arm64"
 
       - name: Push image
         if: github.event_name != 'pull_request'
