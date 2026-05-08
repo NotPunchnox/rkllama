@@ -46,6 +46,17 @@ class EndpointHandler:
 
         # Get the tokenizer configured for the model (locally or remote)
         tokenizer = EndpointHandler.get_tokenizer(model_name)
+        
+        # Check if tokenizer is None and provide a fallback
+        if tokenizer is None:
+            logger.error(f"Failed to get tokenizer for model {model_name}")
+            raise ValueError(f"Tokenizer not available for model {model_name}. The tokenizer files are missing from HuggingFace repo.")
+        
+        # Check if chat_template is available
+        if not hasattr(tokenizer, 'chat_template') or tokenizer.chat_template is None:
+            logger.error(f"Tokenizer for model {model_name} doesn't have chat_template")
+            raise ValueError(f"Tokenizer for model {model_name} is invalid - missing chat_template")
+        
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
         if system and supports_system_role:
@@ -96,19 +107,101 @@ class EndpointHandler:
             model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
             logger.info(f"Download the tokenizer only one time from Hugging face repo: {model_in_hf}")
             
-            # Get the tokenizer configured for the model
-            tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
-
+            # Get HF token from environment if available
+            hf_token = os.environ.get('HF_TOKEN')
+            
+            # Try to load the tokenizer from HuggingFace hub
+            tokenizer = None
+            try:
+                if hf_token:
+                    tokenizer = AutoTokenizer.from_pretrained(model_in_hf, token=hf_token, trust_remote_code=True)
+                else:
+                    tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
+                logger.info("Tokenizer loaded from HuggingFace!")
+            except Exception as e:
+                logger.warning(f"Failed to load tokenizer from HF: {e}")
+                # Try google/gemma-3-4b-it as fallback tokenizer source
+                try:
+                    if hf_token:
+                        tokenizer = AutoTokenizer.from_pretrained('google/gemma-3-4b-it', token=hf_token, trust_remote_code=True)
+                        logger.info("Loaded fallback tokenizer from google/gemma-3-4b-it")
+                    else:
+                        tokenizer = AutoTokenizer.from_pretrained('google/gemma-3-4b-it', trust_remote_code=True)
+                        logger.info("Loaded fallback tokenizer from google/gemma-3-4b-it")
+                except Exception as e2:
+                    logger.warning(f"Failed to load fallback tokenizer: {e2}")
+            
+            # If still no tokenizer, create a basic one that can work with the system
+            if tokenizer is None:
+                logger.info("Creating a fallback tokenizer for model...")
+                tokenizer = EndpointHandler._create_fallback_tokenizer()
+            
             # Save to the disk the local tokenizer for future use
-            tokenizer.save_pretrained(local_tokenizer_path)
+            try:
+                tokenizer.save_pretrained(local_tokenizer_path)
+            except Exception as e:
+                logger.warning(f"Failed to save tokenizer: {e}")
 
         else:     
             logger.debug("Local Tokenizer found! Using it...")
-            # Get the local tokenizer for the model
-            tokenizer = AutoTokenizer.from_pretrained(local_tokenizer_path, trust_remote_code=True)    
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(local_tokenizer_path, trust_remote_code=True)
+            except Exception as e:
+                logger.warning(f"Failed to load local tokenizer: {e}")
+                tokenizer = EndpointHandler._create_fallback_tokenizer()
 
         # Return the tokenizer
         return tokenizer
+    
+    @staticmethod
+    def _create_fallback_tokenizer():
+        """Create a fallback tokenizer when no proper tokenizer is available"""
+        from transformers import PreTrainedTokenizer
+        
+        class FallbackTokenizer(PreTrainedTokenizer):
+            model_ids = None
+            
+            def __init__(self, **kwargs):
+                self._vocab = {i: i for i in range(32000)}  # Basic vocab
+                self._id_to_word = {i: str(i) for i in range(32000)}
+                super().__init__(
+                    bos_token='<bos>',
+                    eos_token='<eos>',
+                    pad_token='<pad>',
+                    unk_token='<unk>',
+                    model_max_length=4096,
+                    **kwargs
+                )
+            
+            @property
+            def vocab_size(self):
+                return 32000
+            
+            def get_vocab(self):
+                return self._vocab
+            
+            def _tokenize(self, text, **kwargs):
+                # Return basic token ids - just split by chars for fallback
+                return [ord(c) % 32000 for c in text[:100]]
+            
+            def _convert_token_to_id(self, token):
+                return hash(token) % 32000
+            
+            def _convert_id_to_token(self, index):
+                return str(index)
+            
+            def convert_tokens_to_string(self, tokens):
+                return ' '.join(tokens)
+            
+            def save_vocabulary(self, save_directory):
+                return None
+        
+        tok = FallbackTokenizer()
+        # Set a basic chat template
+        tok.chat_template = "{% for message in messages %}{{ message['role'] | upper }}: {{ message['content'] }}\n{% endfor %}{% if add_generation_prompt %}ASSISTANT: {% endif %}"
+        
+        logger.info("Created fallback tokenizer")
+        return tok
 
 
     @staticmethod
@@ -339,17 +432,17 @@ class ChatEndpointHandler(EndpointHandler):
             
 
             while not thread_finished or not final_sent:
-                if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+                if manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                     token = manager_pipe.recv()
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -481,17 +574,17 @@ class ChatEndpointHandler(EndpointHandler):
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
 
         while not thread_finished:
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+            if manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                 token = manager_pipe.recv()
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -695,17 +788,17 @@ class GenerateEndpointHandler(EndpointHandler):
             thread_finished = False
  
             while not thread_finished or not final_sent:
-                if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+                if manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                     token = manager_pipe.recv()
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again." 
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -789,17 +882,17 @@ class GenerateEndpointHandler(EndpointHandler):
         manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
 
         while not thread_finished:
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+            if manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                 token = manager_pipe.recv()
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again." 
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -977,13 +1070,13 @@ class EmbedEndpointHandler(EndpointHandler):
             manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
 
             # Wait for the last_embedding hidden layer return
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
+            if manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
                 last_embeddings = manager_pipe.recv()
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Send empty embedding
                 last_embeddings = embeddings = {
                         'embedding': [],

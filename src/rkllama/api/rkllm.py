@@ -60,7 +60,7 @@ class RKLLM(object):
         self.rkllm_param.extend_param.enabled_cpus_num = 4  
         #self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
         processor = rkllama.config.get("platform", "processor", None)
-        if processor.lower() in ["rk3576", "rk3588"]: # Recommended new way by Rockchip
+        if processor and processor.lower() in ["rk3576", "rk3588"]: # Recommended new way by Rockchip
             self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)
         else:
             self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 0)|(1 << 1)|(1 << 2)|(1 << 3)
