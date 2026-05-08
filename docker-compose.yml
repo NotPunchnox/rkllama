@@ -1,0 +1,13 @@
+services:
+  rkllama:
+    container_name: rkllama
+    image: ghcr.io/notpunchnox/rkllama:main
+    build: .
+    privileged: true
+    volumes:
+      - ./models:/opt/rkllama/models
+    ports:
+      # Host:Container
+      - "8080:8080"
+      - "11432:8080"
+    restart: unless-stopped

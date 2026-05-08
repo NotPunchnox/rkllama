@@ -15,7 +15,7 @@ RKLLAMA now implements an Ollama-compatible API, providing an interface that mat
 | `/api/pull` | POST | Pull a model | ⚠️ Basic implementation |
 | `/api/delete` | DELETE | Delete a model | ✅ |
 | `/api/generate` | POST | Generate a completion | ✅ |
-| `/api/chat` | POST | Generate a chat completion | ✅ |
+| `/api/chat` | POST | Generate a chat completion | ✅ **With Tool Calling** |
 | `/api/embeddings` | POST | Generate embeddings | ❌ Not implemented |
 | `/api/embed` | POST | Generate embeddings | ❌ Not implemented |
 
@@ -50,6 +50,86 @@ curl -X POST http://localhost:8080/api/generate -d '{
 ```bash
 curl http://localhost:8080/api/tags
 ```
+
+## Tool/Function Calling Support
+
+✅ **Fully Compatible** - RKLLama implements complete tool calling functionality matching Ollama's API specification.
+
+### Features
+- **Multiple Detection Methods**: Works with Qwen's `<tool_call>` tags and generic JSON formats
+- **Streaming Support**: Tool calls work in both streaming and non-streaming modes  
+- **Format Normalization**: Automatically handles different parameter formats (`parameters` vs `arguments`)
+- **Model Agnostic**: Works with any LLM that can output proper JSON
+
+### Tool Call Example
+
+```bash
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5:3b",
+    "messages": [
+      {"role": "user", "content": "Get the weather in Tokyo"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+### Response Format
+
+Tool calls return the standard Ollama format:
+
+```json
+{
+  "model": "qwen2.5:3b",
+  "message": {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "function": {
+          "name": "get_weather",
+          "arguments": {
+            "location": "Tokyo"
+          }
+        }
+      }
+    ]
+  },
+  "done_reason": "tool_calls",
+  "done": true
+}
+```
+
+### Model Compatibility for Tools
+
+| Model Type | Tool Format | Support Level |
+|------------|-------------|---------------|
+| **Qwen 2.5+** | `<tool_call></tool_call>` | ✅ Native (Recommended) |
+| **Llama 3.2+** | Generic JSON | ✅ Full Support |
+| **Other Models** | JSON Fallback | ✅ Compatible |
+
+**Recommendation**: Use Qwen models for best tool calling performance.
+
+For complete tool calling documentation, see the [Tool Calling Guide](./tools.md).
 
 ## Platform Auto-detection
 

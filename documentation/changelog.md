@@ -10,6 +10,14 @@
 - Added temperature parameter to the RKLLM class for enhanced control over generation.
 - Introduced context-length in the RKLLM class, dynamically adapting to the model's requirements.
 - Enabled custom tokenizer import via the Modelfile, supporting offline deployment without an internet connection.
+- **Tool/Function Calling**: Complete implementation of tool calling with multi-format support
+  - Standard `<tool_call></tool_call>` tag detection (Qwen models)
+  - Generic JSON tool call extraction (Llama 3.2+, others)
+  - Streaming and non-streaming tool call responses
+  - Ollama API compatible tool call format
+  - Automatic format normalization (`parameters` → `arguments`)
+  - Robust JSON parsing with multiple fallback methods
+- **Enhanced Documentation**: Comprehensive tool calling documentation
 
 
 ## Version 0.0.4

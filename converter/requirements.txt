@@ -1,0 +1,10 @@
+torch>=2.2.0
+transformers>=4.38.2
+numpy>=1.25.2
+tqdm>=4.66.2
+einops>=0.7.0
+safetensors>=0.4.1
+accelerate>=0.27.2
+sentencepiece>=0.2.0
+protobuf>=4.25.2
+tokenizers>=0.15.2 

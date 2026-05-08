@@ -1,6 +1,29 @@
-models/*/*.rkllm
-models/*/*
+models/**/*
 src/__pycache__
 *.log
 config/config.env
+build
 tests
+src/rkllama.egg-info/*
+
+# macOS system files
+.DS_Store
+
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# Converter directory
+# Uncomment if you want to ignore it
+# converter/

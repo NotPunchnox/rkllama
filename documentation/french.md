@@ -29,7 +29,9 @@ Un serveur permettant d'exécuter et d'interagir avec des modèles LLM optimisé
 - **OS** : [Ubuntu 24.04 arm64.](https://joshua-riek.github.io/ubuntu-rockchip-download/)
 
 ## Principales fonctionnalités
-- **Exécution des modèles sur le NPU.**  
+- **Exécution des modèles sur le NPU.**
+- **Compatibilité partielle avec l'API Ollama** - Support principal pour les endpoints `/api/chat` et `/api/generate`.
+- **Appel d'Outils/Fonctions** - Support complet des appels d'outils avec plusieurs formats LLM (Qwen, Llama 3.2+, autres).
 - **Téléchargement direct des modèles depuis Huggingface.**  
 - **Inclut une API REST avec documentation.**  
 - **Liste des modèles disponibles.**  
@@ -42,7 +44,9 @@ Un serveur permettant d'exécuter et d'interagir avec des modèles LLM optimisé
 
 - Client : [Guide d'installation](#installation).  
 - API REST : [Documentation en anglais](./api/english.md)  
-- API REST : [Documentation en français](./api/french.md)  
+- API REST : [Documentation en français](./api/french.md)
+- API Ollama : [Guide de compatibilité](./api/ollama-compatibility.md)
+- Appel d'Outils : [Guide d'appel d'outils/fonctions](./api/tools.md)  
 
 ## Installation
 1. Téléchargez RKLLama :
