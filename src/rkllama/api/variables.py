@@ -1,14 +1,8 @@
-import threading
 from rkllama.config import is_debug_mode
 from rkllama.api.worker import WorkerManager
 
-isLocked = False
-
 # Worker variables
 worker_manager_rkllm = WorkerManager()
-
-
-verrou = threading.Lock()
 
 model_id = ""
 system = "Tu es un assistant artificiel."

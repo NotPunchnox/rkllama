@@ -435,7 +435,6 @@ def recevoir_message():
     # define modelfile path
     modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
 
-    variables.verrou.acquire()
     return Request(modele_rkllm, modelfile)
 
 
@@ -1021,7 +1020,6 @@ def delete_model_ollama():
 @app.route('/v1/completions', methods=['POST'])
 def generate_ollama():
     
-    lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
 
     try:
@@ -1069,10 +1067,6 @@ def generate_ollama():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
         
-        # Acquire lock before processing
-        variables.verrou.acquire()
-        lock_acquired = True
-        
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
@@ -1090,10 +1084,6 @@ def generate_ollama():
         if DEBUG_MODE:
             logger.exception(f"Error in generate_ollama: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()
 
 
 # Also update the chat endpoint for consistency
@@ -1101,7 +1091,6 @@ def generate_ollama():
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_ollama():
     
-    lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/chat/completions')
         
     try:
@@ -1225,31 +1214,7 @@ def chat_ollama():
         #    rkllm_model_request.format_schema = format_spec
         #    rkllm_model_request.format_options = options
         
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-        
-        # Create custom request for processing
-        custom_req = type('obj', (object,), {
-            'json': {
-                "model": model_name,
-                "messages": messages,
-                "stream": stream,
-                "system": system,
-                "format": format_spec,
-                "options": options,
-                "tools": tools,
-                "enable_thinking": enable_thinking,
-                "images": images
-            },
-            'path': '/api/chat'
-        })
-        
-        # Set a flag on the custom request to indicate it should not release the lock
-        # as we'll handle it here
-        custom_req.handle_lock = False
-        
-        # Process the request - this won't release the lock
+        # Process the request
         from rkllama.api.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
               model_name=model_name,
@@ -1266,13 +1231,6 @@ def chat_ollama():
     except Exception as e:
         logger.exception("Error in chat_ollama")
         return jsonify({"error": str(e)}), 500
-    
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in chat_ollama")
-            variables.verrou.release()
 
 
 # Only include debug endpoint if in debug mode
@@ -1302,7 +1260,6 @@ if DEBUG_MODE:
 @app.route('/v1/embeddings', methods=['POST'])
 def embeddings_ollama():
     
-    lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/embeddings')
 
     try:
@@ -1339,8 +1296,6 @@ def embeddings_ollama():
             _, error = load_model(model_name, request_options=options)
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
-        variables.verrou.acquire()
-        lock_acquired = True
         
         # DIRECTLY use the EmbedEndpointHandler instead of the process_ollama_generate_request wrapper
         from rkllama.api.server_utils import EmbedEndpointHandler
@@ -1356,10 +1311,6 @@ def embeddings_ollama():
         if DEBUG_MODE:
             logger.exception(f"Error in embeddings_ollama: {str(e)}")
         return jsonify({"error": str(e)}), 500
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()
 
 
 # Version endpoint for Ollama API compatibility
@@ -1374,8 +1325,6 @@ def ollama_version():
 @app.route('/v1/images/generations', methods=['POST'])
 def generate_image_openai():
     
-    lock_acquired = False  # Track lock status
-
     try:
         data = request.get_json(force=True)
         
@@ -1418,11 +1367,7 @@ def generate_image_openai():
         #    if error:
         #        return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-        
-        # Process the request - this won't release the lock
+        # Process the request
         from rkllama.api.server_utils import GenerateImageEndpointHandler
         return GenerateImageEndpointHandler.handle_request(
               model_name=model_name,
@@ -1439,13 +1384,6 @@ def generate_image_openai():
     except Exception as e:
         logger.exception("Error in generate_image_openai")
         return jsonify({"error": str(e)}), 500
-    
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_image_openai")
-            variables.verrou.release()
 
 
 # Default route
@@ -1465,8 +1403,6 @@ def get_generated_image(model_name, file_name):
 @app.route('/v1/audio/speech', methods=['POST'])
 def generate_speech_openai():
     
-    lock_acquired = False  # Track lock status
-
     try:
         data = request.get_json(force=True)
         
@@ -1494,11 +1430,7 @@ def generate_speech_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
         
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-        
-        # Process the request - this won't release the lock
+        # Process the request
         from rkllama.api.server_utils import GenerateSpeechEndpointHandler
         return GenerateSpeechEndpointHandler.handle_request(
               model_name=model_name,
@@ -1511,20 +1443,11 @@ def generate_speech_openai():
     except Exception as e:
         logger.exception("Error in generate_speech_openai")
         return jsonify({"error": str(e)}), 500
-    
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_speech_openai")
-            variables.verrou.release()
 
 
 @app.route('/v1/audio/transcriptions', methods=['POST'])
 def generate_transcriptions_openai():
     
-    lock_acquired = False  # Track lock status
-
     try:
         form = request.form
 
@@ -1565,11 +1488,7 @@ def generate_transcriptions_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-        
-        # Process the request - this won't release the lock
+        # Process the request
         from rkllama.api.server_utils import GenerateTranscriptionsEndpointHandler
         return GenerateTranscriptionsEndpointHandler.handle_request(
               model_name=model_name,
@@ -1581,20 +1500,11 @@ def generate_transcriptions_openai():
     except Exception as e:
         logger.exception("Error in generate_transcriptions_openai")
         return jsonify({"error": str(e)}), 500
-    
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_transcriptions_openai")
-            variables.verrou.release()
 
 
 @app.route('/v1/audio/translations', methods=['POST'])
 def generate_translations_openai():
     
-    lock_acquired = False  # Track lock status
-
     try:
         form = request.form
 
@@ -1624,11 +1534,7 @@ def generate_translations_openai():
             if error:
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-        
-        # Process the request - this won't release the lock
+        # Process the request
         from rkllama.api.server_utils import GenerateTranslationsEndpointHandler
         return GenerateTranslationsEndpointHandler.handle_request(
               model_name=model_name,
@@ -1639,13 +1545,6 @@ def generate_translations_openai():
     except Exception as e:
         logger.exception("Error in generate_translations_openai")
         return jsonify({"error": str(e)}), 500
-    
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in generate_translations_openai")
-            variables.verrou.release()
 
 
 
