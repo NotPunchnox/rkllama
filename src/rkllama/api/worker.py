@@ -10,7 +10,7 @@ import threading
 import random
 import ctypes
 import atexit
-from multiprocessing import Process, Pipe, Value
+from multiprocessing import Process, Queue, Value, Pipe
 
 
 # --- Orphan-safe worker helpers -------------------------------------------
@@ -118,12 +118,12 @@ def run_encoder(model_input):
 
 
 
-def run_image_generator(model_input, rknn_pipe):
+def run_image_generator(model_input, child_conn):
     """
     Run the image generator model to get the image
     Args:
         model_input (tuple): (model_encoder_path, image_path)
-        rknn_pipe (Pipe): Pipe to return the image embedding
+        child_conn (Pipe): Pipe to return the image embedding
     Returns:
         str: Image
     """
@@ -137,7 +137,11 @@ def run_image_generator(model_input, rknn_pipe):
     image = generate_image(model_name, prompt, size, seed, num_inference_steps, guidance_scale)
     
     # Send the encoded image to the main process
-    rknn_pipe.send(image)
+    child_conn.send(image)
+
+    # Close the pipe
+    child_conn.close()
+    
     
 
 def run_speech_generator(model_runtime, model_input):
@@ -209,7 +213,7 @@ def run_translation_generator(model_runtime, model_input):
     
 
 # RKLLM Worker 
-def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
+def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
     # Die with the parent to prevent NPU memory leaks on parent crash
     _set_parent_death_signal()
 
@@ -225,13 +229,13 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
         model_rkllm = RKLLM(callback, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id)
     
         # Announce the creation of the RKLLM model failed
-        worker_pipe.send(WORKER_TASK_FINISHED)
+        result_queue.put(WORKER_TASK_FINISHED)
 
 
     except Exception as e:
         logger.error(f"Failed creating the worker for model '{name}': {str(e)}")
         # Announce the creation of the RKLLM model in memory
-        worker_pipe.send(WORKER_TASK_ERROR)
+        result_queue.put(WORKER_TASK_ERROR)
         return
 
     # Loop to wait for tasks
@@ -240,7 +244,7 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
         try:
         
             # Get the instruction to the worker
-            task,inference_mode, model_input_type, model_input =  worker_pipe.recv()
+            child_conn, task, inference_mode, model_input_type, model_input =  task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -278,7 +282,7 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                     tokens_processed = False
                     while len(global_text) > 0:
                         token = global_text.pop(0)
-                        worker_pipe.send(token)
+                        child_conn.send(token)
                         tokens_processed = True
 
                     # Update status of the thread
@@ -310,7 +314,10 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                     eval = global_metrics[3]
                 
                 # Send final signal of the inference
-                worker_pipe.send((WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval))   
+                child_conn.send((WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval))   
+
+                # Close the connection
+                child_conn.close()
         
                 
             elif task == WORKER_TASK_EMBEDDING:
@@ -328,7 +335,10 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
 
                 if last_embeddings:
                     # Send the embedding shapes of the input
-                    worker_pipe.send(last_embeddings[-1])  
+                    child_conn.send(last_embeddings[-1])  
+
+                    # Close the connection
+                    child_conn.close()
             
             elif task == WORKER_TASK_VISION_ENCODER:
                 logger.info(f"Running vision encoder for model {name}...")
@@ -336,21 +346,28 @@ def run_rkllm_worker(name, worker_pipe, abort_flag, model_path, model_dir, optio
                 img_encoded = run_encoder(model_input)
 
                 # Send the encoded image 
-                worker_pipe.send(img_encoded)  
+                child_conn.send(img_encoded)  
+
+                # Close the connection
+                child_conn.close()
 
             else:
-                worker_pipe.send(f"Unknown task: {task}")  
-                # Send final signal of the inference
-                worker_pipe.send(WORKER_TASK_FINISHED)  
+                child_conn.send(f"Unknown task: {task}")
+                child_conn.send(WORKER_TASK_FINISHED)
+
+                # Close the connection
+                child_conn.close()
 
         except Exception as e:
             logger.error(f"Failed executing task the worker for model '{name}': {str(e)}")
-            # Announce the creation of the RKLLM model in memory
-            worker_pipe.send(WORKER_TASK_ERROR)  
+            child_conn.send(WORKER_TASK_ERROR)
+
+            # Close the connection
+            child_conn.close()
 
 
 # RKNN Worker 
-def run_rknn_worker(name, worker_pipe, model_dir, options=None):
+def run_rknn_worker(name, task_queue, result_queue, model_dir, options=None):
     # Die with the parent to prevent NPU memory leaks on parent crash
     _set_parent_death_signal()
 
@@ -383,12 +400,12 @@ def run_rknn_worker(name, worker_pipe, model_dir, options=None):
             models_runtimes[model] = runtime
              
         # Announce the creation of the RKLLM model failed
-        worker_pipe.send(WORKER_TASK_FINISHED)
+        result_queue.put(WORKER_TASK_FINISHED)
 
     except Exception as e:
         logger.error(f"Failed creating the worker for model '{name}': {str(e)}")
         # Announce the creation of the RKLLM model in memory
-        worker_pipe.send(WORKER_TASK_ERROR)
+        result_queue.put(WORKER_TASK_ERROR)
         return
 
     # Loop to wait for tasks
@@ -397,7 +414,7 @@ def run_rknn_worker(name, worker_pipe, model_dir, options=None):
         try:
 
             # Get the instruction to the worker
-            task, model_input = worker_pipe.recv()
+            child_conn, task, model_input = task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -432,17 +449,24 @@ def run_rknn_worker(name, worker_pipe, model_dir, options=None):
                     response = run_translation_generator(models_runtimes,model_input)
                     
                 # Send the response 
-                worker_pipe.send(response)
+                child_conn.send(response)
+
+                # Close the connection
+                child_conn.close()
                 
             else:
-                worker_pipe.send(f"Unknown task: {task}")
-                # Send final signal of the inference
-                worker_pipe.send(WORKER_TASK_FINISHED)
+                child_conn.send(f"Unknown task: {task}")
+                child_conn.send(WORKER_TASK_FINISHED)
+
+                # Close the connection
+                child_conn.close()
 
         except Exception as e:
             logger.error(f"Failed executing task the worker for model '{name}': {str(e)}")
-            # Announce the creation of the RKLLM model in memory
-            worker_pipe.send(WORKER_TASK_ERROR)
+            child_conn.send(WORKER_TASK_ERROR)
+
+            # Close the connection
+            child_conn.close()
 
 
 def run_rknn_process(name, task, model_input):
@@ -463,10 +487,17 @@ def run_rknn_process(name, task, model_input):
             # Get the encoded image from the pipe main process
             if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds fixed for image generation
                 img = parent_pipe.recv()
+
+                # Close the parent connection
+                parent_pipe.close()
             else:
                 logger.error(f"No response received by the internal process of the Worker of the model {name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Terminate the process encoder after use
                 rknn_process.terminate()
+
+                # Close the parent connection
+                parent_pipe.close()
+
                 return None
 
             
@@ -482,6 +513,17 @@ def run_rknn_process(name, task, model_input):
             
     except Exception as e:
         logger.error(f"Failed executing task the rknn process for model '{name}' for task '{task}': {str(e)}")
+        try:
+            # Close the parent connection
+            parent_pipe.close()
+        except:
+            pass    
+        try:
+            # Close the child connection
+            child_pipe.close()
+        except:
+            pass    
+        # No result result    
         return None
 
 
@@ -489,7 +531,6 @@ def run_rknn_process(name, task, model_input):
 class WorkerManager:
     def __init__(self):
         self.workers = {}  #  (name -> Worker)
-        self._add_worker_lock = threading.Lock()
 
         # Reap any orphaned workers left behind by a previous rkllama run
         # (e.g. SIGKILL, power loss). Without this, restarting the server
@@ -584,15 +625,10 @@ class WorkerManager:
                 except Exception:
                     pass
                 try:
-                    worker.manager_pipe.close()
+                    self.workers[model_name].task_queue.close()
                 except Exception:
                     pass
                 del self.workers[model_name]
-                try:
-                    import rkllama.api.variables as variables
-                    variables.remove_model_lock(model_name)
-                except Exception:
-                    pass
             except KeyError:
                 pass
 
@@ -620,10 +656,10 @@ class WorkerManager:
                             process.join(timeout=5)
                         except Exception:
                             pass
-                    try:
-                        self.workers[model_name].manager_pipe.close()
-                    except Exception:
-                        pass
+                        try:
+                            self.workers[model_name].task_queue.close()
+                        except Exception:
+                            pass
                     del self.workers[model_name]
 
 
@@ -715,10 +751,6 @@ class WorkerManager:
             model_name (str): model name to load in memory
             loaded_by (str): identifier of the client/process that triggered the load
         """
-        with self._add_worker_lock:
-            return self._add_worker_locked(model_name, model_path, model_dir, options, lora_model_path, prompt_cache_path, loaded_by)
-
-    def _add_worker_locked(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
         if model_name not in self.workers.keys():
 
             if is_rkllm_model(model_name):
@@ -860,30 +892,27 @@ class WorkerManager:
             model_name (str): Worker name to send the task.
             task (tuple (name_task,args)): Task to send to the worker 
 
+        Returns:
+            Connection: pipe connection to receive the response.
         """
         if model_name in self.workers:
-            # Send the TASK to the model with the communication pipe of the model 
-            self.workers[model_name].manager_pipe.send(task)
+
+            # Declare the pipe for the current task to return
+            parent_conn, child_conn = Pipe()
+
+            # Send the TASK to the model with the task queue and the pipe to send the response
+            self.workers[model_name].task_queue.put((child_conn,) + task)
+
+            # CLose the not needed connection
+            # child_conn.close()
             
             # Update the worker model info with the invocation
             self.workers[model_name].worker_model_info.last_call = datetime.now()
             self.workers[model_name].worker_model_info.expires_at = datetime.now() + timedelta(minutes=int(rkllama.config.get("model", "max_minutes_loaded_in_memory")),)
 
+            # Return the request parent pipe
+            return parent_conn
 
-
-    def get_result(self, model_name):
-        """
-        Get the result of a task executed for the RKLLM model
-        
-        Args:
-            model_name (str): Worker name to get the response.
-
-        Returns:
-            Pipe: pipe endpoint for the main process to get the response.
-        """
-        if model_name in self.workers:
-            # Get the pipe endpoint of the responses of the main process 
-            return self.workers[model_name].manager_pipe
         return None
 
 
@@ -904,19 +933,19 @@ class WorkerManager:
             return
 
         process = self.workers[model_name].process
-        pipe = self.workers[model_name].manager_pipe
+        task_queue = self.workers[model_name].task_queue
 
-        # --- 1. Request graceful shutdown via pipe -------------------------
+        # --- 1. Request graceful shutdown via task queue -------------------------
         try:
             if is_rkllm_model(model_name):
                 # RKLLM – abort any running inference first
-                pipe.send((WORKER_TASK_ABORT_INFERENCE, None, None, None))
-                pipe.send((WORKER_TASK_UNLOAD_MODEL, None, None, None))
+                task_queue.put((None, WORKER_TASK_ABORT_INFERENCE, None, None, None))
+                task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None, None, None))
             else:
                 # RKNN
-                pipe.send((WORKER_TASK_UNLOAD_MODEL, None))
-        except (BrokenPipeError, OSError) as e:
-            # Pipe already broken – the worker may have crashed earlier.
+                task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None))
+        except Exception as e:
+            # Queue already broken – the worker may have crashed earlier.
             logger.warning(f"Could not send unload command to worker {model_name}: {e}")
 
         # --- 2. Wait for the process to exit gracefully -------------------
@@ -938,21 +967,14 @@ class WorkerManager:
         logger.info(f"Worker {model_name} stopped.")
 
         # --- 4. Cleanup bookkeeping ---------------------------------------
-        # Close our end of the pipe to avoid resource leaks
+        # Close queues to avoid resource leaks
         try:
-            pipe.close()
+            self.workers[model_name].task_queue.close()
         except Exception:
             pass
 
         # Remove the worker from the dictionary
         del self.workers[model_name]
-
-        # Clean up per-model lock from variables module
-        try:
-            import rkllama.api.variables as variables
-            variables.remove_model_lock(model_name)
-        except Exception:
-            pass  # variables module may not be fully initialized during shutdown
 
     def stop_all(self):
         """
@@ -973,7 +995,7 @@ class WorkerManager:
         """
         if model_name in self.workers.keys():
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].manager_pipe.send((WORKER_TASK_CLEAR_CACHE,None,None,None))
+            self.workers[model_name].task_queue.put((None, WORKER_TASK_CLEAR_CACHE,None,None,None))
             
 
 
@@ -986,18 +1008,24 @@ class WorkerManager:
             prompt_input (str): Input of the model
             prompt_cache_file (str): Prompt cache file
 
+        Returns:
+            Connection (Pipe): result parent connection pipe to receive the response.
         """
         if model_name in self.workers.keys():
-
             # Construct model input
             model_input = (prompt_input, prompt_cache_file)
             
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
-
+            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            
             # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
             self.clear_cache_worker(model_name)
-            
+
+            # Return the request parent pipe connection
+            return parent_conn
+
+        return None
+
 
     def embedding(self, model_name, text_input, prompt_cache_file = None):
         """
@@ -1008,15 +1036,19 @@ class WorkerManager:
             text_input (str): Input of the model
             prompt_cache_file (str): Prompt cache file
 
+        Returns:
+            Connection (Pipe): result parent connection pipe to receive the response.
         """
         if model_name in self.workers.keys():
-
             # Construct model input
             model_input = (text_input, prompt_cache_file)
 
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
+            # Send the embedding task
+            parent_conn = self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
             
+            # Return the request parent pipe connection
+            return parent_conn
+
     
     def multimodal(self, model_name, prompt_input, images, prompt_cache_file):
         """
@@ -1030,7 +1062,8 @@ class WorkerManager:
             image_width (int): Width of the image
             image_height (int): Height of the image
             prompt_cache_file (str): Prompt cache file
-
+        Returns:
+            Connection (Pipe): result parent connection pipe to receive the response.
         """
 
         if model_name in self.workers.keys():
@@ -1061,10 +1094,15 @@ class WorkerManager:
             model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, prompt_cache_file)
             
             # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
-
+            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+            
             # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
             self.clear_cache_worker(model_name)
+            
+            # Return the request parent pipe connection
+            return parent_conn
+
+        return None
 
 
     def get_images_embed(self, model_name, model_encoder_path, images, image_width, image_height) -> None:
@@ -1091,22 +1129,25 @@ class WorkerManager:
             model_input = (model_encoder_path, images, image_width, image_height)
 
             # Send the Encoder task of the image
-            self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
+            parent_pipe = self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
 
             # Wait to confirm output of the image encoder
-            if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-                image_embed  = self.workers[model_name].manager_pipe.recv()
+            if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):
+                image_embed = parent_pipe.recv()
+                # Close the parent connection
+                parent_pipe.close()
             else:
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Error ENcoding the image. Return
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                # Close the parent connection
+                parent_pipe.close()
                 return None
             
             if isinstance(image_embed, str) and image_embed ==  WORKER_TASK_ERROR:
-                # Error ENcoding the image. Return
                 return None
-     
-            # Return the image encoded
-            return image_embed;       
+      
+            # Return the image
+            return image_embed;
 
 
 
@@ -1153,7 +1194,7 @@ class WorkerManager:
             image_list.append(image_base)    
     
         # Return the image
-        return image_list;   
+        return image_list
 
 
     def generate_speech(self, model_name, model_dir, input,voice,response_format,stream_format,speed) -> None:
@@ -1163,29 +1204,33 @@ class WorkerManager:
         Args:
             model_name (str): Worker name to send the task.
             model_dir (str): Model directory name to invoke
- 
         """
-        # Prepare the input for TTS
         model_input = (model_dir, input,voice,response_format,stream_format,speed)
         
         if model_name in self.workers.keys():
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_GENERATE_SPEECH, model_input))    
+            parent_pipe = self.send_task(model_name, (WORKER_TASK_GENERATE_SPEECH, model_input))    
             
-        # Wait to confirm output of the image 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-            audio = self.workers[model_name].manager_pipe.recv()
-        else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-            # Error Generating the speech. Return
-            return None
-        
-        if isinstance(audio, str) and audio ==  WORKER_TASK_ERROR:
-            # Error Generating the speech. Return
-            return None
+            # Wait for output 
+            if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):
+                audio = parent_pipe.recv()
+                # Close the parent connection
+                parent_pipe.close()
 
-        # Return the audio
-        return audio
+            else:
+                # Error Generating the speech. Return
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                # Close the parent connection
+                parent_pipe.close()
+                return None
+            
+            if isinstance(audio, str) and audio ==  WORKER_TASK_ERROR:
+                # Error Generating the speech. Return
+                return None
+
+            # Return the audio
+            return audio
+        
+        return None
     
     def generate_transcription(self, model_name, model_dir, file, language, response_format) -> None:
         """
@@ -1202,23 +1247,28 @@ class WorkerManager:
         
         # Send the inference task of the Transcription
         if model_name in self.workers.keys():
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSCRIPTION, model_input))    
+            parent_pipe = self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSCRIPTION, model_input))    
             
-        # Wait for output 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-            text = self.workers[model_name].manager_pipe.recv()
-        else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-            # Error Generating the transcription. Return
-            return None
+            # Wait for output 
+            if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):
+                text = parent_pipe.recv()
+                # Close the parent connection
+                parent_pipe.close()
+            else:
+                # Error Generating the transcription. Return
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                # Close the parent connection
+                parent_pipe.close()
+                return None
 
-        if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
-            # Error Generating the transcription. Return
-            return None
+            if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
+                # Error Generating the transcription. Return
+                return None
 
-        # Return the transcription
-        return text
+            # Return the transcription
+            return text
+        
+        return None
     
 
     def generate_translation(self, model_name, model_dir, file, language, response_format) -> None:
@@ -1236,24 +1286,29 @@ class WorkerManager:
 
         # Send the inference task of the Translation
         if model_name in self.workers.keys():
-            # Send the inference task
-            self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSLATION, model_input))    
+            parent_pipe = self.send_task(model_name, (WORKER_TASK_GENERATE_TRANSLATION, model_input))    
             
-        # Wait for output 
-        if self.workers[model_name].manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-            text = self.workers[model_name].manager_pipe.recv()
-        else:
-            logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-            # Error Generating the translation. Return
-            return None
+            # Wait for output 
+            if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):
+                text = parent_pipe.recv()
+                # Close the parent connection
+                parent_pipe.close()
 
+            else:
+                # Error Generating the translation. Return
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                # Close the parent connection
+                parent_pipe.close()
+                return None
 
-        if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
-            # Error Generating the translation. Return
-            return None
+            if isinstance(text, str) and text ==  WORKER_TASK_ERROR:
+                # Error Generating the translation. Return
+                return None
 
-        # Return the translation
-        return text
+            # Return the translation
+            return text
+        
+        return None
     
 
 
@@ -1285,43 +1340,45 @@ class Worker:
     def __init__(self, model_name, base_domain_id, loaded_by=None):
         self.worker_model_info = WorkerModelInfo(model_name=model_name, base_domain_id=base_domain_id, loaded_by=loaded_by)
         self.process = None
-        self.manager_pipe, self.worker_pipe = Pipe() 
+        self.task_queue = Queue()
         self.abort_flag = Value('b', False)
 
 
     def create_worker_process(self, base_domain_id, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
-        """
-        Creates the process of the worker
-        """
+            """
+            Creates the process of the worker
+            """
 
-        # Define the process for the worker
-        # Check if it is a RKLLM or RKNN model
-        if is_rkllm_model(self.worker_model_info.model): 
-            # RKLLM
-            self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.worker_pipe, self.abort_flag, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
-        
-        else:
-            # RKNN
-            self.process = Process(target=run_rknn_worker, args=(self.worker_model_info.model, self.worker_pipe, model_dir, options))
+            # Create the Queue to return the result of the creation of the worker
+            result_queue = Queue()
+
+            # Define the process for the worker
+            # Check if it is a RKLLM or RKNN model
+            if is_rkllm_model(self.worker_model_info.model): 
+                # RKLLM
+                self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.task_queue, result_queue, self.abort_flag, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
             
-        # Start the worker
-        self.process.start() 
+            else:
+                # RKNN
+                self.process = Process(target=run_rknn_worker, args=(self.worker_model_info.model, self.task_queue, result_queue, model_dir, options))
+                
+            # Start the worker
+            self.process.start() 
 
-        # Wait to confirm initialization
-        if self.manager_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):  # Timeout in seconds
-            creation_status = self.manager_pipe.recv()
-        else:
-            # Error loading the RKLLM Model. Wait for the worker to exit
-            logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-            self.process.terminate()
-            return False
+            # Wait to confirm initialization
+            try:
+                creation_status = result_queue.get(timeout=int(rkllama.config.get('model', 'max_seconds_waiting_worker_response')))
+                result_queue.close()
+            except:
+                logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                result_queue.close()
+                self.process.terminate()
+                return False
+                
+            if creation_status == WORKER_TASK_ERROR:
+                result_queue.close()
+                self.process.terminate()
+                return False
             
-
-        if creation_status == WORKER_TASK_ERROR:
-            # Error loading the RKLLM Model. Wait for the worker to exit
-            self.process.terminate()
-            return False
-        
-        # Success loading the model
-        return True
-        
+            return True
+            

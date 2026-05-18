@@ -305,13 +305,14 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
-        # Wait for result pipe
-        manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+        # Get timeout
+        timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
+
 
         def generate():
             
@@ -339,17 +340,17 @@ class ChatEndpointHandler(EndpointHandler):
             
 
             while not thread_finished or not final_sent:
-                if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
-                    token = manager_pipe.recv()
+                if parent_pipe.poll(timeout):  # Timeout in seconds
+                    token = parent_pipe.recv()
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                    token=f"Aborted inference by Timeout ({timeout} seconds). Try again."
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -359,6 +360,9 @@ class ChatEndpointHandler(EndpointHandler):
                     thread_finished = True
                     # Get the stats from the inference
                     _, prompt_token_count, token_count, prompt_eval, eval = token
+
+                    # CLose the parent pipe
+                    parent_pipe.close()
             
                 if not thread_finished:
                     count += 1
@@ -471,27 +475,28 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
             
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
 
-        # Wait for result pipe
-        manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+        # Get timeout
+        timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
         while not thread_finished:
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
-                token = manager_pipe.recv()
+            if parent_pipe.poll(timeout):  # Timeout in seconds
+                token = parent_pipe.recv()
             else:
+
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                token=f"Aborted inference by Timeout ({timeout} seconds). Try again."
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -501,6 +506,9 @@ class ChatEndpointHandler(EndpointHandler):
                 thread_finished = True
                 # Get the stats from the inference
                 _, prompt_token_count, token_count, prompt_eval, eval = token
+
+                # Close the parent pipe
+                parent_pipe.close()
 
                 # Exit the loop    
                 continue
@@ -671,13 +679,13 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
-        # Wait for result pipe
-        manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+        # Get Timeout
+        timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
 
         def generate():
@@ -693,19 +701,19 @@ class GenerateEndpointHandler(EndpointHandler):
             eval = None
 
             thread_finished = False
- 
+  
             while not thread_finished or not final_sent:
-                if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
-                    token = manager_pipe.recv()
+                if parent_pipe.poll(timeout):  # Timeout in seconds
+                    token = parent_pipe.recv()
                 else:
                     # Abort the current inference
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                    token=f"Aborted inference by Timeout ({timeout} seconds). Try again." 
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -715,6 +723,9 @@ class GenerateEndpointHandler(EndpointHandler):
                     thread_finished = True
                     # Get the stats from the inference
                     _, prompt_token_count, token_count, prompt_eval, eval = token
+
+                    # Close the parent pipe
+                    parent_pipe.close()
                 
                 if not thread_finished:
                     count += 1
@@ -780,26 +791,26 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
         else:
             # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
         
-        # Wait for result pipe
-        manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+        # Get timeout 
+        timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
         while not thread_finished:
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
-                token = manager_pipe.recv()
+            if parent_pipe.poll(timeout):  # Timeout in seconds
+                token = parent_pipe.recv()
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                token=f"Aborted inference by Timeout ({timeout} seconds). Try again." 
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -809,6 +820,9 @@ class GenerateEndpointHandler(EndpointHandler):
                 thread_finished = True
                 # Get the stats from the inference
                 _, prompt_token_count, token_count, prompt_eval, eval = token
+
+                # Close the parent pipe
+                parent_pipe.close()
                 
                 # Exit the loop
                 continue
@@ -971,25 +985,28 @@ class EmbedEndpointHandler(EndpointHandler):
         for input in all_inputs:
             
             # Send the task of embedding to the model
-            variables.worker_manager_rkllm.embedding(model_name, input)
+            parent_pipe = variables.worker_manager_rkllm.embedding(model_name, input)
 
-            # Get the result from the input
-            manager_pipe = variables.worker_manager_rkllm.get_result(model_name)
+            # Get timeout
+            timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
             # Wait for the last_embedding hidden layer return
-            if manager_pipe.poll(int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))):  # Timeout in seconds
-                last_embeddings = manager_pipe.recv()
+            if parent_pipe.poll(timeout):  # Timeout in seconds
+                last_embeddings = parent_pipe.recv()
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
                 # Send empty embedding
                 last_embeddings = embeddings = {
                         'embedding': [],
                         'embd_size': 0,
                         'num_tokens': 0
                     }
+
+            # Close the parent pipe
+            parent_pipe.close()
 
             # Add the embedding to the list of result
             all_embeddings.append(last_embeddings["embedding"].tolist())

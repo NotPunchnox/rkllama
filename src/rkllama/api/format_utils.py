@@ -373,7 +373,7 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
     
     model = openai_payload.get("model", "llama3")
     stream = openai_payload.get("stream", False)
-    images = images.get("images", [])
+    images = openai_payload.get("images", [])
 
     # Base Ollama payload
     ollama_payload = {
