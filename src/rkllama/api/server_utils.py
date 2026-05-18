@@ -38,6 +38,50 @@ class RequestWrapper:
 
 class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
+
+    @staticmethod
+    def normalize_message_content(content):
+        """Convert OpenAI-compatible message content variants to plain text."""
+        if content is None:
+            return ""
+
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text" and "text" in item:
+                        parts.append(str(item["text"]))
+                    elif "content" in item:
+                        parts.append(EndpointHandler.normalize_message_content(item["content"]))
+                    elif item.get("type") != "image_url":
+                        parts.append(json.dumps(item, ensure_ascii=False))
+                else:
+                    parts.append(str(item))
+            return "\n".join(part for part in parts if part)
+
+        if isinstance(content, dict):
+            if "text" in content:
+                return str(content["text"])
+            return json.dumps(content, ensure_ascii=False)
+
+        return str(content)
+
+    @staticmethod
+    def normalize_messages_for_chat_template(messages):
+        """Make OpenAI/Ollama message objects safe for tokenizer chat templates."""
+        normalized = []
+        for message in messages:
+            if not isinstance(message, dict):
+                normalized.append({"role": "user", "content": str(message)})
+                continue
+
+            normalized_message = dict(message)
+            normalized_message["content"] = EndpointHandler.normalize_message_content(
+                normalized_message.get("content", "")
+            )
+            normalized.append(normalized_message)
+
+        return normalized
     
     
     @staticmethod
@@ -48,8 +92,10 @@ class EndpointHandler:
         tokenizer = EndpointHandler.get_tokenizer(model_name)
         supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
         
+        messages = EndpointHandler.normalize_messages_for_chat_template(messages)
+
         if system and supports_system_role:
-            prompt_messages = [{"role": "system", "content": system}] + messages
+            prompt_messages = [{"role": "system", "content": EndpointHandler.normalize_message_content(system)}] + messages
         else:
             prompt_messages = messages
         
@@ -336,6 +382,7 @@ class ChatEndpointHandler(EndpointHandler):
             response_tokens = [] # All tokens from response
             thinking_response_tokens = [] # Thinking tokens from response
             final_response_tokens = [] # Final answer tokens from response
+            json_tool_calls = []
             
 
             while not thread_finished or not final_sent:
@@ -346,10 +393,10 @@ class ChatEndpointHandler(EndpointHandler):
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -412,6 +459,8 @@ class ChatEndpointHandler(EndpointHandler):
                     # Final check for tool calls in the complete response
                     if tools:
                         json_tool_calls = get_tool_calls("".join(final_response_tokens))
+                        if json_tool_calls:
+                            tool_calls = True
                         
                         # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
                         if len(final_response_tokens) < max_token_to_wait_for_tool_call:
@@ -419,13 +468,13 @@ class ChatEndpointHandler(EndpointHandler):
                                 tool_calls = True
 
                     # If tool calls detected, send them as final response
-                    if tools and tool_calls:
+                    if tools and tool_calls and json_tool_calls:
                         chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
                         yield f"{json.dumps(chunk_tool_call)}\n"
                     elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
                         for temp_token in response_tokens:
                               time.sleep(0.1) # Simulate delay to stream previos tokens
-                              chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
+                              chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
                               yield f"{json.dumps(chunk)}\n"
 
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
@@ -447,7 +496,7 @@ class ChatEndpointHandler(EndpointHandler):
                                 "parsed": parsed_data,
                                 "cleaned_json": cleaned_json
                             }
-                    final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=tool_calls)
+                    final_chunk = cls.format_streaming_chunk(model_name=model_name, token="", is_final=True, metrics=metrics, format_data=format_data,tool_calls=(tool_calls and bool(json_tool_calls)))
                     yield f"{json.dumps(final_chunk)}\n"
                     
         return Response(generate(), content_type='application/x-ndjson')
@@ -488,10 +537,10 @@ class ChatEndpointHandler(EndpointHandler):
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again."
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -702,10 +751,10 @@ class GenerateEndpointHandler(EndpointHandler):
                     variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                     
                     # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                    logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                     
                     # Send message to the user
-                    token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                    token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                     # Set finished state of the thread inference
                     thread_finished = True
@@ -796,10 +845,10 @@ class GenerateEndpointHandler(EndpointHandler):
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 
                 # Send message to the user
-                token=f"Aborted inference by Timeout ({int(rkllama.config.get("model","max_seconds_waiting_worker_response"))} seconds). Try again." 
+                token=f"Aborted inference by Timeout ({int(rkllama.config.get('model','max_seconds_waiting_worker_response'))} seconds). Try again."
 
                 # Set finished state of the thread inference
                 thread_finished = True
@@ -983,7 +1032,7 @@ class EmbedEndpointHandler(EndpointHandler):
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
                 # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))} seconds.")
+                logger.error(f"No response received by the Worker of the model {model_name} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
                 # Send empty embedding
                 last_embeddings = embeddings = {
                         'embedding': [],
