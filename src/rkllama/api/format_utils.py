@@ -911,6 +911,76 @@ def get_tool_calls_generic(response):
     return tool_calls_renamed
 
 
+def close_truncated_json_object(text):
+    """Best-effort completion for a JSON object cut off at end-of-generation."""
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    candidate = text[start:].strip()
+    candidate = re.sub(r"</tool_call>.*$", "", candidate, flags=re.DOTALL).strip()
+    if not candidate:
+        return None
+
+    stack = []
+    in_string = False
+    escaped = False
+
+    for char in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            stack.append("}")
+        elif char == "[":
+            stack.append("]")
+        elif char in "}]":
+            if stack and stack[-1] == char:
+                stack.pop()
+
+    if in_string:
+        candidate += '"'
+
+    candidate += "".join(reversed(stack))
+    return candidate
+
+
+def get_tool_calls_repaired(response):
+    """Recover Qwen-style tool calls when the model stops after partial JSON."""
+    logger.debug("Searching tools with repaired method: get_tool_calls_repaired")
+
+    search_regions = re.findall(r"<tool_call>(.*?)(?:</tool_call>|$)", response, re.DOTALL)
+    if not search_regions:
+        search_regions = [response]
+
+    tool_calls = []
+    for region in search_regions:
+        fixed = close_truncated_json_object(region)
+        if not fixed:
+            continue
+        try:
+            tool = json.loads(fixed)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(tool, dict):
+            continue
+        if not ({"name", "arguments"}.issubset(tool.keys()) or {"name", "parameters"}.issubset(tool.keys())):
+            continue
+        if "parameters" in tool:
+            tool["arguments"] = tool.pop("parameters")
+        tool_calls.append({"function": tool})
+
+    return tool_calls
+
+
 def get_tool_calls_standard(response):
     """ Get all the tool calls indicated by the LLM in the response. 
         Only work if the chat template of the LLM uses <tool_call></tool_call> tags (Like Qwen models)
@@ -936,6 +1006,11 @@ def get_tool_calls(response):
     if not tool_calls:
         # No standard format tool call found. Search for more generic way
         tool_calls = get_tool_calls_generic(response)
+
+    if not tool_calls:
+        # Some small Qwen RKLLM builds stop after emitting a partial tool-call
+        # JSON object. Recover only when the required tool-call keys are present.
+        tool_calls = get_tool_calls_repaired(response)
 
     return tool_calls
 
