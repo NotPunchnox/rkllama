@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.68](#New-Version)
+### [Version: 0.0.69](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -78,7 +78,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
 - **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN and MMS-TTS with RKNN.
 - **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC or whisper running the model with RKNN.
-
+- **EXPERIMENTAL** - Support for .GGUF models in NPU throught a great llama.cpp fork of user @invisiofficial (https://github.com/invisiofficial/rk-llama.cpp)
 
 ## Documentation
 
@@ -140,13 +140,15 @@ docker compose up --detach --remove-orphans
 *Virtualization with `conda` is started automatically, as well as the NPU frequency setting.*
 1. Start the server
 ```bash
-rkllama_server --models <models_dir>
+rkllama_server --models <models_dir> --llamacpp <bin_folder_of_build_llama.cpp_fork>
 ```
 
 To enable debug mode:
 ```bash
-rkllama_server --debug --models <models_dir>
+rkllama_server --debug --models <models_dir> --llamacpp <bin_folder_of_build_llama.cpp_fork>
 ```
+
+Note: --llamacpp is a optional flag if you want to enable inference .GGUF models in NPU
 
 **Output:**
 ![Image](./documentation/ressources/server.png)
@@ -506,6 +508,127 @@ Example directory structure for multimodal:
 
 Done! You are ready to test the OpenAI endpoint /v1/audio/transcriptions to generate transcriptions. You can add it to OpenWebUI in the Audio section for STT.
 
+
+
+### **EXPERIMENTAL - GGUF models on NPU**
+
+
+This is still a **EXPERIMENTAL FEATURE**. Many bugs can appear.
+
+- **For local server**:
+
+1. You must build the llama.cpp fork from : https://github.com/invisiofficial/rk-llama.cpp. Pay attention to all the steps mention by the author.
+2. Pass the flag --llamacpp to the server start pointing to the bin folder of build llamacpp where the ```llama-server``` executable exists.
+
+- **For docker deployment server**:
+
+1. The new Dockerfile include the build and configuration of llamacpp fork. Nothing must be done.
+
+
+
+The structure of a GGUF model is similar to rkllm models. You need a folder with the name you want to call the model, and .gguf model and an optional config.ini file. FOr example
+
+   ```
+   ~/RKLLAMA/models/
+       └── qwen3.5-4b:q8_0
+           └── model.gguf (can have any name but must end in .gguf)
+           └── config.ini (optional)
+          
+   ```
+
+   The contents of the config.ini are llama.cpp environment vars for RKNPU inference explained by the author of the fork: https://github.com/invisiofficial/rk-llama.cpp/tree/rknpu2/ggml/src/ggml-rknpu2 (RKNPU_DOMAINS variable is skipped because rkllama handles it) and llama.cpp argument for the llama-server process: https://github.com/invisiofficial/rk-llama.cpp/blob/rknpu2/tools/server/README.md
+
+   Some examples of config.ini files:
+
+
+
+   **For gpt-oss-20b:q8_0**
+
+   ```
+   [ENV]
+   RKNPU_HYBRID=W8A8_HADAMARD
+
+   [ARGS]
+   --mmap =
+   --no-repack=
+   --no-warmup=
+   --cache-type-k = q8_0
+   --cache-type-v = q8_0
+   --cache-ram = 2048
+   --batch-size = 2048
+   --ubatch-size = 2048
+   --top-p       = 1.0
+   --top-k       = 0
+   --min-p       = 0.01
+   --temp        = 1.0
+   --chat-template-kwargs = {"reasoning_effort": "low"}
+   --log-file = /opt/rkllama/models/gpt-oss-20b:q8_0/llamacpp.log
+   ```
+
+
+   **gemma-4-26b-a4b-it:ud-iq4_xs**
+
+   ```
+   [ENV]
+   RKNPU_HYBRID=W4A4_HADAMARD
+
+   [ARGS]
+   --mmap =
+   --no-repack=
+   --no-warmup=
+   --cache-type-k = q8_0
+   --cache-type-v = q8_0
+   --cache-ram = 2048
+   --batch-size = 2048
+   --ubatch-size = 2048
+   --ctx-size = 65536
+   --predict = 2048
+   --top-p       = 0.95
+   --top-k       = 64
+   --temp        = 1.0
+   --log-file = /home/orangepi/github/danielferr85/rkllama/gemma-4-26b-a4b-it:ud-iq4_xs/llamacpp.log
+   ```
+
+
+   **qwen3.5-4b:q8_0**
+
+   ```
+   [ENV]
+   RKNPU_HYBRID=W8A8_STANDARD
+
+   [ARGS]
+   --mmap =
+   --no-repack=
+   --no-warmup=
+   --cache-type-k = q8_0
+   --cache-type-v = q8_0
+   --cache-ram = 2048
+   --batch-size = 2048
+   --ubatch-size = 2048
+   --log-file = /home/orangepi/github/danielferr85/rkllama/qwen3.5-4b:q8_0/llamacpp.log
+   ```
+
+   For qwen3.5 follow the recomendations:
+   - Thinking mode for general tasks: 
+   temperature=1.0, top_p=0.95, top_k=20, min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0
+   - Thinking mode for precise coding tasks (e.g. WebDev):
+   temperature=0.6, top_p=0.95, top_k=20, min_p=0.0, presence_penalty=0.0, repetition_penalty=1.0
+   - Instruct (or non-thinking) mode for general tasks: 
+   temperature=0.7, top_p=0.8, top_k=20, min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0
+   - Instruct (or non-thinking) mode for reasoning tasks: 
+   temperature=1.0, top_p=0.95, top_k=20, min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0
+
+
+NOTE: You can try the options that you prefer to find better performance. Open an issue in that fork to get help with that. RKllama only routes to a llama-server instance for .gguf models.
+
+Tested models (all models downloaded from [unsloth](https://huggingface.co/unsloth)): 
+- Gemma 4 E2B/E4B and MoE
+- Qwen3.5 0.8B ...Qwen3.9 9B and MoE
+- Qwen3.6 MoE
+- IBM Granite 4.0 tiny MoE
+- LFM2 MoE
+
+For any question about deployment you can ask in issue: https://github.com/NotPunchnox/rkllama/issues/154
 
 ## Configuration
 

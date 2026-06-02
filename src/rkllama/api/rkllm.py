@@ -1,6 +1,6 @@
 import ctypes
 from .classes import *
-import logging, multiprocessing
+import logging
 import numpy as np
 
 logger = logging.getLogger("rkllama.rkllm")

@@ -278,6 +278,9 @@ class RKLLAMAConfig:
             if hasattr(args, "models") and args.models:
                 self.set("paths", "models", args.models)    
             
+            if hasattr(args, "llamacpp") and args.llamacpp:
+                self.set("paths", "llamacpp", args.llamacpp)   
+
             if hasattr(args, "config") and args.config:
                 # Load custom config file with highest priority
                 custom_config = Path(args.config)

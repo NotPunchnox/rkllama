@@ -270,7 +270,7 @@ def create_rkllama_schema() -> ConfigSchema:
     model.string("default_mirostat_tau", 3, "Default Mirostat Tau for the model to use")
     model.string("default_mirostat_eta", 0.1, "Default Mirostat Eta for the model to use")
     model.string("max_minutes_loaded_in_memory", 30, "Max minutes allowed to be load in memory a model without any activity/inference")
-    model.string("max_number_models_loaded_in_memory", 10, "Max number of models allowed to be loaded simultaneously in memory")
+    model.string("max_number_models_loaded_in_memory", 9, "Max number of models allowed to be loaded simultaneously in memory")
     model.string("max_seconds_waiting_worker_response", 300, "Max number of seconds waiting for a worker response in an inference")
     model.string("max_days_prompt_cache", 1, "Max number of days to wait before delete unused prompt cache files")
 

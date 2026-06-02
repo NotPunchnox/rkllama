@@ -25,6 +25,47 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 WORKDIR /opt/rkllama
 
+
+################################################## llama.cpp #######################################################
+
+ARG TARGETARCH
+
+RUN apt-get update && \
+    apt-get install -y gcc-14 g++-14 build-essential git cmake libssl-dev wget lsb-release software-properties-common gnupg apt-utils
+
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh 21
+
+RUN apt-get install -y libomp5 clang-21 libclang-cpp21-dev libomp-21-dev
+
+RUN git clone https://github.com/invisiofficial/rk-llama.cpp.git
+
+WORKDIR /opt/rkllama/rk-llama.cpp
+
+RUN ARCH="${TARGETARCH:-}" && \
+    if [ -z "$ARCH" ]; then ARCH="$(uname -m)"; fi && \
+    if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
+        rm -rf build && \
+        cmake -S . -B build \
+            #-DCMAKE_BUILD_TYPE=Release \
+            #-DGGML_NATIVE=OFF \
+            #-DLLAMA_BUILD_TESTS=OFF \
+            #-DGGML_BACKEND_DL=ON \
+            #-DGGML_CPU_ALL_VARIANTS=ON \
+            -DLLAMA_RKNPU2=ON \
+	        -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 && \
+        cmake --build build -j "$(nproc)"; \
+    else \
+        echo "rknpu2 image: unsupported architecture (need arm64/aarch64), got TARGETARCH=${TARGETARCH} uname=${ARCH}"; \
+        exit 1; \
+    fi
+
+################################################## llama.cpp #######################################################
+
+WORKDIR /opt/rkllama
+
 # Copy RKLLM runtime library explicitly
 COPY ./src/rkllama/lib/librkllmrt.so /usr/lib/
 RUN chmod 755 /usr/lib/librkllmrt.so && ldconfig
@@ -45,4 +86,4 @@ EXPOSE 8080
 
 # If you want to change the port see the
 # documentation/configuration.md for the INI file settings.
-CMD ["rkllama_server", "--models", "/opt/rkllama/models"]
+CMD ["rkllama_server", "--models", "/opt/rkllama/models", "--llamacpp" , "/opt/rkllama/rk-llama.cpp/build/bin"]

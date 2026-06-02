@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple, Union, List
 import re
+import copy
 import uuid
 import time
 from flask import jsonify
@@ -810,6 +811,254 @@ def handle_ollama_embedding_response(response):
     return jsonify(ollama_embedding_to_openai_v1_embeddingns(ollama_response))
 
 
+
+def openai_to_ollama_response(
+    openai_response: Dict[str, Any],
+    model: str = None,
+) -> Dict[str, Any]:
+    """
+    Convert OpenAI Chat Completions response
+    into Ollama /api/chat response format.
+
+    Supports:
+    - normal responses
+    - tool calls
+    - usage stats
+    - multimodal text extraction
+    """
+
+    created = openai_response.get("created", int(time.time()))
+
+    # ============================================================
+    # BASIC FIELDS
+    # ============================================================
+
+    ollama_response = {
+        "model": model or openai_response.get("model", ""),
+        "created_at": time.strftime(
+            "%Y-%m-%dT%H:%M:%S.000000Z",
+            time.gmtime(created)
+        ),
+        "done": True,
+    }
+
+    # ============================================================
+    # CHOICES
+    # ============================================================
+
+    choices = openai_response.get("choices", [])
+
+    if not choices:
+        ollama_response["message"] = {
+            "role": "assistant",
+            "content": ""
+        }
+        return ollama_response
+
+    choice = choices[0]
+
+    message = choice.get("message", {})
+
+    role = message.get("role", "assistant")
+
+    content = message.get("content")
+
+    # ============================================================
+    # MULTIMODAL CONTENT EXTRACTION
+    # ============================================================
+
+    #
+    # OpenAI may return:
+    #
+    # "content": [
+    #   {"type":"text","text":"hello"}
+    # ]
+    #
+
+    if isinstance(content, list):
+
+        extracted_text = []
+
+        for item in content:
+
+            if item.get("type") == "text":
+                extracted_text.append(item.get("text", ""))
+
+        content = "\n".join(extracted_text)
+
+    if content is None:
+        content = ""
+
+    ollama_message = {
+        "role": role,
+        "content": content
+    }
+
+    # ============================================================
+    # TOOL CALLS
+    # ============================================================
+
+    #
+    # OpenAI:
+    #
+    # tool_calls: [
+    #   {
+    #       "id": "...",
+    #       "type": "function",
+    #       "function": {
+    #           "name": "...",
+    #           "arguments": "..."
+    #       }
+    #   }
+    # ]
+    #
+    # Ollama:
+    #
+    # tool_calls: [
+    #   {
+    #       "function": {
+    #           "name": "...",
+    #           "arguments": {...}
+    #       }
+    #   }
+    # ]
+    #
+
+    if message.get("tool_calls"):
+
+        tool_calls = []
+
+        for tc in message["tool_calls"]:
+
+            function_data = tc.get("function", {})
+
+            arguments = function_data.get("arguments", {})
+
+            # OpenAI usually returns JSON string
+            if isinstance(arguments, str):
+
+                try:
+                    import json
+                    arguments = json.loads(arguments)
+                except Exception:
+                    pass
+
+            tool_calls.append({
+                "function": {
+                    "name": function_data.get("name"),
+                    "arguments": arguments
+                }
+            })
+
+        ollama_message["tool_calls"] = tool_calls
+
+    ollama_response["message"] = ollama_message
+
+    # ============================================================
+    # DONE REASON
+    # ============================================================
+
+    finish_reason = choice.get("finish_reason")
+
+    if finish_reason:
+        ollama_response["done_reason"] = finish_reason
+
+    # ============================================================
+    # USAGE TOKENS
+    # ============================================================
+
+    usage = openai_response.get("usage", {})
+
+    if usage:
+
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+
+        ollama_response["prompt_eval_count"] = prompt_tokens
+        ollama_response["eval_count"] = completion_tokens
+
+    return ollama_response
+
+
+
+def openai_stream_chunk_to_ollama(chunk: dict) -> dict:
+    """
+    Convert a single OpenAI streaming chunk
+    into Ollama streaming format.
+    """
+
+    created = chunk.get("created", int(time.time()))
+
+    choice = chunk.get("choices", [{}])[0]
+
+    delta = choice.get("delta", {})
+
+    finish_reason = choice.get("finish_reason")
+
+    # ============================================================
+    # CONTENT
+    # ============================================================
+
+    content = delta.get("content", "")
+
+    # ============================================================
+    # ROLE
+    # ============================================================
+
+    role = delta.get("role", "assistant")
+
+    ollama_chunk = {
+        "model": chunk.get("model", ""),
+        "created_at": time.strftime(
+            "%Y-%m-%dT%H:%M:%S.000000Z",
+            time.gmtime(created)
+        ),
+        "message": {
+            "role": role,
+            "content": content
+        },
+        "done": finish_reason is not None
+    }
+
+    # ============================================================
+    # TOOL CALLS
+    # ============================================================
+
+    if delta.get("tool_calls"):
+
+        tool_calls = []
+
+        for tc in delta["tool_calls"]:
+
+            function_data = tc.get("function", {})
+
+            arguments = function_data.get("arguments", "")
+
+            # partial streamed arguments may not be valid JSON yet
+            try:
+                parsed_arguments = json.loads(arguments)
+            except Exception:
+                parsed_arguments = arguments
+
+            tool_calls.append({
+                "function": {
+                    "name": function_data.get("name"),
+                    "arguments": parsed_arguments
+                }
+            })
+
+        ollama_chunk["message"]["tool_calls"] = tool_calls
+
+    # ============================================================
+    # FINISH REASON
+    # ============================================================
+
+    if finish_reason:
+        ollama_chunk["done_reason"] = finish_reason
+
+    return ollama_chunk
+
+
 def strtobool (val):
     """Convert a string representation of truth to true (1) or false (0).
     True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
@@ -986,3 +1235,418 @@ def get_url_image_from_pil(image: Image.Image, model_name, output_dir, output_fo
 
     # Encode to base64
     return f"http://localhost:{port}/files/{model_name}/images/{file_name}"
+
+
+
+class OpenAIToOllamaStreamConverter:
+
+    def __init__(self):
+        self.model = None
+        self.created = None
+
+        # Tool call accumulation
+        self.tool_calls = {}
+
+        # Avoid duplicate done event
+        self.sent_done = False
+
+    def _timestamp(self):
+        return time.strftime(
+            "%Y-%m-%dT%H:%M:%S.000000Z",
+            time.gmtime(self.created or int(time.time()))
+        )
+
+    def _base_chunk(self):
+        return {
+            "model": self.model or "",
+            "created_at": self._timestamp(),
+        }
+
+    def process_line(self, line: str):
+        """
+        Input:
+            data: {...}
+
+        Output:
+            list[dict]
+
+        Usage:
+
+            for line in response.iter_lines(decode_unicode=True):
+                for chunk in converter.process_line(line):
+                    yield json.dumps(chunk) + "\\n"
+        """
+
+        if not line:
+            return []
+
+        line = line.strip()
+
+        if not line.startswith("data:"):
+            return []
+
+        payload = line[5:].strip()
+
+        #
+        # End of SSE stream
+        #
+
+        if payload == "[DONE]":
+
+            if self.sent_done:
+                return []
+
+            self.sent_done = True
+
+            return [{
+                **self._base_chunk(),
+                "message": {
+                    "role": "assistant",
+                    "content": ""
+                },
+                "done": True
+            }]
+
+        try:
+            chunk = json.loads(payload)
+        except Exception:
+            return []
+
+        self.model = chunk.get("model", self.model)
+        self.created = chunk.get("created", self.created)
+
+        choices = chunk.get("choices")
+
+        if not choices:
+            return []
+
+        choice = choices[0]
+
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason")
+
+        results = []
+
+        #
+        # ------------------------------------------------------
+        # CONTENT STREAMING
+        # ------------------------------------------------------
+        #
+
+        content = delta.get("content")
+
+        if content not in (None, ""):
+
+            results.append({
+                **self._base_chunk(),
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                },
+                "done": False
+            })
+
+        #
+        # ------------------------------------------------------
+        # REASONING STREAMING
+        # ------------------------------------------------------
+        #
+
+        reasoning = (
+            delta.get("reasoning_content")
+            or delta.get("reasoning")
+            or delta.get("thinking")
+        )
+
+        if reasoning not in (None, ""):
+
+            results.append({
+                **self._base_chunk(),
+                "message": {
+                    "role": "assistant",
+                    "thinking": reasoning
+                },
+                "done": False
+            })
+
+        #
+        # ------------------------------------------------------
+        # TOOL CALL ACCUMULATION
+        # ------------------------------------------------------
+        #
+
+        if "tool_calls" in delta:
+
+            for tc in delta["tool_calls"]:
+
+                idx = tc.get("index", 0)
+
+                if idx not in self.tool_calls:
+                    self.tool_calls[idx] = {
+                        "name": "",
+                        "arguments": ""
+                    }
+
+                function_data = tc.get("function", {})
+
+                if "name" in function_data:
+                    self.tool_calls[idx]["name"] += (
+                        function_data["name"] or ""
+                    )
+
+                if "arguments" in function_data:
+                    self.tool_calls[idx]["arguments"] += (
+                        function_data["arguments"] or ""
+                    )
+
+        #
+        # ------------------------------------------------------
+        # TOOL CALL FINISHED
+        # ------------------------------------------------------
+        #
+
+        if finish_reason == "tool_calls":
+
+            ollama_tool_calls = []
+
+            for idx in sorted(self.tool_calls.keys()):
+
+                tool = self.tool_calls[idx]
+
+                arguments = tool["arguments"]
+
+                try:
+                    arguments = json.loads(arguments)
+                except Exception:
+                    pass
+
+                ollama_tool_calls.append({
+                    "function": {
+                        "name": tool["name"],
+                        "arguments": arguments
+                    }
+                })
+
+            results.append({
+                **self._base_chunk(),
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": ollama_tool_calls
+                },
+                "done": False
+            })
+
+            self.tool_calls.clear()
+
+            return results
+
+        #
+        # ------------------------------------------------------
+        # NORMAL COMPLETION
+        # ------------------------------------------------------
+        #
+
+        if (
+            finish_reason is not None
+            and finish_reason != "tool_calls"
+        ):
+
+            results.append({
+                **self._base_chunk(),
+                "message": {
+                    "role": "assistant",
+                    "content": ""
+                },
+                "done": True,
+                "done_reason": finish_reason
+            })
+
+            self.sent_done = True
+
+        return results
+
+def ollama_to_openai_chat(req):
+    req = copy.deepcopy(req)
+
+    openai_req = {
+        "model": req["model"]
+    }
+
+    if "stream" in req:
+        openai_req["stream"] = req["stream"]
+
+    # --------------------------------------------------
+    # TOOLS
+    # --------------------------------------------------
+
+    if req.get("tools"):
+        openai_req["tools"] = req["tools"]
+
+    # --------------------------------------------------
+    # OPTIONS
+    # --------------------------------------------------
+
+    options = req.get("options", {})
+
+    mappings = {
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "seed": "seed",
+        "frequency_penalty": "frequency_penalty",
+        "presence_penalty": "presence_penalty",
+        "stop": "stop",
+    }
+
+    for ollama_key, openai_key in mappings.items():
+        if ollama_key in options:
+            openai_req[openai_key] = options[ollama_key]
+
+    if "num_predict" in options:
+        openai_req["max_tokens"] = options["num_predict"]
+
+    if req.get("format") == "json":
+        openai_req["response_format"] = {
+            "type": "json_object"
+        }
+
+    # --------------------------------------------------
+    # MESSAGES
+    # --------------------------------------------------
+
+    messages = []
+
+    if req.get("system"):
+        messages.append({
+            "role": "system",
+            "content": req["system"]
+        })
+
+    pending_tool_call_ids = []
+
+    for msg in req.get("messages", []):
+
+        role = msg.get("role", "user")
+
+        # ==================================================
+        # TOOL MESSAGE
+        # ==================================================
+
+        if role == "tool":
+
+            #
+            # Only valid if we previously saw
+            # structured tool_calls.
+            #
+
+            if pending_tool_call_ids:
+
+                tool_call_id = pending_tool_call_ids.pop(0)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": msg.get("content", "")
+                })
+
+            else:
+
+                #
+                # Cannot reconstruct OpenAI tool_call_id.
+                # Degrade to plain text.
+                #
+
+                messages.append({
+                    "role": "user",
+                    "content":
+                        "Tool result:\n\n" +
+                        msg.get("content", "")
+                })
+
+            continue
+
+        converted = {
+            "role": role
+        }
+
+        # ==================================================
+        # STRUCTURED TOOL CALLS
+        # ==================================================
+
+        if msg.get("tool_calls"):
+
+            openai_tool_calls = []
+
+            for idx, tc in enumerate(msg["tool_calls"]):
+
+                fn = tc.get("function", {})
+
+                tool_call_id = f"call_{idx}"
+
+                pending_tool_call_ids.append(tool_call_id)
+
+                openai_tool_calls.append({
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": fn.get("name"),
+                        "arguments": json.dumps(
+                            fn.get("arguments", {})
+                        )
+                    }
+                })
+
+            converted["tool_calls"] = openai_tool_calls
+
+            converted["content"] = msg.get("content")
+
+            messages.append(converted)
+            continue
+
+        # ==================================================
+        # MULTIMODAL
+        # ==================================================
+
+        if msg.get("images"):
+
+            content = []
+
+            text = msg.get("content")
+
+            if text:
+                content.append({
+                    "type": "text",
+                    "text": text
+                })
+
+            for image in msg["images"]:
+
+                if image.startswith("data:"):
+                    url = image
+                else:
+                    url = (
+                        "data:image/jpeg;base64,"
+                        + image
+                    )
+
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": url
+                    }
+                })
+
+            converted["content"] = content
+
+        else:
+
+            converted["content"] = msg.get(
+                "content",
+                ""
+            )
+
+        messages.append(converted)
+
+    openai_req["messages"] = messages
+
+    return openai_req

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 from flask import Flask, request, jsonify, Response, stream_with_context, send_file
 from flask_cors import CORS
+from pathlib import Path
 import random
 
 # Local file
@@ -13,11 +14,11 @@ from rkllama.api.rkllm import *
 from rkllama.api.process import Request
 import rkllama.api.variables as variables
 from rkllama.api.debug_utils import check_response_format
-from rkllama.api.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request
+from rkllama.api.format_utils import strtobool, openai_to_ollama_chat_request, openai_to_ollama_generate_request, ollama_to_openai_chat, openai_to_ollama_response, OpenAIToOllamaStreamConverter
 from rkllama.api.model_utils import (
     extract_model_details, 
     get_huggingface_model_info,
-    get_property_modelfile, get_model_full_options, find_rkllm_model_name, is_rkllm_model
+    get_property_modelfile, get_model_full_options, find_rkllm_model_name, is_rkllm_model, is_gguf_model, get_gguf_model_path
 )
 from rkllama.api.worker import WorkerManager
 
@@ -125,7 +126,7 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
         return None, f"Model directory '{model_name}' not found."
     
     # Check if model is RKLLM to download tokenizer (if not locally exists already)
-    rkllm_model_path = None
+    model_path = None
     if is_rkllm_model(model_name):
         if not os.path.exists(os.path.join(model_dir, "Modelfile")) and (huggingface_path is None and From is None):
             return None, f"Modelfile not found in '{model_name}' directory."
@@ -149,14 +150,18 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
         variables.model_id = huggingface_path
 
         # Construct the rkllm model path
-        rkllm_model_path = os.path.join(model_dir, from_value)
+        model_path = os.path.join(model_dir, from_value)
+
+    elif is_gguf_model(model_name):
+        # Construct the GGUF  model path
+        model_path = get_gguf_model_path(model_name)
 
     # Get model parameters if not provided
     if not request_options:
         request_options = get_model_full_options(model_name, rkllama.config.get_path("models"), request_options)
 
     # Model loaded into memory
-    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, rkllm_model_path, model_dir, options=request_options, loaded_by=loaded_by)
+    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, model_path, model_dir, options=request_options, loaded_by=loaded_by)
 
     if not model_loaded:
         return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
@@ -189,7 +194,7 @@ def list_models():
     if not os.path.exists(models_dir):
         return jsonify({"error": f"The models directory {models_dir} is not found."}), 500
 
-    direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm")]
+    direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm") or f.endswith(".gguf")]
 
     for model in direct_models:
         model_name = os.path.splitext(model)[0]
@@ -204,7 +209,7 @@ def list_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
+                if file.endswith(".rkllm") or file.endswith(".gguf"):
                     model_dirs.append(subdir)
                     break
 
@@ -370,7 +375,7 @@ def get_current_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
+                if file.endswith(".rkllm") or file.endswith(".gguf"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
                     
                     # Extract parameter size and quantization details if available
@@ -385,7 +390,7 @@ def get_current_models():
                         "size": size,
                         "digest": "",               # Ollama field (not used but included for compatibility)
                         "details": {
-                            "format": "rkllm",
+                            "format": "rkllm" if file.endswith(".rkllm") else "gguf",
                             "family": "llama",      # Default family
                             "parameter_size": model_details.get("parameter_size", "Unknown"),
                             "quantization_level": model_details.get("quantization_level", "Unknown")
@@ -455,7 +460,7 @@ def list_openai_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm") or file.endswith(".rknn") or file in ("unet","whisper.ini","mms_tts.json","omniasr.txt", "piper.json") : # Include Stable Diffusion models and other rknn models
+                if file.endswith(".rkllm") or file.endswith(".rknn") or file.endswith(".gguf") or file in ("unet","whisper.ini","mms_tts.json","omniasr.txt", "piper.json") : # Include Stable Diffusion models and other rknn models
                     models.append({
                         "id": subdir,      
                         "object": "model",      
@@ -485,7 +490,7 @@ def list_openai_model(model_name):
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm") or file == "unet": # Include Stable Diffusion models
+                if file.endswith(".rkllm") or file.endswith(".gguf") or file == "unet": # Include Stable Diffusion models
                     if subdir == model_name:
                        return jsonify({
                           "id": subdir,      
@@ -514,7 +519,7 @@ def list_ollama_models():
         subdir_path = os.path.join(models_dir, subdir)
         if os.path.isdir(subdir_path):
             for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
+                if file.endswith(".rkllm") or file.endswith(".gguf"):
                     size = os.path.getsize(os.path.join(subdir_path, file))
                     
                     # Extract parameter size and quantization details if available
@@ -529,7 +534,7 @@ def list_ollama_models():
                         "size": size,
                         "digest": "",               # Ollama field (not used but included for compatibility)
                         "details": {
-                            "format": "rkllm",
+                            "format": "rkllm" if file.endswith(".rkllm") else "gguf" ,
                             "family": "llama",      # Default family
                             "parameter_size": model_details.get("parameter_size", "Unknown"),
                             "quantization_level": model_details.get("quantization_level", "Unknown")
@@ -607,7 +612,7 @@ def show_model_info():
     # Find the .rkllm file
     model_file = None
     for file in os.listdir(model_dir):
-        if file.endswith(".rkllm"):
+        if file.endswith(".rkllm") or file.endswith(".gguf"):
             model_file = file
             break
     
@@ -1025,6 +1030,10 @@ def generate_ollama():
     try:
         data = request.get_json(force=True)
 
+        # Check if the model is GGFU to forward the request to the corresponding llama.cpp worker       
+        if is_gguf_model(data.get('model')):
+            return forward_request_to_llama_cpp_worker(is_openai_request,request)
+
         if is_openai_request:
            if DEBUG_MODE:
               logger.debug(f"API OpenAI completions request data: {data}")
@@ -1051,7 +1060,9 @@ def generate_ollama():
             return jsonify({"error": "Missing model name"}), 400
 
         if not prompt:
-            return jsonify({"error": "Missing prompt"}), 400
+            # Ollama Unload model Standard when no prompt in generate
+            variables.worker_manager_rkllm.stop_worker(model_name)
+            return jsonify({"unload": True, "model" : model_name}), 200
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
@@ -1096,6 +1107,10 @@ def chat_ollama():
     try:
         data = request.get_json(force=True)
         
+        # Check if the model is GGFU to forward the request to the corresponding llama.cpp worker     
+        if is_gguf_model(data.get('model')):
+            return forward_request_to_llama_cpp_worker(is_openai_request , request)
+            
         if is_openai_request:
            if DEBUG_MODE:
               logger.debug(f"API OpenAI chat request data: {data}")
@@ -1264,6 +1279,10 @@ def embeddings_ollama():
 
     try:
         data = request.get_json(force=True)
+
+        # Check if the model is GGFU to forward the request to the corresponding llama.cpp worker       
+        if is_gguf_model(data.get('model')):
+            return forward_request_to_llama_cpp_worker(is_openai_request,request)
         
         if is_openai_request:
            if DEBUG_MODE:
@@ -1318,7 +1337,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.44"
+        "version": "0.0.69"
     }), 200
 
 
@@ -1548,6 +1567,125 @@ def generate_translations_openai():
 
 
 
+# Route GGUF models for llama.cpp worker
+def forward_request_to_llama_cpp_worker(is_openai_request,request):
+    """
+    Route to llama.cpp worker for inference for GGUF models
+
+    Args:
+        request : Original request to forward
+    """
+
+    # Check if llama.cpp directory exists defined
+    if not rkllama.config.get_path("llamacpp"):
+        logger.exception("llama-server bin directory not exists defined")
+        return jsonify({"error": "Missing llama-server. Must set with the flag --llamacpp when start the rkllama_server"}), 404
+    
+    # Get the data of the request
+    data = request.get_json(force=True)
+    model_name = data.get('model')
+    stream = data.get("stream", False)
+
+    # CHeck if unload request
+    if request.path == "/api/generate":
+        prompt = data.get("prompt", None)
+        if model_name and not prompt:
+            # Ollama Unload model Standard when no prompt in generate
+            variables.worker_manager_rkllm.stop_worker(model_name)
+            return jsonify({"unload": True, "model" : model_name}), 200
+ 
+    # Llama.cpp require OpenAI format. CHeck if original request came from Ollama format to transformt it
+    if not is_openai_request:
+        if DEBUG_MODE:
+            logger.debug(f"API Ollama received with request data: {data}\nChanging to OpenAI format to llama.cpp")
+        data = ollama_to_openai_chat(data)
+
+    # Load model if needed
+    if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
+        _, error = load_model(model_name)
+        if error:
+            return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+            
+    # Set the real gguf model name for llama.cpp
+    gguf_full_path = Path(get_gguf_model_path(model_name))
+    data['model'] =  gguf_full_path.name
+
+    # Make the request for llama.cpp
+    proxy_route_url = f"http://localhost:{variables.worker_manager_rkllm.workers[model_name].worker_model_info.llama_cpp_port}{request.path}"
+    logger.debug(f"Routing request to llama.cpp whith this URL: {proxy_route_url} with this data:\n{data}")
+
+    try:
+        # Set the header for the llama-server call
+        headers = {
+            "Authorization": f"Bearer NOT_IN_USE",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+     
+        # CHeck if strem required
+        if stream:
+
+            def generate():
+            
+                # Make the call to the llama-server with stream enable
+                with requests.post(
+                    proxy_route_url,
+                    json=data,
+                    headers=headers,
+                    timeout=120,
+                    stream=stream
+                ) as response:
+
+                    # Check for error codes
+                    try:
+                        response.raise_for_status()
+                    except requests.HTTPError as e:
+                        raise RuntimeError(f"OpenAI API error: {e}") from e
+                    
+                    # Create a converter to Ollama (if needed)
+                    converter = OpenAIToOllamaStreamConverter()
+
+                    # Loop over the chunks returned by llama.cpp
+                    for line in response.iter_lines():
+                        # Decode the bytes line 
+                        line = line.decode("utf-8")
+                       
+                        if not is_openai_request: # Ollama
+                            for chunk in converter.process_line(line):
+                                yield json.dumps(chunk) + "\n"
+                        else: # OpenAI
+                            # Return the chunk to the client of the request
+                            yield f"{line}\n"
+                        
+            logger.debug("Making the streaming call to llama-server...")
+            return Response(stream_with_context(generate()), mimetype="text/event-stream") # OpenAI
+
+        else:
+            # Not stream response
+   
+            # Make the call to llama-server
+            with requests.post(
+                    proxy_route_url,
+                    json=data,
+                    headers=headers,
+                    timeout=120,
+                    stream=stream
+                ) as response:
+                
+                content = response.content
+                content = content.decode("utf-8")
+                content = json.loads(content)
+                if not is_openai_request: #ollama
+                    content = openai_to_ollama_response(content)
+                
+                # Return the complete response 
+                return content, response.status_code
+
+    except Exception as e:
+        logger.error(f"Error routing to llama-server: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # Default route
 @app.route('/', methods=['GET'])
 def default_route():
@@ -1563,7 +1701,8 @@ def main():
     parser.add_argument('--processor', type=str, help="Processor: rk3588/rk3576.")
     parser.add_argument('--port', type=str, help="Port for the server")
     parser.add_argument('--debug', action='store_true', help="Enable debug mode")
-    parser.add_argument('--models', type=str, help="Path whe models will be loaded from")
+    parser.add_argument('--models', type=str, help="Path where models will be loaded from")
+    parser.add_argument('--llamacpp', type=str, help="Path where llama-server executable exists")
     args = parser.parse_args()
 
     # Load arguments into the config
