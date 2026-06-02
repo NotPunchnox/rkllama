@@ -1,6 +1,7 @@
 import logging
 import psutil
 import rkllama.config
+from .model_utils import wait_for_service 
 import time
 from datetime import datetime, timedelta
 import os
@@ -10,7 +11,10 @@ import threading
 import random
 import ctypes
 import atexit
+import subprocess
+import configparser
 from multiprocessing import Process, Queue, Value, Pipe
+
 
 
 # --- Orphan-safe worker helpers -------------------------------------------
@@ -71,7 +75,7 @@ def _kill_orphaned_workers():
         logger.info("Reaped %d orphaned worker(s) from previous run", killed)
 
 from datetime import datetime, timedelta
-from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile, is_rkllm_model, get_rknn_onnx_files_from_model
+from.model_utils import get_model_size, get_encoder_model_path, get_property_modelfile, is_rkllm_model, is_gguf_model, get_rknn_onnx_files_from_model
 from .classes import *
 from .callback import *
     
@@ -366,6 +370,93 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
             child_conn.close()
 
 
+def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port, base_domain_id):
+    """
+    Run an instance of llama.cpp for the required model program using subprocess.run.
+    Args:
+        gguf_model_path (str): GGUF Model to load
+        port (int): port to assign to the llama.cpp model
+        base_domain_id (int): Domain to execute the llama.cpp server
+    
+    Returns the CompletedProcess object.
+    """
+
+    try:
+
+        # Run the command safely without using a shell
+        logger.debug(f"Executing llama.cpp on port {port} for model {gguf_model_path} in domain {base_domain_id}")
+        
+        # Read the config for the GGUF model for llama.cpp
+        config_file = os.path.join(gguf_model_dir, "config.ini")
+        configuration = configparser.ConfigParser()
+        configuration.read(config_file)
+
+        # Read custom environment vars
+        rk_llama_cpp_env = { "RKNPU_DOMAINS": f"{','.join(str(base_domain_id))}"}
+        if configuration is not None and "ENV" in configuration.keys():
+            for var in configuration["ENV"].keys():
+                var = var.upper()
+                var_value = configuration["ENV"][var]
+                if var not in ["RKNPU_DOMAINS"]:
+                    logger.debug(f"Setting custom environment var to llama.cpp {var} with value {var_value}")
+                    rk_llama_cpp_env[var] = var_value
+
+        # Set the CPU based on processor
+        processor = rkllama.config.get("platform", "processor", None)
+        cpu = "4-7" if processor.lower() in ["rk3576", "rk3588"] else "1-3"
+
+        # Construct the command to llama.cpp with default values
+        cmd = ["taskset" ,"--cpu-list", cpu , os.path.join(rkllama.config.get_path("llamacpp"), "llama-server"), 
+              "--model" , gguf_model_path, 
+              "--port" , str(port), 
+              "--threads" , "4"]
+        
+        # Read custom arguments to llama.cpp
+        if configuration is not None and "ARGS" in configuration.keys():
+            for arg in configuration["ARGS"].keys():
+                arg_value = configuration["ARGS"][arg]
+                # Check that argments are not the required calculated by rkllama
+                if arg not in ["-m", "--port", "--model", "--cpu-list"]:
+                    logger.debug(f"Adding custom argument to llama.cpp '{arg}' with value '{arg_value}'")
+                    cmd.append(arg)
+                    if arg_value is not None and arg_value:
+                        cmd.append(arg_value)
+
+        # Execute the subprocess
+        logger.debug(f"Subprocess to initiate: {' '.join(cmd)}")
+        server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=rk_llama_cpp_env,
+            text=True,
+        )
+
+        # Wait for warm up subprocess to prevent error: 
+        # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
+        time.sleep(3) # 3 seconds
+
+        # Waiting for service up
+        logger.debug(f"Waiting for model {gguf_model_path} Up and running...")
+        initialized, need_more_iommu_domains = wait_for_service(server_process, f"http://localhost:{port}/v1/models", max_wait = int(rkllama.config.get('model', 'max_seconds_waiting_worker_response')))
+        if not initialized:
+            # Check if the cause is that needs morr domains to load
+            if need_more_iommu_domains:
+                # Return -1 to indicate morr iommu domains needed
+                logger.info(f"Failed to run llama-server for model {model_name} for iommu domains {base_domain_id}. Memory insufficient.")
+                return -1
+            raise RuntimeError(f"Llama.cpp worker not initilized on time.")
+
+        logger.info(f"Llama.cpp started (PID: {server_process.pid})")
+        return server_process
+
+    except FileNotFoundError as e:
+        logger.error("Error: llama-server not found in PATH", e)
+        raise
+    except Exception as e:
+        logger.error("Unexpected error running llama.cpp:", e)
+        raise
+
 # RKNN Worker 
 def run_rknn_worker(name, task_queue, result_queue, model_dir, options=None):
     # Die with the parent to prevent NPU memory leaks on parent crash
@@ -592,7 +683,60 @@ class WorkerManager:
         thread.start()
         logger.info("Models Monitor running.")
 
-    
+
+    def is_process_alive(self, process):
+        " Check the type of the process to validate if it is alive"
+
+        # Check the type of the process
+        if isinstance(process, subprocess.Popen):
+            # CHeck the poll for the Popen object
+            poll = process.poll()
+            if poll is None:
+                # Still running
+                return True
+            else:
+                # Not alive
+                return False
+        
+        else:
+            return process.is_alive()
+
+
+    def kill_process(self, process):
+        " Kill a proces of the worker mannager"
+
+        # Normal kill process
+        process.kill()
+
+        # Wait for the kill for prevent zombie
+        self.join_process(process, timeout=5) 
+
+
+    def get_process_exitcode(self, process):
+        " Check the type of the process to validate his exit code"
+        
+        # Check the type of the process to search the exit code
+        exitcode = process.returncode if isinstance(process, subprocess.Popen) else process.exitcode
+
+        # Check the type of the process
+        if isinstance(process, subprocess.Popen):
+            exitcode = process.returncode
+        else:
+            exitcode = process.exitcode
+
+        # Return the exit code
+        return exitcode
+
+
+    def join_process(self, process, timeout = None):
+        " Check the type of the process to join/wait"
+        
+        # Check the type of the process
+        if isinstance(process, subprocess.Popen):
+            process.wait(timeout=timeout)
+        else:
+            process.join(timeout=timeout)
+
     def reap_dead_workers(self) -> None:
         """
         Remove worker entries whose subprocess has died unexpectedly.
@@ -608,8 +752,8 @@ class WorkerManager:
             proc = worker.process
             if proc is None:
                 continue
-            if not proc.is_alive() and proc.exitcode is not None:
-                dead.append((model_name, proc.exitcode))
+            if not self.is_process_alive(proc) and self.get_process_exitcode(proc) is not None:
+                dead.append((model_name, self.get_process_exitcode(proc)))
 
         for model_name, exitcode in dead:
             logger.warning(
@@ -621,7 +765,7 @@ class WorkerManager:
                 worker = self.workers[model_name]
                 # Reap the zombie if it's still in the process table
                 try:
-                    worker.process.join(timeout=1)
+                    self.join_process(worker.process,timeout=1)
                 except Exception:
                     pass
                 try:
@@ -650,10 +794,9 @@ class WorkerManager:
                 # raised, so we don't leak dictionary entries for dead processes.
                 if model_name in self.workers:
                     process = self.workers[model_name].process
-                    if process is not None and process.is_alive():
+                    if process is not None and self.is_process_alive(process):
                         try:
-                            process.kill()
-                            process.join(timeout=5)
+                            self.kill_process(process)
                         except Exception:
                             pass
                         try:
@@ -714,7 +857,7 @@ class WorkerManager:
             int | None: The available base_domain_id or None if all are taken.
         """
         # Get all used base domain ids
-        used_base_domain_ids = [self.workers[model].worker_model_info.base_domain_id for model in self.workers.keys()]
+        used_base_domain_ids = [domain for model in self.workers.keys() for domain in self.workers[model].worker_model_info.base_domain_id]
 
         # Get the max id of a domain base:
         max_domain_id = int(rkllama.config.get("model", "max_number_models_loaded_in_memory"))
@@ -726,11 +869,12 @@ class WorkerManager:
             # CHeck first available from the lowest to the highest  
             candidates_range = range(1, max_domain_id)
         
-        # CHeck fir available
+        # CHeck check availables
+        available_domains = []
         for candidate in candidates_range:
             if candidate not in used_base_domain_ids:
-                return candidate
-        return None
+                available_domains.append(candidate)
+        return available_domains
 
 
     def exists_model_loaded(self, model_name: str) -> bool:
@@ -753,15 +897,15 @@ class WorkerManager:
         """
         if model_name not in self.workers.keys():
 
-            if is_rkllm_model(model_name):
+            if is_rkllm_model(model_name) or is_gguf_model(model_name):
                 # Get the available domain id for the RKLLM process
-                base_domain_id = self.get_available_base_domain_id(reverse_order=True)
+                base_domain_ids = self.get_available_base_domain_id(reverse_order=True)
             else:
                 # RKNNLite library doesnt allow to specify base domain id
-                base_domain_id = 0
+                base_domain_ids = [0]
 
             # Add the worker to the dictionary of workers
-            worker_model = Worker(model_name,base_domain_id,loaded_by=loaded_by)
+            worker_model = Worker(model_name,base_domain_ids[0],loaded_by=loaded_by)
 
             # Check if available meory in server
             if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
@@ -769,12 +913,12 @@ class WorkerManager:
                 self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
 
             # Ensure free space in first base domain (0) for rknn load (only 4GB allowed by rknn)
-            if not is_rkllm_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
+            if not is_rkllm_model(model_name) and not is_gguf_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
                 # Unload the oldest RKNN models until memory avilable in first base domain 
                 self.unload_oldest_rknn_models_from_memory(worker_model.worker_model_info.size)
 
             # Initializae de worker/model
-            model_loaded = worker_model.create_worker_process(base_domain_id, model_path, model_dir, options, lora_model_path, prompt_cache_path)
+            model_loaded = worker_model.create_worker_process(base_domain_ids, model_path, model_dir, options, lora_model_path, prompt_cache_path)
 
             # Check the load of the model
             if not model_loaded:
@@ -934,33 +1078,35 @@ class WorkerManager:
 
         process = self.workers[model_name].process
         task_queue = self.workers[model_name].task_queue
+        
+        # Original workflow doesnt apply to llama.cpp
+        if not is_gguf_model(model_name):
+            # --- 1. Request graceful shutdown via task queue -------------------------
+            try:
+                if is_rkllm_model(model_name):
+                    # RKLLM – abort any running inference first
+                    task_queue.put((None, WORKER_TASK_ABORT_INFERENCE, None, None, None))
+                    task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None, None, None))
+                else:
+                    # RKNN
+                    task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None))
+            except Exception as e:
+                # Queue already broken – the worker may have crashed earlier.
+                logger.warning(f"Could not send unload command to worker {model_name}: {e}")
 
-        # --- 1. Request graceful shutdown via task queue -------------------------
-        try:
-            if is_rkllm_model(model_name):
-                # RKLLM – abort any running inference first
-                task_queue.put((None, WORKER_TASK_ABORT_INFERENCE, None, None, None))
-                task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None, None, None))
-            else:
-                # RKNN
-                task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None))
-        except Exception as e:
-            # Queue already broken – the worker may have crashed earlier.
-            logger.warning(f"Could not send unload command to worker {model_name}: {e}")
-
-        # --- 2. Wait for the process to exit gracefully -------------------
-        if process is not None and process.is_alive():
-            process.join(timeout=timeout)
+            # --- 2. Wait for the process to exit gracefully -------------------
+            if process is not None and self.is_process_alive(process):
+                self.join_process(process,timeout=timeout)
 
         # --- 3. Force-kill if still alive ---------------------------------
-        if process is not None and process.is_alive():
-            logger.warning(
-                f"Worker {model_name} did not exit within {timeout}s, "
-                "sending SIGKILL to reclaim resources."
-            )
+        if process is not None and self.is_process_alive(process):
+            if not is_gguf_model(model_name):
+                logger.warning(
+                    f"Worker {model_name} did not exit within {timeout}s, "
+                    "sending SIGKILL to reclaim resources."
+                )
             try:
-                process.kill()       # SIGKILL on Unix
-                process.join(timeout=5)  # reap the zombie
+                self.kill_process(process)
             except Exception as e:
                 logger.error(f"Failed to kill worker {model_name}: {e}")
 
@@ -1330,9 +1476,10 @@ class WorkerModelInfo:
         self.size = get_model_size(model_name)
         self.expires_at = datetime.now() + timedelta(minutes=int(rkllama.config.get("model", "max_minutes_loaded_in_memory")))
         self.loaded_at = datetime.now()
-        self.base_domain_id = base_domain_id
+        self.base_domain_id = [base_domain_id]
         self.last_call = datetime.now()
         self.loaded_by = loaded_by or "unknown"
+        self.llama_cpp_port = (19990 + base_domain_id) if is_gguf_model(model_name) else None 
                         
       
 # Class to manage the information for running RKLLM models
@@ -1344,7 +1491,7 @@ class Worker:
         self.abort_flag = Value('b', False)
 
 
-    def create_worker_process(self, base_domain_id, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
+    def create_worker_process(self, base_domain_ids, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None) -> bool:
             """
             Creates the process of the worker
             """
@@ -1352,11 +1499,43 @@ class Worker:
             # Create the Queue to return the result of the creation of the worker
             result_queue = Queue()
 
-            # Define the process for the worker
-            # Check if it is a RKLLM or RKNN model
+            ## Llama.cpp GGUF case
+            if is_gguf_model(self.worker_model_info.model):
+                
+                try:
+                    # GGUF (Llama.cpp)
+                    # Not need a separate process like rkllm models does
+                    # Iterate over only one available iommu domains and increase the number if required (llama.cpp may need more than one domain to work depending of the model)
+                    domains_assigned = []
+                    for domain in base_domain_ids:
+                        # Assign the current domain to the worker
+                        domains_assigned.append(domain)
+                        # Update the domains used in the worker info
+                        self.worker_model_info.base_domain_id = domains_assigned
+                        # Create the process
+                        logger.debug(f"Trying to create the process for the worker for model {self.worker_model_info.model} with IOMMU domains {domains_assigned}")
+                        self.process = run_llama_cpp_model_server(self.worker_model_info.model, model_dir,model_path,self.worker_model_info.llama_cpp_port,domains_assigned)
+                        if isinstance(self.process, int) and self.process == -1:
+                            # More base domains needed
+                            continue
+
+                        # Exit the loop
+                        break
+
+                    # SUccess
+                    return True
+
+                except:
+                    logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
+                    if self.process is not None:
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+                    return False
+                
+            # RKLLM and RKNN normal workflow
             if is_rkllm_model(self.worker_model_info.model): 
                 # RKLLM
-                self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.task_queue, result_queue, self.abort_flag, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_id))
+                self.process = Process(target=run_rkllm_worker, args=(self.worker_model_info.model, self.task_queue, result_queue, self.abort_flag, model_path, model_dir, options, lora_model_path, prompt_cache_path, base_domain_ids[0]))
             
             else:
                 # RKNN

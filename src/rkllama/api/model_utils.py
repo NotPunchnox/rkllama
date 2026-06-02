@@ -4,6 +4,7 @@ import logging
 import requests
 from pathlib import Path
 import rkllama.config
+import time
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
@@ -475,7 +476,7 @@ def get_model_size(model_name) -> int:
         for root, dirs, files in os.walk(model_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                if file_path.endswith(".rkllm") or file_path.endswith(".rknn"):
+                if file_path.endswith(".rkllm") or file_path.endswith(".rknn") or file_path.endswith(".gguf"):
                     size = size + os.path.getsize(file_path)
 
     # Return the size    
@@ -529,6 +530,55 @@ def is_rkllm_model(model_name) -> int:
     # RKLLM not found   
     return False
 
+def is_gguf_model(model_name) -> int:
+    """
+    CHeck if the model is GGUF
+    Args:
+        model_name: The name of the model directory
+    Returns:
+        True if it is GGUF. False if not
+    """
+
+    # Get the models directory
+    models_dir = rkllama.config.get_path("models")
+    model_path = os.path.join(models_dir, model_name)
+    
+    # Search for the GGUF files
+    if os.path.isdir(model_path):
+        for root, dirs, files in os.walk(model_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.endswith(".gguf"):
+                    return True
+
+    # GGUF not found   
+    return False
+
+def get_gguf_model_path(model_name) -> str:
+    """
+    Get the model file path of the GGUF
+    Args:
+        model_name: The name of the model directory
+    Returns:
+        Model file path for .gguf
+    """
+
+    # Get the models directory
+    models_dir = rkllama.config.get_path("models")
+    model_path = os.path.join(models_dir, model_name)
+    
+    # Search for the GGUF files
+    if os.path.isdir(model_path):
+        for root, dirs, files in os.walk(model_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.lower().endswith(".gguf"):
+                    # return the file
+                    return file_path
+
+    # GGUF not found   
+    return None
+
 
 def read_data_from_file(path: str) -> bytes:
     """
@@ -576,3 +626,81 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
         return os.path.join(model_path, encoder_filename)
     else:
         return None
+
+
+
+def wait_for_service(
+    process,
+    url,
+    timeout=5,
+    interval=2,
+    max_wait=120,
+    expected_status=200
+):
+    """
+    Wait until an HTTP service becomes available.
+
+    Parameters:
+        url (str): URL to check.
+        timeout (float): Requests timeout in seconds.
+        interval (float): Seconds to wait between retry attempts.
+        max_wait (float): Maximum total wait time before failing.
+        expected_status (int): Desired HTTP status code.
+
+    Returns:
+        bool: True if service became available, False otherwise.
+    """
+    # Validate numeric inputs
+    for name, value in {
+        "timeout": timeout,
+        "interval": interval,
+        "max_wait": max_wait,
+    }.items():
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise ValueError(f"{name} must be a positive number")
+
+    start_time = time.time()
+
+    while True:
+        try:
+            
+            # Check if the process still live to continue check
+            if process.poll() is not None:
+
+                # Get the output of the process
+                stdout, _ = process.communicate()
+
+                # Kill the process
+                server_process.kill()
+                server_process.wait(timeout=5)
+
+                # Check if insufficient memory in the current domain
+                if "RKNPU ERROR: Out of memory in allowed IOMMU domains" in stdout: 
+					# llama-server wont start because memory rewuired
+                	logger.error(f"Detected memory exception in llama-server process")
+                	return False, True
+                else:
+                    # Other error
+                    logger.error(f"Unexpected exception in llama-server process: {stdout}")
+                    return False, False  
+
+            # requests.get() waits for the server response unless a timeout is set [InlineCitation-1-Guide to Handling Python Requests Timeout](https://oxylabs.io/blog/python-requests-timeout)
+            response = requests.get(url, timeout=timeout)
+            if response.status_code == expected_status:
+                return True, None
+            
+        except requests.RequestException:
+            # Includes Timeout, ConnectTimeout, ReadTimeout, etc. [InlineCitation-1-Guide to Handling Python Requests Timeout](https://oxylabs.io/blog/python-requests-timeout)
+            pass
+
+        if time.time() - start_time >= max_wait:
+            logger.error(f"Timeout waiting for llama-server process to start....")
+            
+            # Kill the process
+            server_process.kill()
+            server_process.wait(timeout=5)
+
+            # Return not initiated
+            return False, False
+
+        time.sleep(interval)
