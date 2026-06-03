@@ -1337,7 +1337,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.69"
+        "version": "0.0.70"
     }), 200
 
 
@@ -1573,7 +1573,8 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
     Route to llama.cpp worker for inference for GGUF models
 
     Args:
-        request : Original request to forward
+        is_openai_request (bol):
+        request (dic): Original request to forward
     """
 
     # Check if llama.cpp directory exists defined
@@ -1640,7 +1641,10 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
                     try:
                         response.raise_for_status()
                     except requests.HTTPError as e:
-                        raise RuntimeError(f"OpenAI API error: {e}") from e
+                        error = f"OpenAI API error for model'{model_name}': {str(e)}"
+                        logger.error(error)
+                        return jsonify({"error": error}), 500
+                        
                     
                     # Create a converter to Ollama (if needed)
                     converter = OpenAIToOllamaStreamConverter()

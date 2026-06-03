@@ -5,6 +5,7 @@ import requests
 from pathlib import Path
 import rkllama.config
 import time
+import configparser
 
 # Configure logger
 logger = logging.getLogger("rkllama.model_utils")
@@ -569,10 +570,22 @@ def get_gguf_model_path(model_name) -> str:
     
     # Search for the GGUF files
     if os.path.isdir(model_path):
+
+        # Read the config for the GGUF model for llama.cpp (if exists)
+        config_file = os.path.join(model_path, "config.ini")
+        configuration = configparser.ConfigParser()
+        configuration.read(config_file)
+
+        # Read possible projector for vision models
+        expected_mmproj_subname = "mmproj"
+        if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["mmproj","--mmproj"]):
+            expected_mmproj_subname = configuration["ARGS"]["--mmproj"] if "--mmproj" in configuration["ARGS"].keys() else configuration["ARGS"]["mmproj"]
+
+        # Loop over the files in model directory
         for root, dirs, files in os.walk(model_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                if file_path.lower().endswith(".gguf"):
+                if file_path.lower().endswith(".gguf") and expected_mmproj_subname.lower() not in file_path.lower(): # Prevent return projector
                     # return the file
                     return file_path
 
@@ -641,6 +654,7 @@ def wait_for_service(
     Wait until an HTTP service becomes available.
 
     Parameters:
+        process (dict): Popen process to check status
         url (str): URL to check.
         timeout (float): Requests timeout in seconds.
         interval (float): Seconds to wait between retry attempts.
@@ -687,6 +701,11 @@ def wait_for_service(
             # requests.get() waits for the server response unless a timeout is set [InlineCitation-1-Guide to Handling Python Requests Timeout](https://oxylabs.io/blog/python-requests-timeout)
             response = requests.get(url, timeout=timeout)
             if response.status_code == expected_status:
+
+                # Wait for warm up subprocess to prevent error: 
+                # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
+                logger.error(f"Waiting to finish warmup subprocess for llama-server...")
+                time.sleep(5)
                 return True, None
             
         except requests.RequestException:
