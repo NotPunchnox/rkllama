@@ -685,8 +685,8 @@ def wait_for_service(
                 stdout, _ = process.communicate()
 
                 # Kill the process
-                server_process.kill()
-                server_process.wait(timeout=5)
+                process.kill()
+                process.wait(timeout=5)
 
                 # Check if insufficient memory in the current domain
                 if "RKNPU ERROR: Out of memory in allowed IOMMU domains" in stdout: 
@@ -716,8 +716,8 @@ def wait_for_service(
             logger.error(f"Timeout waiting for llama-server process to start....")
             
             # Kill the process
-            server_process.kill()
-            server_process.wait(timeout=5)
+            process.kill()
+            process.wait(timeout=5)
 
             # Return not initiated
             return False, False
