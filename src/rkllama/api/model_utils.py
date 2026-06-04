@@ -704,7 +704,7 @@ def wait_for_service(
 
                 # Wait for warm up subprocess to prevent error: 
                 # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
-                logger.error(f"Waiting to finish warmup subprocess for llama-server...")
+                logger.debug(f"Waiting to finish warmup subprocess for llama-server...")
                 time.sleep(5)
                 return True, None
             
