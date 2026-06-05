@@ -1337,7 +1337,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.69"
+        "version": "0.0.70"
     }), 200
 
 
@@ -1573,7 +1573,8 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
     Route to llama.cpp worker for inference for GGUF models
 
     Args:
-        request : Original request to forward
+        is_openai_request (bol):
+        request (dic): Original request to forward
     """
 
     # Check if llama.cpp directory exists defined
@@ -1627,36 +1628,50 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
 
             def generate():
             
-                # Make the call to the llama-server with stream enable
-                with requests.post(
-                    proxy_route_url,
-                    json=data,
-                    headers=headers,
-                    timeout=120,
-                    stream=stream
-                ) as response:
+                try:
+                    # Make the call to the llama-server with stream enable
+                    with requests.post(
+                        proxy_route_url,
+                        json=data,
+                        headers=headers,
+                        timeout=120,
+                        stream=stream
+                    ) as response:
 
-                    # Check for error codes
-                    try:
-                        response.raise_for_status()
-                    except requests.HTTPError as e:
-                        raise RuntimeError(f"OpenAI API error: {e}") from e
-                    
-                    # Create a converter to Ollama (if needed)
-                    converter = OpenAIToOllamaStreamConverter()
-
-                    # Loop over the chunks returned by llama.cpp
-                    for line in response.iter_lines():
-                        # Decode the bytes line 
-                        line = line.decode("utf-8")
-                       
-                        if not is_openai_request: # Ollama
-                            for chunk in converter.process_line(line):
-                                yield json.dumps(chunk) + "\n"
-                        else: # OpenAI
-                            # Return the chunk to the client of the request
-                            yield f"{line}\n"
+                        # Check for error codes
+                        try:
+                            response.raise_for_status()
+                        except requests.HTTPError as e:
+                            error = f"OpenAI API error for model'{model_name}': {str(e)}"
+                            logger.error(error)
+                            return jsonify({"error": error}), 500
+                            
                         
+                        # Create a converter to Ollama (if needed)
+                        converter = OpenAIToOllamaStreamConverter()
+
+                        # Loop over the chunks returned by llama.cpp
+                        for line in response.iter_lines():
+                            # Decode the bytes line 
+                            line = line.decode("utf-8")
+                        
+                            if not is_openai_request: # Ollama
+                                for chunk in converter.process_line(line):
+                                    yield json.dumps(chunk) + "\n"
+                            else: # OpenAI
+                                # Return the chunk to the client of the request
+                                yield f"{line}\n"
+                except Exception as e:
+                    # Log the error
+                    logger.error(f"Streaming error: {e}", exc_info=True)
+                    # Send a JSON error message instead of breaking the stream
+                    yield json.dumps({
+                        "error": {
+                            "code": "INTERNAL_ERROR",
+                            "message": str(e)
+                        }
+                    }) + "\n"    
+
             logger.debug("Making the streaming call to llama-server...")
             return Response(stream_with_context(generate()), mimetype="text/event-stream") # OpenAI
 

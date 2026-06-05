@@ -374,6 +374,8 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
     """
     Run an instance of llama.cpp for the required model program using subprocess.run.
     Args:
+        model_name (str): Model Name to load
+        gguf_model_dir (str): Directory where the model resides 
         gguf_model_path (str): GGUF Model to load
         port (int): port to assign to the llama.cpp model
         base_domain_id (int): Domain to execute the llama.cpp server
@@ -391,7 +393,7 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
         configuration = configparser.ConfigParser()
         configuration.read(config_file)
 
-        # Read custom environment vars
+        # Read custom environment vars to llama.cpp
         rk_llama_cpp_env = { "RKNPU_DOMAINS": f"{','.join(str(base_domain_id))}"}
         if configuration is not None and "ENV" in configuration.keys():
             for var in configuration["ENV"].keys():
@@ -409,14 +411,26 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
         cmd = ["taskset" ,"--cpu-list", cpu , os.path.join(rkllama.config.get_path("llamacpp"), "llama-server"), 
               "--model" , gguf_model_path, 
               "--port" , str(port), 
-              "--threads" , "4"]
+              "--threads" , "4"] # Defauul 4 threads
         
         # Read custom arguments to llama.cpp
         if configuration is not None and "ARGS" in configuration.keys():
             for arg in configuration["ARGS"].keys():
                 arg_value = configuration["ARGS"][arg]
+                
+                # Preparing format of arguments for llama-server
+                if not arg.startswith("--"):
+                    logger.debug(f"Adding -- to the start of the argument '{arg}'")
+                    arg = f"--{arg}"
+
                 # Check that argments are not the required calculated by rkllama
-                if arg not in ["-m", "--port", "--model", "--cpu-list"]:
+                if arg not in ["--port", "--model", "--cpu-list"]:
+
+                    # Cheking if projector and log-file exists without path in config
+                    if arg in ["--mmproj","--log-file"] and not arg_value.startswith("/"):
+                        logger.debug(f"Adding model directory to argument '{arg}' because currently relative path specified '{arg_value}'")
+                        arg_value = os.path.join(gguf_model_dir, arg_value)
+
                     logger.debug(f"Adding custom argument to llama.cpp '{arg}' with value '{arg_value}'")
                     cmd.append(arg)
                     if arg_value is not None and arg_value:
@@ -431,10 +445,6 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
             env=rk_llama_cpp_env,
             text=True,
         )
-
-        # Wait for warm up subprocess to prevent error: 
-        # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
-        time.sleep(3) # 3 seconds
 
         # Waiting for service up
         logger.debug(f"Waiting for model {gguf_model_path} Up and running...")
@@ -1515,6 +1525,7 @@ class Worker:
                         # Create the process
                         logger.debug(f"Trying to create the process for the worker for model {self.worker_model_info.model} with IOMMU domains {domains_assigned}")
                         self.process = run_llama_cpp_model_server(self.worker_model_info.model, model_dir,model_path,self.worker_model_info.llama_cpp_port,domains_assigned)
+                        # CHeck if load fail because need more base domains
                         if isinstance(self.process, int) and self.process == -1:
                             # More base domains needed
                             continue

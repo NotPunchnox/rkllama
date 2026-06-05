@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.69](#New-Version)
+### [Version: 0.0.70](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -533,10 +533,12 @@ The structure of a GGUF model is similar to rkllm models. You need a folder with
        └── qwen3.5-4b:q8_0
            └── model.gguf (can have any name but must end in .gguf)
            └── config.ini (optional)
+           └── mmproj.gguf (optional - can have any name but is recommended tu include substring 'mmproj' in the name. Must end in .gguf. Only apply for multimodal models for vision capabilities)
+           
           
    ```
 
-   The contents of the config.ini are llama.cpp environment vars for RKNPU inference explained by the author of the fork: https://github.com/invisiofficial/rk-llama.cpp/tree/rknpu2/ggml/src/ggml-rknpu2 (RKNPU_DOMAINS variable is skipped because rkllama handles it) and llama.cpp argument for the llama-server process: https://github.com/invisiofficial/rk-llama.cpp/blob/rknpu2/tools/server/README.md
+   The contents of the config.ini are llama.cpp environment vars for RKNPU inference explained by the author of the fork: https://github.com/invisiofficial/rk-llama.cpp/tree/rknpu2/ggml/src/ggml-rknpu2 (RKNPU_DOMAINS variable is skipped because rkllama handles it) and llama.cpp arguments for the llama-server process: https://github.com/invisiofficial/rk-llama.cpp/blob/rknpu2/tools/server/README.md (Your are only allowed to use arguments that starts with '--')
 
    Some examples of config.ini files:
 
@@ -549,20 +551,20 @@ The structure of a GGUF model is similar to rkllm models. You need a folder with
    RKNPU_HYBRID=W8A8_HADAMARD
 
    [ARGS]
-   --mmap =
-   --no-repack=
-   --no-warmup=
-   --cache-type-k = q8_0
-   --cache-type-v = q8_0
-   --cache-ram = 2048
-   --batch-size = 2048
-   --ubatch-size = 2048
-   --top-p       = 1.0
-   --top-k       = 0
-   --min-p       = 0.01
-   --temp        = 1.0
-   --chat-template-kwargs = {"reasoning_effort": "low"}
-   --log-file = /opt/rkllama/models/gpt-oss-20b:q8_0/llamacpp.log
+   mmap =
+   no-repack=
+   no-warmup=
+   cache-type-k = q8_0
+   cache-type-v = q8_0
+   cache-ram = 2048
+   batch-size = 2048
+   ubatch-size = 2048
+   top-p       = 1.0
+   top-k       = 0
+   min-p       = 0.01
+   temp        = 1.0
+   chat-template-kwargs = {"reasoning_effort": "low"}
+   log-file = llamacpp.log (can have any name and be an absolute path if you dont want logs in the same model folder)
    ```
 
 
@@ -573,20 +575,20 @@ The structure of a GGUF model is similar to rkllm models. You need a folder with
    RKNPU_HYBRID=W4A4_HADAMARD
 
    [ARGS]
-   --mmap =
-   --no-repack=
-   --no-warmup=
-   --cache-type-k = q8_0
-   --cache-type-v = q8_0
-   --cache-ram = 2048
-   --batch-size = 2048
-   --ubatch-size = 2048
-   --ctx-size = 65536
-   --predict = 2048
-   --top-p       = 0.95
-   --top-k       = 64
-   --temp        = 1.0
-   --log-file = /home/orangepi/github/danielferr85/rkllama/gemma-4-26b-a4b-it:ud-iq4_xs/llamacpp.log
+   mmap =
+   no-repack=
+   no-warmup=
+   cache-type-k = q8_0
+   cache-type-v = q8_0
+   cache-ram = 2048
+   batch-size = 2048
+   ubatch-size = 2048
+   ctx-size = 65536
+   predict = 2048
+   top-p       = 0.95
+   top-k       = 64
+   temp        = 1.0
+   log-file = llamacpp.log (can have any name and be an absolute path if you dont want logs in the same model folder)
    ```
 
 
@@ -597,15 +599,16 @@ The structure of a GGUF model is similar to rkllm models. You need a folder with
    RKNPU_HYBRID=W8A8_STANDARD
 
    [ARGS]
-   --mmap =
-   --no-repack=
-   --no-warmup=
-   --cache-type-k = q8_0
-   --cache-type-v = q8_0
-   --cache-ram = 2048
-   --batch-size = 2048
-   --ubatch-size = 2048
-   --log-file = /home/orangepi/github/danielferr85/rkllama/qwen3.5-4b:q8_0/llamacpp.log
+   mmap =
+   no-repack=
+   no-warmup=
+   cache-type-k = q8_0
+   cache-type-v = q8_0
+   cache-ram = 2048
+   batch-size = 2048
+   ubatch-size = 2048
+   mmproj = mmproj-F16.gguf (projector for vision capabilities for the model)
+   log-file = llamacpp.log (can have any name and be an absolute path if you dont want logs in the same model folder)
    ```
 
    For qwen3.5 follow the recomendations:
