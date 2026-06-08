@@ -446,6 +446,11 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
             text=True,
         )
 
+        # Wait for warm up subprocess to prevent error: 
+        # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
+        logger.debug(f"Waiting to warmup subprocess Popen for llama-server...")
+        time.sleep(3)
+        
         # Waiting for service up
         logger.debug(f"Waiting for model {gguf_model_path} Up and running...")
         initialized, need_more_iommu_domains = wait_for_service(server_process, f"http://localhost:{port}/v1/models", max_wait = int(rkllama.config.get('model', 'max_seconds_waiting_worker_response')))
