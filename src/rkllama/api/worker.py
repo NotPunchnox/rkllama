@@ -460,7 +460,7 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
                 # Return -1 to indicate morr iommu domains needed
                 logger.info(f"Failed to run llama-server for model {model_name} for iommu domains {base_domain_id}. Memory insufficient.")
                 return -1
-            raise RuntimeError(f"Llama.cpp worker not initilized on time.")
+            raise Exception(f"Llama.cpp worker not initilized.")
 
         logger.info(f"Llama.cpp started (PID: {server_process.pid})")
         return server_process
@@ -1543,7 +1543,7 @@ class Worker:
 
                 except:
                     logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-                    if self.process is not None:
+                    if self.process is not None and not isinstance(self.process, int):
                         self.process.kill()
                         self.process.wait(timeout=5)
                     return False
