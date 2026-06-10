@@ -701,11 +701,6 @@ def wait_for_service(
             # requests.get() waits for the server response unless a timeout is set [InlineCitation-1-Guide to Handling Python Requests Timeout](https://oxylabs.io/blog/python-requests-timeout)
             response = requests.get(url, timeout=timeout)
             if response.status_code == expected_status:
-
-                # Wait for warm up subprocess to prevent error: 
-                # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
-                logger.debug(f"Waiting to finish warmup subprocess for llama-server...")
-                time.sleep(5)
                 return True, None
             
         except requests.RequestException:

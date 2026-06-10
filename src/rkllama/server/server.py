@@ -1337,7 +1337,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.70"
+        "version": "0.0.71"
     }), 200
 
 
@@ -1586,9 +1586,10 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
     data = request.get_json(force=True)
     model_name = data.get('model')
     stream = data.get("stream", False)
+    final_request_path = request.path
 
     # CHeck if unload request
-    if request.path == "/api/generate":
+    if final_request_path == "/api/generate":
         prompt = data.get("prompt", None)
         if model_name and not prompt:
             # Ollama Unload model Standard when no prompt in generate
@@ -1601,6 +1602,14 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
             logger.debug(f"API Ollama received with request data: {data}\nChanging to OpenAI format to llama.cpp")
         data = ollama_to_openai_chat(data)
 
+        # Replace the Ollama path request for OpenAI Endpoints
+        if final_request_path == "/api/generate":
+            final_request_path = "/v1/completions"
+        elif final_request_path in ("/api/embeddings", "/api/embed"):
+            final_request_path = "/v1/embeddings"
+        else:       
+            final_request_path =  "/v1/chat/completions"
+
     # Load model if needed
     if not variables.worker_manager_rkllm.exists_model_loaded(model_name):    
         _, error = load_model(model_name)
@@ -1612,7 +1621,7 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
     data['model'] =  gguf_full_path.name
 
     # Make the request for llama.cpp
-    proxy_route_url = f"http://localhost:{variables.worker_manager_rkllm.workers[model_name].worker_model_info.llama_cpp_port}{request.path}"
+    proxy_route_url = f"http://localhost:{variables.worker_manager_rkllm.workers[model_name].worker_model_info.llama_cpp_port}{final_request_path}"
     logger.debug(f"Routing request to llama.cpp whith this URL: {proxy_route_url} with this data:\n{data}")
 
     try:

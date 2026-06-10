@@ -446,6 +446,11 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
             text=True,
         )
 
+        # Wait for warm up subprocess to prevent error: 
+        # requests.exceptions.ConnectionError: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')) 
+        logger.debug(f"Waiting to warmup subprocess Popen for llama-server...")
+        time.sleep(3)
+        
         # Waiting for service up
         logger.debug(f"Waiting for model {gguf_model_path} Up and running...")
         initialized, need_more_iommu_domains = wait_for_service(server_process, f"http://localhost:{port}/v1/models", max_wait = int(rkllama.config.get('model', 'max_seconds_waiting_worker_response')))
@@ -455,7 +460,7 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
                 # Return -1 to indicate morr iommu domains needed
                 logger.info(f"Failed to run llama-server for model {model_name} for iommu domains {base_domain_id}. Memory insufficient.")
                 return -1
-            raise RuntimeError(f"Llama.cpp worker not initilized on time.")
+            raise Exception(f"Llama.cpp worker not initilized.")
 
         logger.info(f"Llama.cpp started (PID: {server_process.pid})")
         return server_process
@@ -1538,7 +1543,7 @@ class Worker:
 
                 except:
                     logger.error(f"No response received creating the Worker of the model {self.worker_model_info.model} in {int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))} seconds.")
-                    if self.process is not None:
+                    if self.process is not None and not isinstance(self.process, int):
                         self.process.kill()
                         self.process.wait(timeout=5)
                     return False
