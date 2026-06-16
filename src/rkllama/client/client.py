@@ -241,10 +241,12 @@ def send_message(model, message):
                                     final_json = response_json
 
                                     if len(response_json["choices"]) > 0 and "delta" in response_json["choices"][0].keys():
-                                        content_chunk = response_json["choices"][0]["delta"]["content"]
-                                        sys.stdout.write(content_chunk)
-                                        sys.stdout.flush()
-                                        assistant_message += content_chunk
+                                        if "content" in response_json["choices"][0]["delta"].keys():                                        
+                                            content_chunk = response_json["choices"][0]["delta"]["content"]
+                                            if content_chunk:
+                                                sys.stdout.write(content_chunk)
+                                                sys.stdout.flush()
+                                                assistant_message += content_chunk
                                         fr = response_json["choices"][0].get("finish_reason")
                                         if fr:
                                             finish_reason = fr
