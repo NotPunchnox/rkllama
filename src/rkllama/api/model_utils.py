@@ -451,8 +451,15 @@ def get_model_full_options(model_name: str, models_path: str = "models", request
         for option, value in request_options.items():
             # Override modelfile options with request options if not empty
             if value is not None and str(value).strip() != "":
+                
+                # Override correct parameters names from ollama standard to expected rkllm api
+                if option.lower().strip() == "num_predict":
+                    option = "max_new_tokens"
+                
                 # Update the default options
                 default_options[option.lower().strip()] = str(value).strip()
+
+
 
     # Return the options dictionary
     return default_options

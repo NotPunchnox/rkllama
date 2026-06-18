@@ -273,7 +273,7 @@ class ChatEndpointHandler(EndpointHandler):
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, final_prompt, 
-                                          format_spec, tools, enable_thinking, images, prompt_cache_file)
+                                          format_spec, tools, enable_thinking, images, prompt_cache_file, options)
                 if is_openai_request:
 
                     # Use unified handler
@@ -286,7 +286,7 @@ class ChatEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
-                                         format_spec, tools, enable_thinking,images, prompt_cache_file)
+                                         format_spec, tools, enable_thinking,images, prompt_cache_file, options)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -299,16 +299,16 @@ class ChatEndpointHandler(EndpointHandler):
             variables.system = original_system
             
     @classmethod
-    def handle_streaming(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None):
+    def handle_streaming(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None, options = None):
         """Handle streaming chat response"""
 
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file, options)
         else:
             # Send the task of multimodal inference to the model
-            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file, options)
         
         # Get timeout
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
@@ -458,7 +458,7 @@ class ChatEndpointHandler(EndpointHandler):
     
 
     @classmethod
-    def handle_complete(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None):
+    def handle_complete(cls, model_name, final_prompt, format_spec, tools, enable_thinking, images=None, prompt_cache_file = None, options = None):
         """Handle complete non-streaming chat response"""
         
         start_time = time.time()
@@ -475,11 +475,10 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
-            
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file, options)
         else:
             # Send the task of multimodal inference to the model
-            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file, options)
 
         # Get timeout
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
@@ -647,7 +646,7 @@ class GenerateEndpointHandler(EndpointHandler):
             # Ollama request handling 
             if stream:
                 ollama_chunk = cls.handle_streaming(model_name, final_prompt, 
-                                           format_spec, enable_thinking, images, None) # No cache for generation (it is not a chat conversation)
+                                           format_spec, enable_thinking, images, None, options) # No cache for generation (it is not a chat conversation)
                 if is_openai_request:
 
                     # Use unified handler
@@ -660,7 +659,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 return ollama_chunk
             else:
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
-                                          format_spec, enable_thinking, images, None) # No cache for generation (it is not a chat conversation)
+                                          format_spec, enable_thinking, images, None, options) # No cache for generation (it is not a chat conversation)
                 
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
@@ -673,16 +672,16 @@ class GenerateEndpointHandler(EndpointHandler):
             variables.system = original_system
     
     @classmethod
-    def handle_streaming(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None):
+    def handle_streaming(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None, options = None):
         """Handle streaming generate response"""
 
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file, options)
         else:
             # Send the task of multimodal inference to the model
-            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file, options)
         
         # Get Timeout
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
@@ -774,7 +773,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return Response(generate(), content_type='application/x-ndjson')
     
     @classmethod
-    def handle_complete(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None):
+    def handle_complete(cls, model_name, final_prompt, format_spec, enable_thinking, images=None, prompt_cache_file = None, options = None):
         """Handle complete generate response"""
 
         start_time = time.time()
@@ -791,10 +790,10 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.inference(model_name, final_prompt, prompt_cache_file, options)
         else:
             # Send the task of multimodal inference to the model
-            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file)
+            parent_pipe = variables.worker_manager_rkllm.multimodal(model_name, final_prompt, images, prompt_cache_file, options)
         
         # Get timeout 
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
@@ -951,7 +950,7 @@ class EmbedEndpointHandler(EndpointHandler):
         logger.debug(f"Skipping tokenization for embedding")
 
         # Ollama request handling 
-        ollama_response, code =  cls.handle_complete(model_name, input_text)
+        ollama_response, code =  cls.handle_complete(model_name, input_text, options)
         
         if is_openai_request:
             # Convert Ollama response to OpenAI format
@@ -962,7 +961,7 @@ class EmbedEndpointHandler(EndpointHandler):
     
     
     @classmethod
-    def handle_complete(cls, model_name, input_text):
+    def handle_complete(cls, model_name, input_text, options):
         """Handle complete embedding response"""
 
         start_time = time.time()
@@ -985,7 +984,7 @@ class EmbedEndpointHandler(EndpointHandler):
         for input in all_inputs:
             
             # Send the task of embedding to the model
-            parent_pipe = variables.worker_manager_rkllm.embedding(model_name, input)
+            parent_pipe = variables.worker_manager_rkllm.embedding(model_name, input, None, options)
 
             # Get timeout
             timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))

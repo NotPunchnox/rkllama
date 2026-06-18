@@ -1190,45 +1190,7 @@ def chat_ollama():
                 return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
-        #else:
-        #    
-        #    rkllm_loaded = get_model_loaded_by_name(loaded_models,model_name)
-        #    rkllm_model_request = rkllm_loaded.model_rkllm
-        #    # If model is already loaded, check its options are the same for the current request
-        #    if rkllm_model_request.rkllm_param.max_context_len != int(float(options.get("num_ctx", 0))) \
-        #        or rkllm_model_request.rkllm_param.max_new_tokens != int(options.get("max_new_tokens")) \
-        #        or rkllm_model_request.rkllm_param.top_k != int(options.get("top_k")) \
-        #        or round(rkllm_model_request.rkllm_param.top_p,2) != round(float(options.get("top_p")),2) \
-        #        or round(rkllm_model_request.rkllm_param.temperature,2) != round(float(options.get("temperature")),2) \
-        #        or round(rkllm_model_request.rkllm_param.repeat_penalty,2) != round(float(options.get("repeat_penalty")),2) \
-        #        or round(rkllm_model_request.rkllm_param.frequency_penalty,2) != round(float(options.get("frequency_penalty")),2) \
-        #        or round(rkllm_model_request.rkllm_param.presence_penalty,2) != round(float(options.get("presence_penalty")),2) \
-        #        or rkllm_model_request.rkllm_param.mirostat != int(options.get("mirostat")) \
-        #        or round(rkllm_model_request.rkllm_param.mirostat_tau,2) != round(float(options.get("mirostat_tau")),2) \
-        #        or round(rkllm_model_request.rkllm_param.mirostat_eta,2) != round(float(options.get("mirostat_eta")),2):
-        #    
-        #        # Update model parameters if they differ
-        #        if DEBUG_MODE:
-        #            logger.debug(f"Updating model parameters for {model_name} with options: {options}")
-        #        
-        #        unload_model(model_name)
-        #        
-        #        if DEBUG_MODE:
-        #            logger.debug(f"Reoading model: {model_name}")
-        #        modele_instance, error = load_model(model_name, request_options=options)
-        #        if error:
-        #            if DEBUG_MODE:
-        #                logger.error(f"Failed to reload model {model_name}: {error}")
-        #            return jsonify({"error": f"Failed to reload model '{model_name}': {error}"}), 500
-        #        rkllm_model_request = modele_instance
-        #        if DEBUG_MODE:
-        #            logger.debug(f"Model {model_name} reloaded successfully")
                 
-        # Store format settings in model instance
-        #if rkllm_model_request:
-        #    rkllm_model_request.format_schema = format_spec
-        #    rkllm_model_request.format_options = options
-        
         # Process the request
         from rkllama.api.server_utils import ChatEndpointHandler
         return ChatEndpointHandler.handle_request(
@@ -1337,7 +1299,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.72"
+        "version": "0.0.73"
     }), 200
 
 
