@@ -58,12 +58,9 @@ class RKLLMParam(ctypes.Structure):
         ("mirostat_tau", ctypes.c_float),
         ("mirostat_eta", ctypes.c_float),
         ("skip_special_token", ctypes.c_bool),
+        ("ignore_eos_token", ctypes.c_bool),
         ("is_async", ctypes.c_bool),
-        ("img_start", ctypes.c_char_p),
-        ("img_end", ctypes.c_char_p),
-        ("img_content", ctypes.c_char_p),
         ("extend_param", RKLLMExtendParam),
-        ("use_gpu", ctypes.c_bool),
     ]
 
 class RKLLMLoraAdapter(ctypes.Structure):
@@ -85,14 +82,36 @@ class RKLLMTokenInput(ctypes.Structure):
         ("n_tokens", ctypes.c_size_t)
     ]
 
-class RKLLMMultiModelInput(ctypes.Structure):
+class RKLLMImageInput(ctypes.Structure):
     _fields_ = [
-        ("prompt", ctypes.c_char_p),
         ("image_embed", ctypes.POINTER(ctypes.c_float)),
         ("n_image_tokens", ctypes.c_size_t),
         ("n_image", ctypes.c_size_t),
+        ("image_start", ctypes.c_char_p),
+        ("image_end", ctypes.c_char_p),
+        ("image_content", ctypes.c_char_p),
         ("image_width", ctypes.c_size_t),
-        ("image_height", ctypes.c_size_t)
+        ("image_height", ctypes.c_size_t),
+    ]
+
+class RKLLMVideoInput(ctypes.Structure):
+    _fields_ = [
+        ("video_embed", ctypes.POINTER(ctypes.c_float)),
+        ("n_frame_tokens", ctypes.c_size_t),
+        ("n_frame_per_video", ctypes.c_size_t),
+        ("n_video", ctypes.c_size_t),
+        ("video_start", ctypes.c_char_p),
+        ("video_end", ctypes.c_char_p),
+        ("video_content", ctypes.c_char_p),
+        ("frame_width", ctypes.c_size_t),
+        ("frame_height", ctypes.c_size_t),
+    ]
+
+class RKLLMMultiModalInput(ctypes.Structure):
+    _fields_ = [
+        ("prompt", ctypes.c_char_p),
+        ("image", RKLLMImageInput),
+        ("video", RKLLMVideoInput),
     ]
 
 class RKLLMInputUnion(ctypes.Union):
@@ -100,16 +119,18 @@ class RKLLMInputUnion(ctypes.Union):
         ("prompt_input", ctypes.c_char_p),
         ("embed_input", RKLLMEmbedInput),
         ("token_input", RKLLMTokenInput),
-        ("multimodal_input", RKLLMMultiModelInput)
+        ("multimodal_input", RKLLMMultiModalInput)
     ]
 
 class RKLLMInput(ctypes.Structure):
+    _anonymous_ = ("input_data",)
     _fields_ = [
         ("role", ctypes.c_char_p),
         ("enable_thinking", ctypes.c_bool),
         ("input_type", RKLLMInputType),
         ("input_data", RKLLMInputUnion)
     ]
+
 
 class RKLLMLoraParam(ctypes.Structure):
     _fields_ = [
@@ -122,12 +143,27 @@ class RKLLMPromptCacheParam(ctypes.Structure):
         ("prompt_cache_path", ctypes.c_char_p)
     ]
 
+class RKLLMSamplingParam(ctypes.Structure):
+    _fields_ = [
+        ("top_k", ctypes.c_int32),
+        ("top_p", ctypes.c_float),
+        ("temperature", ctypes.c_float),
+        ("repeat_penalty", ctypes.c_float),
+        ("frequency_penalty", ctypes.c_float),
+        ("presence_penalty", ctypes.c_float),
+        ("mirostat", ctypes.c_int32),
+        ("mirostat_tau", ctypes.c_float),
+        ("mirostat_eta", ctypes.c_float),
+    ]
+
 class RKLLMInferParam(ctypes.Structure):
     _fields_ = [
         ("mode", RKLLMInferMode),
         ("lora_params", ctypes.POINTER(RKLLMLoraParam)),
         ("prompt_cache_params", ctypes.POINTER(RKLLMPromptCacheParam)),
-        ("keep_history", ctypes.c_int)
+        ("sampling_params", ctypes.POINTER(RKLLMSamplingParam)),
+        ("keep_history", ctypes.c_int),
+        ("max_new_tokens", ctypes.c_int32),
     ]
 
 class RKLLMResultLastHiddenLayer(ctypes.Structure):
@@ -162,4 +198,19 @@ class RKLLMResult(ctypes.Structure):
         ("perf", RKLLMPerfStat)
     ]
 
-callback_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
+
+# Connect the callback function between the Python side and the C++ side
+LLMResultCallback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(RKLLMResult), ctypes.c_void_p, ctypes.c_int)
+LLMTokenizerCallback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_int32), ctypes.c_int32)
+LLMGetEmbedCallback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int32), ctypes.c_uint64, ctypes.c_void_p, ctypes.c_uint64)
+
+class RKLLMCallback(ctypes.Structure):
+    _fields_ = [
+        ("result_callback", LLMResultCallback_type),
+        ("result_userdata", ctypes.c_void_p),
+        ("tokenizer_callback", LLMTokenizerCallback_type),
+        ("tokenizer_userdata", ctypes.c_void_p),
+        ("embed_callback", LLMGetEmbedCallback_type),
+        ("embed_userdata", ctypes.c_void_p),
+    ]
+    

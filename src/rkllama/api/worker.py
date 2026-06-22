@@ -226,7 +226,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
     from .rkllm import RKLLM
 
     # Connect the callback function between Python and C++ independently for each worker
-    callback = callback_type(callback_impl)
+    callback = LLMResultCallback_type(callback_impl)
 
     # Define the model used by the worker
     try:
@@ -248,7 +248,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
         try:
         
             # Get the instruction to the worker
-            child_conn, task, inference_mode, model_input_type, model_input =  task_queue.get()
+            child_conn, task, inference_mode, model_input_type, model_input, options =  task_queue.get()
 
             if task == WORKER_TASK_UNLOAD_MODEL:
                 logger.info(f"Unloading model {name}...")
@@ -271,7 +271,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
             elif task == WORKER_TASK_INFERENCE:
                 logger.info(f"Running inference for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, options))
                 thread_model.start()
                 
                 # Looping until execution of the thread
@@ -327,7 +327,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
             elif task == WORKER_TASK_EMBEDDING:
                 logger.info(f"Running embedding for model {name}...")
                 # Run inference
-                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
+                thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, options))
                 thread_model.start()
                 
                 # Looping until execution of the thread finished
@@ -1100,8 +1100,8 @@ class WorkerManager:
             try:
                 if is_rkllm_model(model_name):
                     # RKLLM – abort any running inference first
-                    task_queue.put((None, WORKER_TASK_ABORT_INFERENCE, None, None, None))
-                    task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None, None, None))
+                    task_queue.put((None, WORKER_TASK_ABORT_INFERENCE, None, None, None, None))
+                    task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None, None, None, None))
                 else:
                     # RKNN
                     task_queue.put((None, WORKER_TASK_UNLOAD_MODEL, None))
@@ -1156,11 +1156,11 @@ class WorkerManager:
         """
         if model_name in self.workers.keys():
             # Send the abort task of the model if currently is running some inference
-            self.workers[model_name].task_queue.put((None, WORKER_TASK_CLEAR_CACHE,None,None,None))
+            self.workers[model_name].task_queue.put((None, WORKER_TASK_CLEAR_CACHE,None,None,None,None))
             
 
 
-    def inference(self, model_name, prompt_input, prompt_cache_file):
+    def inference(self, model_name, prompt_input, prompt_cache_file, options):
         """
         Send a inference task to the corresponding model worker
         
@@ -1177,7 +1177,7 @@ class WorkerManager:
             model_input = (prompt_input, prompt_cache_file)
             
             # Send the inference task
-            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_TOKEN, model_input, options))
             
             # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
             self.clear_cache_worker(model_name)
@@ -1188,7 +1188,7 @@ class WorkerManager:
         return None
 
 
-    def embedding(self, model_name, text_input, prompt_cache_file = None):
+    def embedding(self, model_name, text_input, prompt_cache_file = None, options = None):
         """
         Send a prepare embedding task to the corresponding model worker
         
@@ -1205,13 +1205,13 @@ class WorkerManager:
             model_input = (text_input, prompt_cache_file)
 
             # Send the embedding task
-            parent_conn = self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input))        
+            parent_conn = self.send_task(model_name, (WORKER_TASK_EMBEDDING,RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER, RKLLMInputType.RKLLM_INPUT_PROMPT, model_input, options))        
             
             # Return the request parent pipe connection
             return parent_conn
 
     
-    def multimodal(self, model_name, prompt_input, images, prompt_cache_file):
+    def multimodal(self, model_name, prompt_input, images, prompt_cache_file, options, video = None):
         """
         Send a inference task to the corresponding model worker for multimodal input
         
@@ -1251,11 +1251,12 @@ class WorkerManager:
                 # Error encoding the image. Return
                 raise RuntimeError(f"Unexpected error encoding image for model : {model_name}")
             
-            # Prepare all the inputs for the multimodal inference
-            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, prompt_cache_file)
+            # Prepare all the inputs for the multimodal inference. For now only image
+            #model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, video_embed, n_frame_per_video, frame_width, frame_height, n_video, prompt_cache_file)
+            model_input = (prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, None, None, None, None, None, prompt_cache_file)
             
             # Send the inference task
-            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+            parent_conn = self.send_task(model_name, (WORKER_TASK_INFERENCE,RKLLMInferMode.RKLLM_INFER_GENERATE, RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input, options))
             
             # Clear the cache to save memory. Load Prompt caching file is enable before the new inference
             self.clear_cache_worker(model_name)
@@ -1290,7 +1291,7 @@ class WorkerManager:
             model_input = (model_encoder_path, images, image_width, image_height)
 
             # Send the Encoder task of the image
-            parent_pipe = self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input))  
+            parent_pipe = self.send_task(model_name, (WORKER_TASK_VISION_ENCODER,None, None, model_input, None))  
 
             # Wait to confirm output of the image encoder
             if parent_pipe.poll(int(rkllama.config.get('model', 'max_seconds_waiting_worker_response'))):

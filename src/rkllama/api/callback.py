@@ -99,4 +99,7 @@ def callback_impl(result, userdata, status):
         except Exception as e:
             print(f"\nError processing callback: {str(e)}", end='')
             
-        sys.stdout.flush()    
+        sys.stdout.flush() 
+
+    # Success return required for new callback sgtructure convertion
+    return 0      

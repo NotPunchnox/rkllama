@@ -44,13 +44,8 @@ class RKLLM(object):
         self.rkllm_param.skip_special_token = True
         self.rkllm_param.n_keep = 0
         self.rkllm_param.is_async = False
-        self.rkllm_param.use_gpu = True
+        self.rkllm_param.ignore_eos_token = False
 
-        # For Image MultiModal Models
-        self.rkllm_param.img_start = options.get("img_start", "").encode("utf-8");
-        self.rkllm_param.img_end = options.get("img_end", "").encode("utf-8");
-        self.rkllm_param.img_content = options.get("img_content", "").encode("utf-8");
-        
         # Extend parameters for RKLLM
         self.rkllm_param.extend_param.base_domain_id = self.base_domain_id
         self.rkllm_param.extend_param.embed_flash = 1
@@ -69,9 +64,16 @@ class RKLLM(object):
         # Initialization of the RKLLM model
         self.handle = RKLLM_Handle_t()
         self.rkllm_init = rkllm_lib.rkllm_init
-        self.rkllm_init.argtypes = [ctypes.POINTER(RKLLM_Handle_t), ctypes.POINTER(RKLLMParam), callback_type]
+        self.rkllm_init.argtypes = [ctypes.POINTER(RKLLM_Handle_t), ctypes.POINTER(RKLLMParam), ctypes.POINTER(RKLLMCallback)]
         self.rkllm_init.restype = ctypes.c_int
-        ret = self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(self.rkllm_param), callback)
+        self.callback = RKLLMCallback()
+        self.callback.result_callback = callback
+        self.callback.result_userdata = None
+        self.callback.tokenizer_callback = LLMTokenizerCallback_type()
+        self.callback.tokenizer_userdata = None
+        self.callback.embed_callback = LLMGetEmbedCallback_type()
+        self.callback.embed_userdata = None
+        ret = self.rkllm_init(ctypes.byref(self.handle), ctypes.byref(self.rkllm_param), ctypes.byref(self.callback))
         if(ret != 0):
             raise RuntimeError(f"Failed to initialize RKLLM model: {ret}")
 
@@ -130,6 +132,8 @@ class RKLLM(object):
         ctypes.memset(ctypes.byref(self.rkllm_infer_params), 0, ctypes.sizeof(RKLLMInferParam))
         self.rkllm_infer_params.lora_params = ctypes.pointer(self.rkllm_lora_params) if self.rkllm_lora_params else None
         self.rkllm_infer_params.keep_history = 0
+        self.rkllm_infer_params.max_new_tokens = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
+        
 
 
         self.rkllm_load_prompt_cache = rkllm_lib.rkllm_load_prompt_cache
@@ -137,6 +141,40 @@ class RKLLM(object):
         self.rkllm_load_prompt_cache.restype = ctypes.c_int
         
         self.tools = None
+
+    def get_sampling_parameters(self, options):
+        
+        # Set default sampling parameterf for request
+        rkllm_sampling_param = RKLLMSamplingParam()
+        rkllm_sampling_param.top_k = int(rkllama.config.get("model", "default_top_k"))
+        rkllm_sampling_param.top_p = float(rkllama.config.get("model", "default_top_p"))
+        rkllm_sampling_param.temperature =  float(rkllama.config.get("model", "default_temperature"))
+        rkllm_sampling_param.repeat_penalty = float(rkllama.config.get("model", "default_repeat_penalty"))
+        rkllm_sampling_param.frequency_penalty = float(rkllama.config.get("model", "default_frequency_penalty"))
+        rkllm_sampling_param.presence_penalty = float( rkllama.config.get("model", "default_presence_penalty"))
+        rkllm_sampling_param.mirostat = int(rkllama.config.get("model", "default_mirostat"))
+        rkllm_sampling_param.mirostat_tau = float(rkllama.config.get("model", "default_mirostat_tau"))
+        rkllm_sampling_param.mirostat_eta = float(rkllama.config.get("model", "default_mirostat_eta"))  
+
+        # Set the max token new parameters for inference
+        max_new_tokens = int(rkllama.config.get("model", "default_max_new_tokens"))
+
+        # Add the sampling parameters if exists in the options
+        if options:
+            
+            rkllm_sampling_param.top_k = int(options.get("top_k")) if "top_k" in options else rkllm_sampling_param.top_k 
+            rkllm_sampling_param.top_p = float(options.get("top_p")) if "top_p" in options else rkllm_sampling_param.top_p 
+            rkllm_sampling_param.temperature =  float(options.get("temperature")) if "temperature" in options else rkllm_sampling_param.temperature 
+            rkllm_sampling_param.repeat_penalty = float(options.get("repeat_penalty")) if "repeat_penalty" in options else rkllm_sampling_param.repeat_penalty
+            rkllm_sampling_param.frequency_penalty = float(options.get("frequency_penalty")) if "frequency_penalty" in options else rkllm_sampling_param.frequency_penalty
+            rkllm_sampling_param.presence_penalty = float(options.get("presence_penalty")) if "presence_penalty" in options else rkllm_sampling_param.presence_penalty
+            rkllm_sampling_param.mirostat = int(options.get("mirostat")) if "mirostat" in options else rkllm_sampling_param.mirostat
+            rkllm_sampling_param.mirostat_tau = float(options.get("mirostat_tau")) if "mirostat_tau" in options else rkllm_sampling_param.mirostat_tau
+            rkllm_sampling_param.mirostat_eta = float(options.get("mirostat_eta")) if "mirostat_eta" in options else rkllm_sampling_param.mirostat_eta  
+            max_new_tokens = int(options.get("max_new_tokens")) if "max_new_tokens" in options else max_new_tokens
+
+        # Return sampling parameters for the request    
+        return rkllm_sampling_param, max_new_tokens
 
     def tokens_to_ctypes_array(self, tokens, ctype):
         return (ctype * len(tokens))(*tokens)
@@ -162,7 +200,7 @@ class RKLLM(object):
     def run(self, *param):
         
         # Get the arguments
-        inference_mode, model_input_type, input = param
+        inference_mode, model_input_type, input , options = param
 
         # Declare Empty Prompt Cache
         prompt_cache_file = None
@@ -174,7 +212,17 @@ class RKLLM(object):
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
         
-        # CHeck the model type to construct parameters
+        # Set sampling parameters of the request
+        sampling_params, max_new_tokens = self.get_sampling_parameters(options)
+        if sampling_params is not None:
+            self.rkllm_infer_params.sampling_params = ctypes.pointer(sampling_params)
+        if max_new_tokens is not None:
+            self.rkllm_infer_params.max_new_tokens = max_new_tokens
+        logger.debug(f"Max new tokens for the current inference: {max_new_tokens}. Current sampling parameters: {options}")
+
+
+
+        # Check the model type to construct parameters
         if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
             token_input, prompt_cache_file = input
             token_array = (ctypes.c_int * len(token_input))(*token_input)
@@ -199,19 +247,39 @@ class RKLLM(object):
             rkllm_input.input_data.embed_input.n_tokens = ctypes.c_size_t(num_tokens)
         
         elif model_input_type == RKLLMInputType.RKLLM_INPUT_MULTIMODAL:
-            prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, prompt_cache_file = input
-            logger.debug(f"Running multimodal inference with {num_images} images, each of size {image_width}x{image_height}, and {n_image_tokens} image tokens.")
-            
+            prompt_input, image_embed, n_image_tokens, image_width, image_height, num_images, video_embed, n_frame_per_video, frame_width, frame_height, n_video, prompt_cache_file = input
+
             # Prompt
             rkllm_input.input_data.multimodal_input.prompt = prompt_input.encode("utf-8")
             
-            # Image Embedding
-            arr = image_embed.flatten().astype(np.float32)
-            rkllm_input.input_data.multimodal_input.image_embed = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-            rkllm_input.input_data.multimodal_input.n_image_tokens = ctypes.c_size_t(n_image_tokens)
-            rkllm_input.input_data.multimodal_input.n_image = ctypes.c_size_t(num_images)
-            rkllm_input.input_data.multimodal_input.image_width = ctypes.c_size_t(image_width)
-            rkllm_input.input_data.multimodal_input.image_height = ctypes.c_size_t(image_height)
+            # Check if images or video input
+            if num_images > 0:
+                # Image Embedding
+                logger.debug(f"Running multimodal inference with {num_images} images, each of size {image_width}x{image_height}, and {n_image_tokens} image tokens.")
+                arr = image_embed.flatten().astype(np.float32)
+                rkllm_input.input_data.multimodal_input.image.image_embed = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+                rkllm_input.input_data.multimodal_input.image.n_image_tokens = ctypes.c_size_t(n_image_tokens)
+                rkllm_input.input_data.multimodal_input.image.n_image = ctypes.c_size_t(num_images)
+                rkllm_input.input_data.multimodal_input.image.image_start = options.get("img_start", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.image.image_end = options.get("img_end", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.image.image_content = options.get("img_content", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.image.image_width = ctypes.c_size_t(image_width)
+                rkllm_input.input_data.multimodal_input.image.image_height = ctypes.c_size_t(image_height)
+                
+
+            else:   
+                # Video Embedding
+                logger.debug(f"Running multimodal inference with {n_video} videos, each of size {frame_width}x{frame_height}, and {n_frame_per_video} frames per video.")
+                arr = video_embed.flatten().astype(np.float32)
+                rkllm_input.input_data.multimodal_input.video.video_embed = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+                rkllm_input.input_data.multimodal_input.video.n_frame_per_video = ctypes.c_size_t(n_frame_per_video)
+                rkllm_input.input_data.multimodal_input.video.n_video = ctypes.c_size_t(n_video)
+                rkllm_input.input_data.multimodal_input.video.video_start = options.get("video_start", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.video.video_end = options.get("video_end", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.video.video_content = options.get("video_content", "").encode("utf-8")
+                rkllm_input.input_data.multimodal_input.video.frame_width = ctypes.c_size_t(frame_width)
+                rkllm_input.input_data.multimodal_input.video.frame_height = ctypes.c_size_t(frame_height)
+                
 
             # Reset chat template. Input already generated by the tokenizer
             system_prompt = ""
@@ -219,7 +287,6 @@ class RKLLM(object):
             prompt_postfix = ""
             self.set_chat_template(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(prompt_prefix.encode('utf-8')), ctypes.c_char_p(prompt_postfix.encode('utf-8')))
 
-        
         # Prepare prompt caching
         if prompt_cache_file:
 
@@ -243,7 +310,6 @@ class RKLLM(object):
             self.prompt_cache_params.prompt_cache_path = ctypes.c_char_p((new_prompt_cache_file_path).encode('utf-8'))
             self.rkllm_infer_params.prompt_cache_params = ctypes.pointer(self.prompt_cache_params)
 
-
         # Run the RKLLM model with the input
         logger.debug(f"Executing rkllm inference...")
         self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
@@ -254,6 +320,13 @@ class RKLLM(object):
             logger.debug(f"Removing old prompt cache file: {prompt_cache_file}")
             os.remove(f"{self.prompt_cache_dir}/{prompt_cache_file}")
 
+        # Reset sampling_params to NULL after run (avoid dangling pointer)
+        if sampling_params is not None:
+            self.rkllm_infer_params.sampling_params = None
+        # Reset max_new_tokens to 0 after run (<=0 means use init value)
+        if max_new_tokens is not None:
+            self.rkllm_infer_params.max_new_tokens = 0
+ 
         return
 
     def abort(self):
