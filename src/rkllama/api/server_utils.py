@@ -200,12 +200,12 @@ class ChatEndpointHandler(EndpointHandler):
             chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
-                    "total_duration": metrics["total"],
-                    "load_duration": metrics["load"],
-                    "prompt_eval_count": metrics.get("prompt_tokens", 0),
-                    "prompt_eval_duration": metrics["prompt_eval"],
-                    "eval_count": metrics.get("token_count", 0),
-                    "eval_duration": metrics["eval"]
+                    "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
+                    "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
+                    "prompt_eval_count": metrics.get("prompt_tokens", 0) if metrics.get("prompt_tokens", 0) is not None else 0,
+                    "prompt_eval_duration": metrics.get("prompt_eval", 0) if metrics.get("prompt_eval", 0) is not None else 0,
+                    "eval_count": metrics.get("token_count", 0) if metrics.get("token_count", 0) is not None else 0,
+                    "eval_duration": metrics.get("eval", 0) if metrics.get("eval", 0) is not None else 0
                 })
                 
         return chunk
@@ -223,12 +223,12 @@ class ChatEndpointHandler(EndpointHandler):
             },
             "done_reason": "stop" if not (format_data and "tool_call" in format_data) else "tool_calls",
             "done": True,
-            "total_duration": metrics["total"],
-            "load_duration": metrics["load"],
-            "prompt_eval_count": metrics.get("prompt_tokens", 0),
-            "prompt_eval_duration": metrics["prompt_eval"],
-            "eval_count": metrics.get("token_count", 0),
-            "eval_duration": metrics["eval"]
+            "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
+            "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
+            "prompt_eval_count": metrics.get("prompt_tokens", 0) if metrics.get("prompt_tokens", 0) is not None else 0,
+            "prompt_eval_duration": metrics.get("prompt_eval", 0) if metrics.get("prompt_eval", 0) is not None else 0,
+            "eval_count": metrics.get("token_count", 0) if metrics.get("token_count", 0) is not None else 0,
+            "eval_duration": metrics.get("eval", 0) if metrics.get("eval", 0) is not None else 0
         }
 
         if format_data and "tool_call" in format_data:
@@ -576,12 +576,12 @@ class GenerateEndpointHandler(EndpointHandler):
             chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
-                    "total_duration": metrics["total"],
-                    "load_duration": metrics["load"],
-                    "prompt_eval_count": metrics.get("prompt_tokens", 0),
-                    "prompt_eval_duration": metrics["prompt_eval"],
-                    "eval_count": metrics.get("token_count", 0),
-                    "eval_duration": metrics["eval"]
+                    "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
+                    "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
+                    "prompt_eval_count": metrics.get("prompt_tokens", 0) if metrics.get("prompt_tokens", 0) is not None else 0,
+                    "prompt_eval_duration": metrics.get("prompt_eval", 0) if metrics.get("prompt_eval", 0) is not None else 0,
+                    "eval_count": metrics.get("token_count", 0) if metrics.get("token_count", 0) is not None else 0,
+                    "eval_duration": metrics.get("eval", 0) if metrics.get("eval", 0) is not None else 0
                 })
 
         return chunk
@@ -596,12 +596,12 @@ class GenerateEndpointHandler(EndpointHandler):
                        else format_data["cleaned_json"],
             "done_reason": "stop",
             "done": True,
-            "total_duration": metrics["total"],
-            "load_duration": metrics["load"],
-            "prompt_eval_count": metrics.get("prompt_tokens", 0),
-            "prompt_eval_duration": metrics["prompt_eval"],
-            "eval_count": metrics.get("token_count", 0),
-            "eval_duration": metrics["eval"],
+            "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
+            "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
+            "prompt_eval_count": metrics.get("prompt_tokens", 0) if metrics.get("prompt_tokens", 0) is not None else 0,
+            "prompt_eval_duration": metrics.get("prompt_eval", 0) if metrics.get("prompt_eval", 0) is not None else 0,
+            "eval_count": metrics.get("token_count", 0) if metrics.get("token_count", 0) is not None else 0,
+            "eval_duration": metrics.get("eval", 0) if metrics.get("eval", 0) is not None else 0,
             "context": []
         }
         
