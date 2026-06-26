@@ -588,11 +588,16 @@ def get_gguf_model_path(model_name) -> str:
         if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["mmproj","--mmproj"]):
             expected_mmproj_subname = configuration["ARGS"]["--mmproj"] if "--mmproj" in configuration["ARGS"].keys() else configuration["ARGS"]["mmproj"]
 
+        # Read possible mtp draft model
+        expected_mtp_subname = "mtp"
+        if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["model-draft","--model-draft"]):
+            expected_mtp_subname = configuration["ARGS"]["--model-draft"] if "--model-draft" in configuration["ARGS"].keys() else configuration["ARGS"]["model-draft"]
+
         # Loop over the files in model directory
         for root, dirs, files in os.walk(model_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                if file_path.lower().endswith(".gguf") and expected_mmproj_subname.lower() not in file_path.lower(): # Prevent return projector
+                if file_path.lower().endswith(".gguf") and expected_mmproj_subname.lower() not in file_path.lower() and expected_mtp_subname.lower() not in file_path.lower(): # Prevent return projector or mtp
                     # return the file
                     return file_path
 

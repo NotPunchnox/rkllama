@@ -1299,7 +1299,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.73"
+        "version": "0.0.74"
     }), 200
 
 

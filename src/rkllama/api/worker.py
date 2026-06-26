@@ -426,8 +426,8 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
                 # Check that argments are not the required calculated by rkllama
                 if arg not in ["--port", "--model", "--cpu-list"]:
 
-                    # Cheking if projector and log-file exists without path in config
-                    if arg in ["--mmproj","--log-file"] and not arg_value.startswith("/"):
+                    # Cheking if projector, log-file or mtp draft model exists without path in config
+                    if arg in ["--mmproj","--log-file","--model-draft"] and not arg_value.startswith("/"):
                         logger.debug(f"Adding model directory to argument '{arg}' because currently relative path specified '{arg_value}'")
                         arg_value = os.path.join(gguf_model_dir, arg_value)
 
