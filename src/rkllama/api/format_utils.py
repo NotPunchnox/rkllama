@@ -473,10 +473,10 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     # Handle token usage if present
     prompt_tokens = ollama_response.get("prompt_eval_count", 0)
     completion_tokens = ollama_response.get("eval_count", 0)
-    eval_duration_ns = ollama_response.get("eval_duration", 0)
-    prompt_eval_duration_ns = ollama_response.get("prompt_eval_duration", 0)
-    total_duration_ns = ollama_response.get("total_duration", 0)
-    load_duration_ns = ollama_response.get("load_duration", 0)
+    eval_duration_ns = ollama_response.get("eval_duration") or 0
+    prompt_eval_duration_ns = ollama_response.get("prompt_eval_duration") or 0
+    total_duration_ns = ollama_response.get("total_duration") or 0
+    load_duration_ns = ollama_response.get("load_duration") or 0
     eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
     prompt_eval_duration = prompt_eval_duration_ns / 1_000_000_000 if prompt_eval_duration_ns > 0 else 0
     total_duration = total_duration_ns / 1_000_000_000 if total_duration_ns > 0 else 0
@@ -665,10 +665,10 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
             # Final chunk — stop streaming
             eval_count = ollama_chunk.get("eval_count", 0)
             prompt_tokens = ollama_chunk.get("prompt_eval_count", 0)
-            eval_duration_ns = ollama_chunk.get("eval_duration", 0)
-            prompt_eval_duration_ns = ollama_chunk.get("prompt_eval_duration", 0)
-            total_duration_ns = ollama_chunk.get("total_duration", 0)
-            load_duration_ns = ollama_chunk.get("load_duration", 0)
+            eval_duration_ns = ollama_chunk.get("eval_duration") or 0
+            prompt_eval_duration_ns = ollama_chunk.get("prompt_eval_duration") or 0
+            total_duration_ns = ollama_chunk.get("total_duration") or 0
+            load_duration_ns = ollama_chunk.get("load_duration") or 0
             eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
             prompt_eval_duration = prompt_eval_duration_ns / 1_000_000_000 if prompt_eval_duration_ns > 0 else 0
             total_duration = total_duration_ns / 1_000_000_000 if total_duration_ns > 0 else 0
