@@ -355,6 +355,21 @@ def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
                 message["images"] = [image_url]
                 message["content"] = ""
     
+    # Normalize tool_calls: OpenAI clients send arguments as a JSON string,
+    # but the Qwen chat template expects a dict/mapping (calls .items() on it).
+    # Parse string arguments to dicts before the template renders them.
+    for message in ollama_payload.get("messages", []):
+        for tool_call in (message.get("tool_calls") or []):
+            fn = tool_call.get("function") if isinstance(tool_call, dict) else None
+            if not isinstance(fn, dict):
+                continue
+            args = fn.get("arguments")
+            if isinstance(args, str):
+                try:
+                    fn["arguments"] = json.loads(args)
+                except Exception:
+                    pass
+    
     return ollama_payload
 
 
@@ -1176,11 +1191,59 @@ def get_tool_calls_standard(response):
     return tool_calls
 
 
+def get_tool_calls_qwen35_xml(response):
+    """ Parse Qwen3.5/3.6-style native XML tool calls.
+
+    Qwen3.5+ models emit tool calls in this native XML format instead of
+    JSON between <tool_call> tags:
+
+        <tool_call>
+        <function=calculator>
+        <parameter=expression>
+        7 * 8
+        </parameter>
+        </function>
+        </tool_call>
+
+    Returns a list of {"function": {"name": ..., "arguments": {...}}}.
+    """
+    logger.debug("Searching tools with qwen35 xml method: get_tool_calls_qwen35_xml")
+
+    tool_calls = []
+    # Match each <tool_call>...</tool_call> block; tolerate truncated calls
+    # without closing tag (model may stop at max_tokens mid-call).
+    for block in re.findall(r"<tool_call>(.*?)(?:</tool_call>|$)", response, re.DOTALL):
+        func_match = re.search(r"<function=([^>\s]+)>", block)
+        if not func_match:
+            continue
+        name = func_match.group(1).strip()
+        arguments = {}
+        for param in re.finditer(r"<parameter=([^>\s]+)>(.*?)</parameter>", block, re.DOTALL):
+            key = param.group(1).strip()
+            value = param.group(2).strip()
+            # Coerce valid JSON values (numbers, booleans, objects, arrays);
+            # keep plain text as string
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (str, int, float, bool, dict, list)):
+                    value = parsed
+            except Exception:
+                pass
+            arguments[key] = value
+        if name:
+            tool_calls.append({"function": {"name": name, "arguments": arguments}})
+    return tool_calls
+
+
 def get_tool_calls(response):
     """ Get all the tool calls indicated by the LLM in the response """
     
     # We try the standard form first
     tool_calls = get_tool_calls_standard(response)
+
+    if not tool_calls:
+        # Qwen3.5+ models emit native XML tool calls (function= / parameter=)
+        tool_calls = get_tool_calls_qwen35_xml(response)
 
     if not tool_calls:
         # No standard format tool call found. Search for more generic way
