@@ -685,7 +685,7 @@ System Monitor:
 
 ## Star History
 
-![Star History Chart](https://api.star-history.com/svg?repos=notpunchnox/rkllama)
+![Star History Chart](https://star-history.dera.page/svg?repos=notpunchnox/rkllama)
 
 ---
 
