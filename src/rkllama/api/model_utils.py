@@ -584,20 +584,23 @@ def get_gguf_model_path(model_name) -> str:
         configuration.read(config_file)
 
         # Read possible projector for vision models
-        expected_mmproj_subname = "mmproj"
+        expected_mmproj_subname = None
         if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["mmproj","--mmproj"]):
             expected_mmproj_subname = configuration["ARGS"]["--mmproj"] if "--mmproj" in configuration["ARGS"].keys() else configuration["ARGS"]["mmproj"]
 
         # Read possible mtp draft model
-        expected_mtp_subname = "mtp"
-        if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["model-draft","--model-draft"]):
-            expected_mtp_subname = configuration["ARGS"]["--model-draft"] if "--model-draft" in configuration["ARGS"].keys() else configuration["ARGS"]["model-draft"]
-
+        expected_mtp_subname = None
+        if configuration is not None and "ARGS" in configuration.keys() and any(x in configuration["ARGS"].keys() for x in ["model-draft","--model-draft", "spec-draft-model", "--spec-draft-model"]):
+            if any(x in configuration["ARGS"].keys() for x in ["model-draft","--model-draft"]):
+                expected_mtp_subname = configuration["ARGS"]["--model-draft"] if "--model-draft" in configuration["ARGS"].keys() else configuration["ARGS"]["model-draft"]
+            else:
+                expected_mtp_subname = configuration["ARGS"]["--spec-draft-model"] if "--spec-draft-model" in configuration["ARGS"].keys() else configuration["ARGS"]["spec-draft-model"]
+            
         # Loop over the files in model directory
         for root, dirs, files in os.walk(model_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                if file_path.lower().endswith(".gguf") and expected_mmproj_subname.lower() not in file_path.lower() and expected_mtp_subname.lower() not in file_path.lower(): # Prevent return projector or mtp
+                if file_path.lower().endswith(".gguf") and all((x is None) or (x not in file_path) for x in [expected_mmproj_subname, expected_mtp_subname]): # Prevent return projector or mtp
                     # return the file
                     return file_path
 

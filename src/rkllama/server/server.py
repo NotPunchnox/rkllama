@@ -346,7 +346,7 @@ def load_model_route():
 def unload_model_route():
     
     data = request.get_json(force=True)
-    model_name = data.get('model_name', None)
+    model_name = data.get('model_name', (data.get('model', None)))
     if model_name is None:
         return jsonify({"error": "Please enter the name of the model to be unloaded."}), 400
     
@@ -360,7 +360,7 @@ def unload_model_route():
 # Route to unload a model from the NPU
 @app.route('/unload_models', methods=['POST'])
 def unload_models_route():
-    variables.worker_manager_rkllm.stop_all
+    variables.worker_manager_rkllm.stop_all()
     return jsonify({"message": "Models successfully unloaded!"}), 200
 
 # Route to retrieve the current models
@@ -1299,7 +1299,7 @@ def embeddings_ollama():
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
-        "version": "0.0.75"
+        "version": "0.0.76"
     }), 200
 
 
@@ -1635,9 +1635,11 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
                         
                             if not is_openai_request: # Ollama
                                 for chunk in converter.process_line(line):
+                                    logger.debug(f"Llama.cpp converted to ollama chunk response: {json.dumps(chunk)}")
                                     yield json.dumps(chunk) + "\n"
                             else: # OpenAI
                                 # Return the chunk to the client of the request
+                                logger.debug(f"Llama.cpp stream chunk response: {line}")
                                 yield f"{line}\n"
                 except Exception as e:
                     # Log the error
@@ -1668,8 +1670,10 @@ def forward_request_to_llama_cpp_worker(is_openai_request,request):
                 content = response.content
                 content = content.decode("utf-8")
                 content = json.loads(content)
+                logger.debug(f"Llama.cpp original response: {content}")
                 if not is_openai_request: #ollama
                     content = openai_to_ollama_response(content)
+                    logger.debug(f"Llama.cpp converted to Ollama response: {content}")
                 
                 # Return the complete response 
                 return content, response.status_code

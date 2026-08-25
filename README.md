@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.75](#New-Version)
+### [Version: 0.0.76](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -78,7 +78,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
 - **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN and MMS-TTS with RKNN.
 - **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC or whisper running the model with RKNN.
-- **EXPERIMENTAL** - Support for .GGUF models in NPU throught a great llama.cpp fork of user @invisiofficial (https://github.com/invisiofficial/rk-llama.cpp)
+- **Support for .GGUF models** - Support for .GGUF models in NPU throught a great llama.cpp fork of user @invisiofficial (https://github.com/invisiofficial/rk-llama.cpp). **NOTE:** Currently the Dockerfile is using a more updated version of that fork for the last features of llama.cpp (like MTP). Also, you can use/try others interesting forks like the impressive one of the user @Mojo24x7 (https://github.com/Mojo24x7/rk-llama.cpp) 
 
 ## Documentation
 

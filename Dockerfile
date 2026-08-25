@@ -33,13 +33,7 @@ ARG TARGETARCH
 RUN apt-get update && \
     apt-get install -y gcc-14 g++-14 build-essential git cmake libssl-dev wget lsb-release software-properties-common gnupg apt-utils
 
-RUN wget https://apt.llvm.org/llvm.sh && \
-    chmod +x llvm.sh && \
-    ./llvm.sh 21
-
-RUN apt-get install -y libomp5 clang-21 libclang-cpp21-dev libomp-21-dev
-
-RUN git clone https://github.com/invisiofficial/rk-llama.cpp.git
+RUN git clone https://github.com/danielferr85/rk-llama.cpp.git
 
 WORKDIR /opt/rkllama/rk-llama.cpp
 
@@ -48,14 +42,12 @@ RUN ARCH="${TARGETARCH:-}" && \
     if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
         rm -rf build && \
         cmake -S . -B build \
-            #-DCMAKE_BUILD_TYPE=Release \
-            #-DGGML_NATIVE=OFF \
-            #-DLLAMA_BUILD_TESTS=OFF \
-            #-DGGML_BACKEND_DL=ON \
-            #-DGGML_CPU_ALL_VARIANTS=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_RKNPU2=ON \
-	        -DCMAKE_C_COMPILER=clang-21 \
-            -DCMAKE_CXX_COMPILER=clang++-21 && \
+            -DGGML_CPU_KLEIDIAI=ON \
+	        -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14 && \
         cmake --build build -j "$(nproc)"; \
     else \
         echo "rknpu2 image: unsupported architecture (need arm64/aarch64), got TARGETARCH=${TARGETARCH} uname=${ARCH}"; \

@@ -314,8 +314,8 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
                     # Get the metricts of the inference
                     prompt_token_count = global_metrics[0]
                     token_count = global_metrics[1]
-                    prompt_eval = global_metrics[2]
-                    eval = global_metrics[3]
+                    prompt_eval = global_metrics[2] * 1000000  if global_metrics[2] is not None else 0
+                    eval = global_metrics[3] * 1000000 if global_metrics[3] is not None else 0
                 
                 # Send final signal of the inference
                 child_conn.send((WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval))   
@@ -427,7 +427,7 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
                 if arg not in ["--port", "--model", "--cpu-list"]:
 
                     # Cheking if projector, log-file or mtp draft model exists without path in config
-                    if arg in ["--mmproj","--log-file","--model-draft"] and not arg_value.startswith("/"):
+                    if arg in ["--mmproj","--log-file","--model-draft", "--spec-draft-model"] and not arg_value.startswith("/"):
                         logger.debug(f"Adding model directory to argument '{arg}' because currently relative path specified '{arg_value}'")
                         arg_value = os.path.join(gguf_model_dir, arg_value)
 
