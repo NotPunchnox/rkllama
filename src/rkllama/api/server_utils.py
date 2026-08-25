@@ -93,11 +93,23 @@ class EndpointHandler:
             logger.debug("Local Tokenizer doesn't exists!")
 
             # Get model specific tokenizer from Huggin Face specified in Modelfile
-            model_in_hf = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models")).replace('"', '').replace("'", "")
-            logger.info(f"Download the tokenizer only one time from Hugging face repo: {model_in_hf}")
-            
+            tokenizer_repo = get_property_modelfile(model_name, "TOKENIZER", rkllama.config.get_path("models"))
+            if tokenizer_repo:
+                tokenizer_repo = tokenizer_repo.replace('"', '').replace("'", "")
+            else:
+                # Fallback to HUGGINGFACE_PATH if TOKENIZER is not configured
+                tokenizer_repo = get_property_modelfile(model_name, "HUGGINGFACE_PATH", rkllama.config.get_path("models"))
+                if tokenizer_repo:
+                    tokenizer_repo = tokenizer_repo.replace('"', '').replace("'", "")
+
+            if not tokenizer_repo:
+                logger.error(f"No TOKENIZER or HUGGINGFACE_PATH configured for model {model_name} in Modelfile.")
+                raise ValueError(f"No tokenizer repository configured for model {model_name}. Please set TOKENIZER or HUGGINGFACE_PATH in Modelfile.")
+
+            logger.info(f"Download the tokenizer only one time from Hugging face repo: {tokenizer_repo}")
+
             # Get the tokenizer configured for the model
-            tokenizer = AutoTokenizer.from_pretrained(model_in_hf, trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_repo, trust_remote_code=True)
 
             # Save to the disk the local tokenizer for future use
             tokenizer.save_pretrained(local_tokenizer_path)
