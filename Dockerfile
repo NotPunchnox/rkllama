@@ -33,7 +33,7 @@ ARG TARGETARCH
 RUN apt-get update && \
     apt-get install -y gcc-14 g++-14 build-essential git cmake libssl-dev wget lsb-release software-properties-common gnupg apt-utils
 
-RUN git clone https://github.com/danielferr85/rk-llama.cpp.git
+RUN git clone https://github.com/invisiofficial/rk-llama.cpp.git
 
 WORKDIR /opt/rkllama/rk-llama.cpp
 
