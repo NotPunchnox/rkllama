@@ -107,11 +107,22 @@ class RKLLMVideoInput(ctypes.Structure):
         ("frame_height", ctypes.c_size_t),
     ]
 
+class RKLLMAudioInput(ctypes.Structure):
+    _fields_ = [
+        ("audio_embed", ctypes.POINTER(ctypes.c_float)),
+        ("n_audio_tokens", ctypes.c_size_t),
+        ("n_audio", ctypes.c_size_t),
+        ("audio_start", ctypes.c_char_p),
+        ("audio_end", ctypes.c_char_p),
+        ("audio_content", ctypes.c_char_p),
+    ]
+
 class RKLLMMultiModalInput(ctypes.Structure):
     _fields_ = [
         ("prompt", ctypes.c_char_p),
         ("image", RKLLMImageInput),
         ("video", RKLLMVideoInput),
+        ("audio", RKLLMAudioInput),
     ]
 
 class RKLLMInputUnion(ctypes.Union):
