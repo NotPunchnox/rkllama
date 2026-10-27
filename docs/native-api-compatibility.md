@@ -8,7 +8,8 @@ runtime and audio ABI definitions. This branch adds the request-option contract,
 the initialization `top_k` type/value correction, and ABI regression tests;
 see `request-options.md` and `rkllm-1.3.1.md`. Review against that prerequisite
 commit while it is unmerged, then rebase onto upstream `main` after it merges.
-Prefix caching and post-generation validation/retry are not included.
+Optional prefix caching is documented in `native-prefix-cache.md`.
+Post-generation validation/retry is not included.
 
 ## Request and response contract
 
@@ -57,11 +58,10 @@ callback counts. The SDK does not expose a separate finish-reason field here.
 Capacity checks use the context size reported by the loaded native worker, not
 an edited Modelfile that has not yet been reloaded.
 
-Automatic disk prompt-cache reuse is disabled for stateless chat. The previous
-cache identity used only the first two messages and the message count, not the
-complete history, tool definitions, or thinking settings. Safe exact-prefix
-reuse needs a separate implementation and architecture-specific validation.
-This change makes no repeated-prompt speedup claim and does not delete old caches.
+The legacy message-count-based cache selector remains disabled. Exact-prefix
+reuse is experimental, explicitly opt-in and off by default; see
+`native-prefix-cache.md` for ownership, invalidation, accounting and cancellation
+limits. No client-controlled cache path or conversation identity is accepted.
 
 ## Unit and contract verification
 

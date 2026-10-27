@@ -141,6 +141,14 @@ class RKLLM(object):
         self.rkllm_load_prompt_cache.restype = ctypes.c_int
         
         self.tools = None
+        self.prefix_cache = None
+        self._prefix_save_path = None
+        if os.environ.get("RKLLAMA_EXPERIMENTAL_PREFIX_CACHE") == "1":
+            from .prefix_cache import PrefixCache
+            self.release_prompt_cache = rkllm_lib.rkllm_release_prompt_cache
+            self.release_prompt_cache.argtypes = [RKLLM_Handle_t]
+            self.release_prompt_cache.restype = ctypes.c_int
+            self.prefix_cache = PrefixCache(self, rkllama.config.get_path("temp"))
 
     def get_sampling_parameters(self, options):
         
@@ -198,6 +206,18 @@ class RKLLM(object):
             self.set_function_tools_(self.handle, ctypes.c_char_p(system_prompt.encode('utf-8')), ctypes.c_char_p(tools.encode('utf-8')),  ctypes.c_char_p(tool_response_str.encode('utf-8')))
 
     def run(self, *param):
+        mode, kind, inputs, options = param
+        if getattr(self,"prefix_cache",None):
+            self.prefix_cache.last_hit=False
+            self.prefix_cache.last_priming_metrics=[]
+            if kind == RKLLMInputType.RKLLM_INPUT_TOKEN and mode == RKLLMInferMode.RKLLM_INFER_GENERATE:
+                if inputs[1] is not None:
+                    raise ValueError("Legacy cache files cannot be combined with experimental prefix reuse")
+                return self.prefix_cache.invoke(*param)
+            self.prefix_cache._release_clear()
+        return self._run(*param)
+
+    def _run(self, *param):
         
         # Get the arguments
         inference_mode, model_input_type, input , options = param
@@ -211,6 +231,7 @@ class RKLLM(object):
         
         # Set the inference mode
         self.rkllm_infer_params.mode = inference_mode
+        self.rkllm_infer_params.prompt_cache_params = None
         
         # Set sampling parameters of the request
         sampling_params, max_new_tokens = self.get_sampling_parameters(options)
@@ -310,9 +331,21 @@ class RKLLM(object):
             self.prompt_cache_params.prompt_cache_path = ctypes.c_char_p((new_prompt_cache_file_path).encode('utf-8'))
             self.rkllm_infer_params.prompt_cache_params = ctypes.pointer(self.prompt_cache_params)
 
+        if getattr(self,"_prefix_save_path",None):
+            prefix_save = RKLLMPromptCacheParam()
+            prefix_save.save_prompt_cache = 1
+            prefix_save.prompt_cache_path = self._prefix_save_path.encode()
+            self.rkllm_infer_params.prompt_cache_params = ctypes.pointer(prefix_save)
+
         # Run the RKLLM model with the input
         logger.debug(f"Executing rkllm inference...")
-        return_code = self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
+        try:
+            if getattr(self,"prefix_cache",None) and self.prefix_cache.cancelled():return -1
+            return_code = self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
+        finally:
+            self.rkllm_infer_params.prompt_cache_params = None
+            self.rkllm_infer_params.sampling_params = None
+            self.rkllm_infer_params.max_new_tokens = 0
         logger.debug(f"Finished inference")
 
         # Delete previous old prompt cache if exists
@@ -332,8 +365,14 @@ class RKLLM(object):
     def abort(self):
         return self.rkllm_abort(self.handle)
     
-    def clear_cache(self):
+    def clear_cache(self,preserve_prefix=False):
+        if getattr(self,"prefix_cache",None):
+            if preserve_prefix:self.prefix_cache._release_clear()
+            else:self.prefix_cache.invalidate()
+            return 0
         return self.rkllm_clear_kv_cache(self.handle, 1, None, None)
 
     def release(self):
-        self.rkllm_destroy(self.handle)
+        try:
+            if self.prefix_cache:self.prefix_cache.close()
+        finally:self.rkllm_destroy(self.handle)

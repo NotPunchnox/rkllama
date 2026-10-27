@@ -38,7 +38,7 @@ def test_hung_worker_does_not_wait_for_non_daemon_native_thread():
             worker.terminate_unquiescent_worker()
     exit_process.assert_called_once_with(1)
 
-def test_no_experimental_adapter_or_prefix_cache_in_core():
+def test_prefix_cache_does_not_enable_output_validation_adapter():
     api = Path(__file__).parents[1] / 'src/rkllama/api'
     assert not (api / 'validated_completion.py').exists()
-    assert not (api / 'prefix_cache.py').exists()
+    assert (api / 'prefix_cache.py').exists()

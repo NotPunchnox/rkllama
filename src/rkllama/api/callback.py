@@ -9,6 +9,7 @@ split_byte_data = bytes(b"")
 last_embeddings = []
 global_metrics = []
 global_generation_steps = 0
+suppress_output = False
 
 
 def reset_callback_state():
@@ -49,6 +50,8 @@ def callback_impl(result, userdata, status):
         print("Execution Error")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
+        if suppress_output:
+            return 0
         if result:
             global_generation_steps += 1
         # Sauvegarder le texte du token de sortie et l'status d'execution de RKLLM
