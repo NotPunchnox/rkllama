@@ -1,6 +1,6 @@
 # RKLLama: LLM Server and Client for Rockchip 3588/3576
 
-### [Version: 0.0.76](#New-Version)
+### [Version: 0.0.77](#New-Version)
 
 Video demo ( version 0.0.1 ):
 
@@ -17,7 +17,7 @@ Video demo ( version 0.0.1 ):
 ## Overview
 A server to run and interact with LLM models optimized for Rockchip RK3588(S) and RK3576 platforms. The difference from other software of this type like [Ollama](https://ollama.com) or [Llama.cpp](https://github.com/ggerganov/llama.cpp) is that RKLLama allows models to run on the NPU.
 
-* Version `Lib rkllm-runtime`: V 1.3.0.
+* Version `Lib rkllm-runtime`: V 1.3.1.
 * Version `Lib rknn-runtime`: V 2.3.2.
 
 ## File Structure
@@ -38,6 +38,9 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
 
 ## Main Features
+
+For the supported RKLLM generation settings, aliases, validation errors, and
+best-effort formatting limitations, see [the request-option contract](docs/request-options.md).
 - **Running models on NPU.**
 - **Ollama API compatibility** - Support for:
    * `/api/chat`
@@ -78,7 +81,7 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **Image Generation** - Generate images with OpenAI Image generation endpoint using model LCM Stable Diffusion 1.5 RKNN models.
 - **Text to Speech (TTS)** - Generate speech with OpenAI Audio Speech endpoint using models for Piper TTS running encoder with ONNX and decoder with RKNN and MMS-TTS with RKNN.
 - **Speech to Text (STT)** - Generate transcriptions with OpenAI Audio Transcriptions endpoint using models for omniASR-CTC or whisper running the model with RKNN.
-- **Support for .GGUF models** - Support for .GGUF models in NPU throught a great llama.cpp fork of user @invisiofficial (https://github.com/invisiofficial/rk-llama.cpp). **NOTE:** Currently the Dockerfile is using a more updated version of that fork for the last features of llama.cpp (like MTP). Also, you can use/try others interesting forks like the impressive one of the user @Mojo24x7 (https://github.com/Mojo24x7/rk-llama.cpp) 
+- **Support for .GGUF models** - Support for .GGUF models in NPU throught a great llama.cpp fork of user @invisiofficial (https://github.com/invisiofficial/rk-llama.cpp). **NOTE:** You can use/try others interesting forks like the impressive one of the user @Mojo24x7 (https://github.com/Mojo24x7/rk-llama.cpp) 
 
 ## Documentation
 

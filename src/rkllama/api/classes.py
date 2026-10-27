@@ -47,7 +47,7 @@ class RKLLMParam(ctypes.Structure):
         ("model_path", ctypes.c_char_p),
         ("max_context_len", ctypes.c_int32),
         ("max_new_tokens", ctypes.c_int32),
-        ("top_k", ctypes.c_float),
+        ("top_k", ctypes.c_int32),
         ("n_keep", ctypes.c_int32),
         ("top_p", ctypes.c_float),
         ("temperature", ctypes.c_float),
@@ -107,11 +107,22 @@ class RKLLMVideoInput(ctypes.Structure):
         ("frame_height", ctypes.c_size_t),
     ]
 
+class RKLLMAudioInput(ctypes.Structure):
+    _fields_ = [
+        ("audio_embed", ctypes.POINTER(ctypes.c_float)),
+        ("n_audio_tokens", ctypes.c_size_t),
+        ("n_audio", ctypes.c_size_t),
+        ("audio_start", ctypes.c_char_p),
+        ("audio_end", ctypes.c_char_p),
+        ("audio_content", ctypes.c_char_p),
+    ]
+
 class RKLLMMultiModalInput(ctypes.Structure):
     _fields_ = [
         ("prompt", ctypes.c_char_p),
         ("image", RKLLMImageInput),
         ("video", RKLLMVideoInput),
+        ("audio", RKLLMAudioInput),
     ]
 
 class RKLLMInputUnion(ctypes.Union):

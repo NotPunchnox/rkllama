@@ -3,7 +3,8 @@ src/__pycache__
 *.log
 config/config.env
 build
-tests
+# Contract regression tests are tracked.
+.pytest_cache/
 src/rkllama.egg-info/*
 
 # macOS system files

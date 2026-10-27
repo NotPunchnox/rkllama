@@ -8,11 +8,24 @@ global_text = []
 split_byte_data = bytes(b"")
 last_embeddings = []
 global_metrics = []
+global_generation_steps = 0
+suppress_output = False
+
+
+def reset_callback_state():
+    """Start each inference with empty buffers, including partial UTF-8 bytes."""
+    global split_byte_data, global_status, global_generation_steps
+    global_generation_steps = 0
+    global_text.clear()
+    global_metrics.clear()
+    last_embeddings.clear()
+    split_byte_data = b""
+    global_status = -1
 
 
 # Definir la fonction de rappel
 def callback_impl(result, userdata, status):
-    global split_byte_data, global_status, global_text, last_embeddings, global_metrics
+    global split_byte_data, global_status, global_text, last_embeddings, global_metrics, global_generation_steps
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
         global_status = status
@@ -37,6 +50,10 @@ def callback_impl(result, userdata, status):
         print("Execution Error")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
+        if suppress_output:
+            return 0
+        if result:
+            global_generation_steps += 1
         # Sauvegarder le texte du token de sortie et l'status d'execution de RKLLM
         global_status = status
         # Check if result or result.contents or result.contents.text is None
