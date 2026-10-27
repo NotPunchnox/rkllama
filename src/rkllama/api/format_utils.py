@@ -15,6 +15,7 @@ from PIL import Image
 import io
 
 import rkllama.config
+from .request_options import RequestOptionError, validate_request_options, tool_value_matches
 
 try:
     from pydantic import BaseModel, ValidationError, create_model
@@ -295,7 +296,23 @@ def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
     Returns:
         dict: Ollama-compatible request payload.
     """
+    openai_payload = validate_request_options(openai_payload, openai=True, chat=True)
     messages = openai_payload.get("messages", [])
+    for message in messages:
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            if message.get("content") is None:
+                message["content"] = ""
+            for call in message["tool_calls"]:
+                function = call.get("function", {})
+                arguments = function.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        raise RequestOptionError("messages", "Tool arguments must be a JSON object")
+                if not isinstance(arguments, dict):
+                    raise RequestOptionError("messages", "Tool arguments must be a JSON object")
+                function["arguments"] = arguments
     model = openai_payload.get("model", "llama3")
     stream = openai_payload.get("stream", False)
 
@@ -306,28 +323,9 @@ def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
         "stream": stream,
     }
 
-    # Supported Ollama options from OpenAI fields
-    supported_option_mappings = {
-        "temperature": "temperature",
-        "top_p": "top_p",
-        "top_k": "top_k",
-        "presence_penalty": "presence_penalty",
-        "frequency_penalty": "frequency_penalty",
-        "stop": "stop",
-        "max_tokens": "max_new_tokens",
-        "max_completion_tokens": "max_new_tokens",
-        "seed": "seed",
-        "logit_bias": "logit_bias",  # If supported
-    }
+    ollama_payload["options"] = openai_payload["options"]
 
-    for openai_key, ollama_key in supported_option_mappings.items():
-        if openai_key in openai_payload:
-            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
-
-    # Handle tool_choice, tools, functions
-    # Ollama currently has no native tool/function support (like OpenAI tool-calling)
-    # But we include them for forward compatibility if needed by custom handler
-    for passthrough_key in ["tools", "tool_choice", "functions", "function_call", "response_format", "n"]:
+    for passthrough_key in ["tools", "system", "images", "format", "enable_thinking", "stream_options"]:
         if passthrough_key in openai_payload:
             ollama_payload[passthrough_key] = openai_payload[passthrough_key]
 
@@ -366,6 +364,7 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
     Returns:
         dict: Ollama-compatible /api/generate request payload.
     """
+    openai_payload = validate_request_options(openai_payload, openai=True, chat=False)
     # Handle "prompt": could be a string or an array
     prompt = openai_payload.get("prompt", "")
     if isinstance(prompt, list):
@@ -383,25 +382,9 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
         "stream": stream,
     }
 
-    # Supported Ollama option mappings
-    supported_option_mappings = {
-        "temperature": "temperature",
-        "top_p": "top_p",
-        "top_k": "top_k",
-        "presence_penalty": "presence_penalty",
-        "frequency_penalty": "frequency_penalty",
-        "stop": "stop",
-        "max_tokens": "max_new_tokens",  # OpenAI max_tokens => Ollama max_new_tokens
-        "seed": "seed",
-        "logit_bias": "logit_bias",  # If supported by your Ollama deployment
-    }
+    ollama_payload["options"] = openai_payload["options"]
 
-    for openai_key, ollama_key in supported_option_mappings.items():
-        if openai_key in openai_payload:
-            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
-
-    # Pass through extra non-standard fields for forward compatibility (optional)
-    for passthrough_key in ["n", "best_of", "logprobs", "echo", "user"]:
+    for passthrough_key in ["system", "format", "enable_thinking", "stream_options"]:
         if passthrough_key in openai_payload:
             ollama_payload[passthrough_key] = openai_payload[passthrough_key]
 
@@ -422,6 +405,20 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
             ollama_payload["images"] = [image_url]
 
     return ollama_payload
+
+
+def _openai_tool_calls(tool_calls, streamed=False):
+    """Serialize arguments as JSON strings without mutating Ollama data."""
+    result = []
+    for index, tool in enumerate(tool_calls):
+        function = dict(tool["function"])
+        arguments = function.get("arguments", {})
+        function["arguments"] = arguments if isinstance(arguments, str) else json.dumps(arguments)
+        call = {"id": f"call_{uuid.uuid4().hex}", "type": "function", "function": function}
+        if streamed:
+            call["index"] = index
+        result.append(call)
+    return result
 
 
 def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
@@ -447,7 +444,7 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     tool_calls = message.get("tool_calls", None)
 
     # Handle finish_reason
-    finish_reason = "stop" if ollama_response.get("done", True) else None
+    finish_reason = ollama_response.get("done_reason", "stop" if ollama_response.get("done", True) else None)
 
     # Build the choice message
     choice_message = {
@@ -457,10 +454,7 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
 
     if tool_calls:
         # OpenAI v1 supports `tool_calls`
-        for tool in tool_calls:
-            tool["id"] = f"call_{uuid.uuid4().hex}"
-            tool["type"] = "function"
-        choice_message["tool_calls"] = tool_calls
+        choice_message["tool_calls"] = _openai_tool_calls(tool_calls)
         finish_reason = ollama_response.get("done_reason")
 
 
@@ -606,192 +600,65 @@ def ollama_embedding_to_openai_v1_embeddingns(ollama_response: dict) -> dict:
 
 
 
-def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
-    """
-    Converts an iterable of Ollama stream JSON lines to OpenAI SSE streaming chunks.
-
-    Args:
-        ollama_stream_lines (iterable[str]): Streamed JSON lines from Ollama.
-
-    Yields:
-        str: OpenAI-compatible `data: ...\n\n` formatted SSE chunks.
-    """
-
-    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+def _ollama_stream_to_openai_chunks(lines, *, is_chat, include_usage=False):
+    """Keep one response identity and emit requested native usage before DONE."""
+    completion_id = f"{'chatcmpl' if is_chat else 'cmpl'}-{uuid.uuid4().hex}"
     created = int(time.time())
-    for line in ollama_stream_lines:
-        line = str(line).strip()
-        if not line or line.startswith("data:"):
-            continue
-
-        try:
-            ollama_chunk = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        content_piece = ollama_chunk.get("message", {}).get("content", "")
-        role = ollama_chunk.get("message", {}).get("role")
-        tool_calls = ollama_chunk.get("message", {}).get("tool_calls")
-        model = ollama_chunk.get("model", "unknown-model")
-        finish_reason = ollama_chunk.get("done_reason", None)
-
-        delta = {}
-        delta["content"] = content_piece
-        if role:
-            delta["role"] = role
-        if tool_calls:
-            for idx,tool in enumerate(tool_calls):
-                tool["id"] = f"call_{uuid.uuid4().hex}"
-                tool["type"] = "function"
-                tool["index"] = idx
-                tool["function"]["arguments"] = str(tool["function"]["arguments"]).replace("'", '"')
-            delta["tool_calls"] = tool_calls
-        
-        chunk = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": delta,
-                "finish_reason": finish_reason
-            }]
-        }
-
-        yield f"data: {json.dumps(chunk)}\n\n"
-
-        if ollama_chunk.get("done") is True:
-            # Final chunk — stop streaming
-            eval_count = ollama_chunk.get("eval_count", 0)
-            prompt_tokens = ollama_chunk.get("prompt_eval_count", 0)
-            eval_duration_ns = ollama_chunk.get("eval_duration", 0)
-            prompt_eval_duration_ns = ollama_chunk.get("prompt_eval_duration", 0)
-            total_duration_ns = ollama_chunk.get("total_duration", 0)
-            load_duration_ns = ollama_chunk.get("load_duration", 0)
-            eval_duration = eval_duration_ns / 1_000_000_000 if eval_duration_ns > 0 else 0
-            prompt_eval_duration = prompt_eval_duration_ns / 1_000_000_000 if prompt_eval_duration_ns > 0 else 0
-            total_duration = total_duration_ns / 1_000_000_000 if total_duration_ns > 0 else 0
-            load_duration = load_duration_ns / 1_000_000_000 if load_duration_ns > 0 else 0
-            tokens_per_second = round(eval_count / eval_duration, 2) if eval_duration > 0 else 0
-            usage = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": eval_count,
-                "total_tokens": prompt_tokens + eval_count,
-                "tokens_per_second": tokens_per_second,
-                "prompt_eval_duration": round(prompt_eval_duration, 4),
-                "eval_duration": round(eval_duration, 4),
-                "total_duration": round(total_duration, 4),
-                "load_duration": round(load_duration, 4),
-            }
-            final_chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [],
-                "usage": usage
-            }
-            yield f"data: {json.dumps(final_chunk)}\n\n"
-            yield "data: [DONE]\n\n"
-            break
+    for line in lines:
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        for item in line.splitlines():
+            if not item.strip():
+                continue
+            source = json.loads(item)
+            if "error" in source:
+                yield f"data: {json.dumps({'error': source['error']})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+            model = source.get("model", "unknown-model")
+            done = source.get("done") is True
+            finish = source.get("done_reason", "stop" if done else None)
+            if is_chat:
+                message = source.get("message", {})
+                delta = {"content": message.get("content", "")}
+                if message.get("role"):
+                    delta["role"] = message["role"]
+                if message.get("tool_calls"):
+                    delta["tool_calls"] = _openai_tool_calls(message["tool_calls"], streamed=True)
+                choice = {"index": 0, "delta": delta, "finish_reason": finish}
+            else:
+                choice = {"index": 0, "text": source.get("response", ""), "finish_reason": finish}
+            chunk = {"id": completion_id, "object": "chat.completion.chunk" if is_chat else "text_completion",
+                     "created": created, "model": model, "choices": [choice]}
+            if include_usage:
+                chunk["usage"] = None
+            yield f"data: {json.dumps(chunk)}\n\n"
+            if done:
+                if include_usage:
+                    prompt = source["prompt_eval_count"]
+                    completion = source["eval_count"]
+                    usage = {"prompt_tokens": prompt, "completion_tokens": completion,
+                             "total_tokens": prompt + completion}
+                    yield f"data: {json.dumps({**chunk, 'choices': [], 'usage': usage})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
 
-def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
-    """
-    Converts an iterable of Ollama stream JSON lines to OpenAI SSE streaming chunks.
-
-    Args:
-        ollama_stream_lines (iterable[str]): Streamed JSON lines from Ollama.
-
-    Yields:
-        str: OpenAI-compatible `data: ...\n\n` formatted SSE chunks.
-    """
-
-    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
-    created = int(time.time())
-    for line in ollama_stream_lines:
-        line = str(line).strip()
-        if not line or line.startswith("data:"):
-            continue
-
-        try:
-            ollama_chunk = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        content_piece = ollama_chunk.get("response", "")
-        model = ollama_chunk.get("model", "unknown-model")
-        finish_reason = ollama_chunk.get("done_reason", None)
-
-        chunk = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "text": content_piece,
-                "finish_reason": finish_reason
-            }]
-        }
-
-        yield f"data: {json.dumps(chunk)}\n\n"
-
-        if ollama_chunk.get("done") is True:
-            # Final chunk — stop streaming
-            final_chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": []
-            }
-            yield f"data: {json.dumps(final_chunk)}\n\n"
-            yield "data: [DONE]\n\n"
-            break
+def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines, include_usage=False):
+    yield from _ollama_stream_to_openai_chunks(ollama_stream_lines, is_chat=True, include_usage=include_usage)
 
 
-def handle_ollama_response(response, stream=False, is_chat=True):
-    """
-    Handles an Ollama response and converts it into either:
-    - a single OpenAI-compatible JSON object (non-streaming), or
-    - an iterable of SSE chunks (streaming).
+def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines, include_usage=False):
+    yield from _ollama_stream_to_openai_chunks(ollama_stream_lines, is_chat=False, include_usage=include_usage)
 
-    Args:
-        response: `requests.Response` object from Ollama.
-        stream (bool): Whether streaming was requested.
 
-    Returns:
-        dict | generator[str]: OpenAI-compatible response (full or streaming).
-    """
+def handle_ollama_response(response, stream=False, is_chat=True, include_usage=False):
+    """Convert a complete response, or its entire stream with one SSE identity."""
     if stream:
-        # Generator that yields OpenAI-style SSE chunks
-        def stream_chunks():
-            # Read the Flask Response iterable (bytes or str)
-            for raw in response.response:
-                # Ensure bytes are decoded
-                if isinstance(raw, bytes):
-                    raw = raw.decode("utf-8")
-                raw = raw.strip()
-                if raw:
-                    # CHeck if cht or generate response
-                    if is_chat:
-                        yield from ollama_chat_stream_to_openai_chat_completions_chunks([raw])
-                    else:
-                        yield from ollama_generate_stream_to_openai_completions_chunks([raw])
-                        
-        return stream_chunks()
-    else:
-        # Full JSON response
-        ollama_response = json.loads(response.get_data().decode("utf-8"))
-
-        # CHeck if cht or generate response
-        if is_chat:
-            return jsonify(ollama_chat_to_openai_v1_chat_completion(ollama_response))
-        else:
-            return jsonify(ollama_generate_to_openai_v1_completion(ollama_response))
-
+        return _ollama_stream_to_openai_chunks(response.response, is_chat=is_chat, include_usage=include_usage)
+    source = json.loads(response.get_data().decode("utf-8"))
+    convert = ollama_chat_to_openai_v1_chat_completion if is_chat else ollama_generate_to_openai_v1_completion
+    return jsonify(convert(source))
 
 
 def handle_ollama_embedding_response(response):
@@ -1074,6 +941,8 @@ def strtobool (val):
         raise ValueError("invalid truth value %r" % (val,))
     
 ################################## Tool Calls #####################################
+from .request_options import strict_json
+
 def RawJSONDecoder(index):
     class _RawJSONDecoder(json.JSONDecoder):
         end = None
@@ -1086,10 +955,12 @@ def RawJSONDecoder(index):
 def extract_json_tools_from_text(s, index=0):
     while (index := s.find('{', index)) != -1:
         try:
-            yield json.loads(s, cls=(decoder := RawJSONDecoder(index)))
+            yield strict_json(s, cls=(decoder := RawJSONDecoder(index)))
             index = decoder.end
         except json.JSONDecodeError:
             index += 1
+        except ValueError:
+            raise
 
 
 def get_tool_calls_generic(response):
@@ -1142,7 +1013,10 @@ def get_tool_calls_generic(response):
     logger.debug(f"Searching tools with generic method: get_tool_calls_generic")
 
     # Get all the json objects
-    json_tool_list = list(extract_json_tools_from_text(response))
+    try:
+        json_tool_list = list(extract_json_tools_from_text(response))
+    except ValueError:
+        return []
 
     # Set the required keys in json object to identify tool calls
     required_keys_for_tools_option1 = set(["name", "arguments"]) # Other like Qwen
@@ -1160,33 +1034,81 @@ def get_tool_calls_generic(response):
     return tool_calls_renamed
 
 
-def get_tool_calls_standard(response):
-    """ Get all the tool calls indicated by the LLM in the response. 
-        Only work if the chat template of the LLM uses <tool_call></tool_call> tags (Like Qwen models)
-    """
-    
-    logger.debug(f"Searching tools with standard method: get_tool_calls_standard")
+def get_tool_calls_standard(response, definitions=None):
+    """Parse all explicitly framed calls atomically; never salvage broken XML."""
+    blocks = re.findall(r"<tool_call>(.*?)</tool_call>", response, re.DOTALL)
+    if len(blocks) != response.count("<tool_call>") or len(blocks) != response.count("</tool_call>"):
+        return []
+    calls = []
+    for body in blocks:
+        if "<function=" in body or "<parameter=" in body:
+            call = _parse_qwen_xml_tool_call(body, definitions)
+            if not call:
+                return []
+            calls.append(call)
+        else:
+            found = get_tool_calls_generic(body)
+            if not found:
+                return []
+            calls.extend(found)
+    return calls
 
-    tool_calls = []
-    for tools in re.findall("<tool_call>(.*?)</tool_call>", response, re.DOTALL):
-      # tool_calls += [{ "function": json.loads(tool) } for tool in tools.split('\n') if tool]
-      # To make more smartt LLM in case LLM response inside <tool_call><t/ool_call> but with an extra word. 
-      # For example: <tool_call> Output : {"name": <function_name>, "arguments": <dictionary_of_argument_name_value>} </tool_call>
-      tool_calls += get_tool_calls_generic(tools) 
-    return tool_calls
+
+def _parse_qwen_xml_tool_call(body, definitions=None):
+    """Parse Qwen3.5's closed function/parameter blocks, not an XML document."""
+    match = re.fullmatch(r"\s*<function=([^<>\s]+)>(.*?)</function>\s*", body, re.DOTALL)
+    if not match:
+        return None
+    name, parameters = match.groups()
+    schema = {}
+    if definitions:
+        functions = {tool["function"]["name"]: tool["function"] for tool in definitions}
+        if name not in functions:
+            return None
+        schema = functions[name].get("parameters", {}).get("properties", {})
+    pattern = r"\s*<parameter=([^<>\s]+)>(.*?)</parameter>"
+    arguments = {}
+    end = 0
+    for parameter in re.finditer(pattern, parameters, re.DOTALL):
+        if parameters[end:parameter.start()].strip():
+            return None
+        key, value = parameter.groups()
+        if key in arguments:
+            return None
+        value = value.strip()
+        kind = schema.get(key, {}).get("type", "string")
+        if kind != "string":
+            try:
+                value = strict_json(value)
+            except (ValueError,TypeError):
+                return None
+            expected = {"integer": int, "number": (int, float), "boolean": bool, "array": list, "object": dict, "null": type(None)}
+            if kind not in expected or not isinstance(value, expected[kind]):
+                return None
+            if kind in ("integer", "number") and isinstance(value, bool):
+                return None
+        arguments[key] = value
+        end = parameter.end()
+    if parameters[end:].strip():
+        return None
+    return {"function": {"name": name, "arguments": arguments}}
 
 
-def get_tool_calls(response):
-    """ Get all the tool calls indicated by the LLM in the response """
-    
-    # We try the standard form first
-    tool_calls = get_tool_calls_standard(response)
-
-    if not tool_calls:
-        # No standard format tool call found. Search for more generic way
-        tool_calls = get_tool_calls_generic(response)
-
-    return tool_calls
+def get_tool_calls(response, definitions=None):
+    """Validate every parser path against declared names and argument objects."""
+    markup = any(x in response for x in ("<tool_call", "</tool_call", "<function=", "<parameter="))
+    calls = get_tool_calls_standard(response, definitions) if markup else get_tool_calls_generic(response)
+    functions = {t["function"]["name"]: t["function"] for t in definitions or []}
+    for call in calls:
+        function = call.get("function", {})
+        name, args = function.get("name"), function.get("arguments")
+        if not isinstance(name, str) or not isinstance(args, dict):
+            return []
+        if definitions is not None and name not in functions:
+            return []
+        if name in functions and not tool_value_matches(args, functions[name].get("parameters", {})):
+            return []
+    return calls
 
 
 def get_base64_image_from_pil(image: Image.Image, output_format) -> str:
