@@ -38,6 +38,9 @@ A server to run and interact with LLM models optimized for Rockchip RK3588(S) an
 - **OS**: Armbian Linux 6.1.99-vendor-rk35xx (Debian stable bookworm), v25.2.2.
 
 ## Main Features
+
+For the supported RKLLM generation settings, aliases, validation errors, and
+best-effort formatting limitations, see [the request-option contract](docs/request-options.md).
 - **Running models on NPU.**
 - **Ollama API compatibility** - Support for:
    * `/api/chat`

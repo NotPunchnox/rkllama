@@ -1,0 +1,13 @@
+# Lightweight contract tests only; full inference dependencies are not required.
+pytest>=7,<10
+Flask>=2.3,<4
+flask-cors>=4,<7
+Werkzeug>=2.3,<4
+numpy>=1.26,<3
+opencv-python-headless>=4.8,<6
+Pillow>=10,<14
+requests>=2.31,<3
+pydantic>=2,<3
+python-dotenv>=1,<2
+huggingface_hub>=0.35,<3
+psutil>=5.9,<8

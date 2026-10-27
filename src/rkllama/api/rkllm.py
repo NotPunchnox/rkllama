@@ -30,7 +30,7 @@ class RKLLM(object):
         self.rkllm_param.model_path = bytes(model_path, 'utf-8')
         self.rkllm_param.max_context_len =  int(float((options.get("num_ctx", rkllama.config.get("model", "default_num_ctx")))))
         self.rkllm_param.max_new_tokens = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
-        self.rkllm_param.top_k = float(options.get("top_k", rkllama.config.get("model", "default_top_k")))
+        self.rkllm_param.top_k = int(options.get("top_k", rkllama.config.get("model", "default_top_k")))
         self.rkllm_param.top_p = float(options.get("top_p", rkllama.config.get("model", "default_top_p")))
         self.rkllm_param.temperature = float(options.get("temperature", rkllama.config.get("model", "default_temperature")))
         self.rkllm_param.repeat_penalty = float(options.get("repeat_penalty", rkllama.config.get("model", "default_repeat_penalty")))
@@ -312,7 +312,7 @@ class RKLLM(object):
 
         # Run the RKLLM model with the input
         logger.debug(f"Executing rkllm inference...")
-        self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
+        return_code = self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
         logger.debug(f"Finished inference")
 
         # Delete previous old prompt cache if exists
@@ -327,7 +327,7 @@ class RKLLM(object):
         if max_new_tokens is not None:
             self.rkllm_infer_params.max_new_tokens = 0
  
-        return
+        return return_code
 
     def abort(self):
         return self.rkllm_abort(self.handle)

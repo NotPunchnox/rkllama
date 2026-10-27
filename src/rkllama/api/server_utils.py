@@ -11,6 +11,7 @@ from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
 from .model_utils import get_property_modelfile
+from .request_options import validate_context_budget
 import rkllama.config
 
 # Check for debug mode using the improved method from config
@@ -38,6 +39,30 @@ class RequestWrapper:
 
 class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
+
+    @staticmethod
+    def read_worker_message(pipe, model_name, timeout):
+        try:
+            if pipe.poll(timeout):
+                token = pipe.recv()
+                variables.worker_manager_rkllm.update_expiration_date_for_model(model_name)
+                return token
+            variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
+            return {"error": {"type": "server_error", "code": "inference_timeout", "message": "Native inference timed out"}}
+        except (EOFError, OSError):
+            return {"error": {"type": "server_error", "code": "native_inference_error", "message": "Native worker connection closed"}}
+
+    @staticmethod
+    def validate_prompt_capacity(tokens, options, param, model_name=None):
+        options = options or {}
+        context = int(float(options.get("num_ctx", rkllama.config.get("model", "default_num_ctx"))))
+        output = int(options.get("max_new_tokens", rkllama.config.get("model", "default_max_new_tokens")))
+        worker = getattr(variables.worker_manager_rkllm, "workers", {}).get(model_name)
+        if worker is not None:
+            if worker.native_context_tokens is None:
+                raise RuntimeError("Loaded worker did not report its initialized capacity")
+            context = worker.native_context_tokens
+        validate_context_budget(len(tokens), output, context, param)
     
     
     @staticmethod
@@ -67,9 +92,12 @@ class EndpointHandler:
             add_special_tokens=False,
         )["input_ids"]
 
-        # Get the prompt file for the chat session
-        prompt_cache_file = EndpointHandler.build_prompt_chat_session_file_id(prompt_messages)
-        logger.debug(f"Prompt Cache File expected for the model {model_name} in this session:\n{prompt_cache_file}")
+        # Requests contain the complete conversation and run with keep_history=0.
+        # The old cache key covered only two messages plus a message count,
+        # colliding across branched histories, tools, and thinking settings.
+        # Do not load/save those caches until exact-prefix reuse is implemented
+        # and validated for the model architecture.
+        prompt_cache_file = None
 
         # Return the tokens
         return tokenized, prompt_cache_file, final_prompt
@@ -197,7 +225,7 @@ class ChatEndpointHandler(EndpointHandler):
             
         
         if is_final:
-            chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
+            chunk["done_reason"] = metrics.get("finish_reason", "stop") if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
                     "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
@@ -221,7 +249,7 @@ class ChatEndpointHandler(EndpointHandler):
                 "content": complete_text if not (format_data and "cleaned_json" in format_data) 
                           else format_data["cleaned_json"]
             },
-            "done_reason": "stop" if not (format_data and "tool_call" in format_data) else "tool_calls",
+            "done_reason": metrics.get("finish_reason", "stop") if not (format_data and "tool_call" in format_data) else "tool_calls",
             "done": True,
             "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
             "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
@@ -237,7 +265,7 @@ class ChatEndpointHandler(EndpointHandler):
         return response
         
     @classmethod
-    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False, images=None):
+    def handle_request(cls, model_name, messages, system="", stream=True, format_spec=None, options=None, tools=None, enable_thinking=False, is_openai_request=False, images=None, stream_options=None):
         """Process a chat request with proper format handling"""
         
         original_system = variables.system
@@ -262,6 +290,7 @@ class ChatEndpointHandler(EndpointHandler):
             if not images:    
                 # Create the final prompt for token input requests
                 final_prompt, prompt_cache_file, _ = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking, images)
+                cls.validate_prompt_capacity(final_prompt, options, "messages", model_name)
             
             else:
                 if DEBUG_MODE:
@@ -277,7 +306,7 @@ class ChatEndpointHandler(EndpointHandler):
                 if is_openai_request:
 
                     # Use unified handler
-                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=True)
+                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=True, include_usage=bool((stream_options or {}).get("include_usage")))
 
                     # Convert Ollama streaming response to OpenAI format
                     ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
@@ -288,6 +317,8 @@ class ChatEndpointHandler(EndpointHandler):
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
                                          format_spec, tools, enable_thinking,images, prompt_cache_file, options)
                 
+                if code != 200:
+                    return ollama_response, code
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=True)
@@ -329,7 +360,6 @@ class ChatEndpointHandler(EndpointHandler):
             thread_finished = False
 
             # Tool calls detection
-            max_token_to_wait_for_tool_call = 100 if tools else 1 # Max tokens to wait for tool call definition
             tool_calls = False
             
             # Thinking variables
@@ -340,30 +370,17 @@ class ChatEndpointHandler(EndpointHandler):
             
 
             while not thread_finished or not final_sent:
-                if parent_pipe.poll(timeout):  # Timeout in seconds
-                    token = parent_pipe.recv()
-
-                    # Updating expiration date for the model during token generation to prevent expiration
-                    variables.worker_manager_rkllm.update_expiration_date_for_model(model_name)
-
-                else:
-                    # Abort the current inference
-                    variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
-                    
-                    # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
-                    
-                    # Send message to the user
-                    token=f"Aborted inference by Timeout ({timeout} seconds). Try again."
-
-                    # Set finished state of the thread inference
-                    thread_finished = True
+                token = cls.read_worker_message(parent_pipe, model_name, timeout)
+                if isinstance(token, dict) and "error" in token:
+                    yield json.dumps(token) + "\n"
+                    return
 
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
                     # Get the stats from the inference
-                    _, prompt_token_count, token_count, prompt_eval, eval = token
+                    _, prompt_token_count, token_count, prompt_eval, eval = token[:5]
+                    finish_reason = token[5] if len(token) > 5 else "stop"
 
                     # CLose the parent pipe
                     parent_pipe.close()
@@ -390,55 +407,29 @@ class ChatEndpointHandler(EndpointHandler):
                     if not thinking and token != "</think>": 
                         final_response_tokens.append(token)
                     
-                    if not tool_calls:
-                        if len(final_response_tokens) > max_token_to_wait_for_tool_call or not tools:
-                            if variables.global_status != 1:
-                                chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
-                                yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass
-                        elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
-                            if variables.global_status != 1:
-                                
-                                for temp_token in response_tokens:
-                                    time.sleep(0.1) # Simulate delay to stream previos tokens
-                                    chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token)
-                                    yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass 
-                        elif len(final_response_tokens)  < max_token_to_wait_for_tool_call:
-                            if variables.global_status != 1:
-                                # Check if tool call founded in th first tokens in the response
-                                tool_calls = "<tool_call>" in token
-                                
-                            else:
-                                pass 
-            
+                    # Tool markup can span arbitrary callback boundaries. Buffer
+                    # tool-enabled requests until complete instead of leaking a
+                    # partially recognized call after an arbitrary token count.
+                    if not tools and variables.global_status != 1:
+                        chunk = cls.format_streaming_chunk(model_name=model_name, token=token)
+                        yield f"{json.dumps(chunk)}\n"
+
                 if thread_finished and not final_sent:
                     final_sent = True
-
-                    # Final check for tool calls in the complete response
-                    if tools:
-                        json_tool_calls = get_tool_calls("".join(final_response_tokens))
-                        
-                        # Last check for non standard <tool_call> token and tools calls only when finished before the wait token time
-                        if len(final_response_tokens) < max_token_to_wait_for_tool_call:
-                            if not tool_calls and json_tool_calls:
-                                tool_calls = True
-
-                    # If tool calls detected, send them as final response
-                    if tools and tool_calls:
-                        chunk_tool_call = cls.format_streaming_chunk(model_name=model_name, token=json_tool_calls, tool_calls=tool_calls)
-                        yield f"{json.dumps(chunk_tool_call)}\n"
-                    elif len(final_response_tokens)  < max_token_to_wait_for_tool_call: 
-                        for temp_token in response_tokens:
-                              time.sleep(0.1) # Simulate delay to stream previos tokens
-                              chunk = cls.format_streaming_chunk(model_name=model_name, token=temp_token,tool_calls=tool_calls)
-                              yield f"{json.dumps(chunk)}\n"
+                    json_tool_calls = get_tool_calls("".join(final_response_tokens), tools) if tools else []
+                    tool_calls = bool(json_tool_calls)
+                    if tool_calls:
+                        chunk = cls.format_streaming_chunk(model_name, json_tool_calls, tool_calls=True)
+                        yield f"{json.dumps(chunk)}\n"
+                    elif tools:
+                        for response_token in response_tokens:
+                            chunk = cls.format_streaming_chunk(model_name, response_token)
+                            yield f"{json.dumps(chunk)}\n"
 
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
                     metrics["prompt_tokens"] = prompt_token_count
                     metrics["token_count"] = token_count
+                    metrics["finish_reason"] = finish_reason
                     metrics["prompt_eval"] = prompt_eval 
                     metrics["eval"] = eval
                     
@@ -488,27 +479,16 @@ class ChatEndpointHandler(EndpointHandler):
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
         while not thread_finished:
-            if parent_pipe.poll(timeout):  # Timeout in seconds
-                token = parent_pipe.recv()
-            else:
+            token = cls.read_worker_message(parent_pipe, model_name, timeout)
+            if isinstance(token, dict) and "error" in token:
+                return jsonify(token), (504 if token["error"].get("code") == "inference_timeout" else 500)
 
-                # Abort the current inference
-                variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
-
-                # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
-                
-                # Send message to the user
-                token=f"Aborted inference by Timeout ({timeout} seconds). Try again."
-
-                # Set finished state of the thread inference
-                thread_finished = True
- 
             # Checking if finished inference
             if isinstance(token, tuple):    
                 thread_finished = True
                 # Get the stats from the inference
-                _, prompt_token_count, token_count, prompt_eval, eval = token
+                _, prompt_token_count, token_count, prompt_eval, eval = token[:5]
+                finish_reason = token[5] if len(token) > 5 else "stop"
 
                 # Close the parent pipe
                 parent_pipe.close()
@@ -528,11 +508,12 @@ class ChatEndpointHandler(EndpointHandler):
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
         metrics["prompt_tokens"] = prompt_token_count
         metrics["token_count"] = token_count
+        metrics["finish_reason"] = finish_reason
         metrics["prompt_eval"] = prompt_eval 
         metrics["eval"] = eval
         
         format_data = None
-        tool_calls = get_tool_calls(complete_text) if tools else None
+        tool_calls = get_tool_calls(complete_text, tools) if tools else None
         if format_spec and complete_text and not tool_calls:
             success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
             if success and parsed_data:
@@ -577,7 +558,7 @@ class GenerateEndpointHandler(EndpointHandler):
                chunk["message"]["tool_calls"] = token
 
         if is_final:
-            chunk["done_reason"] = "stop" if not tool_calls else "tool_calls"
+            chunk["done_reason"] = metrics.get("finish_reason", "stop") if not tool_calls else "tool_calls"
             if metrics:
                 chunk.update({
                     "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
@@ -598,7 +579,7 @@ class GenerateEndpointHandler(EndpointHandler):
             "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "response": complete_text if not (format_data and "cleaned_json" in format_data) 
                        else format_data["cleaned_json"],
-            "done_reason": "stop",
+            "done_reason": metrics.get("finish_reason", "stop"),
             "done": True,
             "total_duration": metrics.get("total", 0)  if metrics.get("total", 0) is not None else 0,
             "load_duration": metrics.get("load", 0)  if metrics.get("load", 0) is not None else 0,
@@ -612,7 +593,7 @@ class GenerateEndpointHandler(EndpointHandler):
         return response
     
     @classmethod
-    def handle_request(cls, model_name, prompt, system="", stream=True, format_spec=None, options=None,enable_thinking=False, is_openai_request=False, images=None):
+    def handle_request(cls, model_name, prompt, system="", stream=True, format_spec=None, options=None,enable_thinking=False, is_openai_request=False, images=None, stream_options=None):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
         
@@ -640,6 +621,7 @@ class GenerateEndpointHandler(EndpointHandler):
             if not images:    
                 # Create the final prompts for token input requests
                 final_prompt, _, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking, images=images)
+                cls.validate_prompt_capacity(final_prompt, options, "prompt", model_name)
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
@@ -654,7 +636,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 if is_openai_request:
 
                     # Use unified handler
-                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=False)
+                    result = handle_ollama_response(ollama_chunk, stream=stream, is_chat=False, include_usage=bool((stream_options or {}).get("include_usage")))
 
                     # Convert Ollama streaming response to OpenAI format
                     ollama_chunk = Response(stream_with_context(result), mimetype="text/event-stream")
@@ -665,6 +647,8 @@ class GenerateEndpointHandler(EndpointHandler):
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
                                           format_spec, enable_thinking, images, None, options) # No cache for generation (it is not a chat conversation)
                 
+                if code != 200:
+                    return ollama_response, code
                 if is_openai_request:
                     # Convert Ollama response to OpenAI format
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=False)
@@ -706,30 +690,17 @@ class GenerateEndpointHandler(EndpointHandler):
             thread_finished = False
   
             while not thread_finished or not final_sent:
-                if parent_pipe.poll(timeout):  # Timeout in seconds
-                    token = parent_pipe.recv()
+                token = cls.read_worker_message(parent_pipe, model_name, timeout)
+                if isinstance(token, dict) and "error" in token:
+                    yield json.dumps(token) + "\n"
+                    return
 
-                    # Updating expiration date for the model during token generation to prevent expiration
-                    variables.worker_manager_rkllm.update_expiration_date_for_model(model_name)
-
-                else:
-                    # Abort the current inference
-                    variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
-                    
-                    # Raise Exception
-                    logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
-                    
-                    # Send message to the user
-                    token=f"Aborted inference by Timeout ({timeout} seconds). Try again." 
-
-                    # Set finished state of the thread inference
-                    thread_finished = True
-               
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
                     # Get the stats from the inference
-                    _, prompt_token_count, token_count, prompt_eval, eval = token
+                    _, prompt_token_count, token_count, prompt_eval, eval = token[:5]
+                    finish_reason = token[5] if len(token) > 5 else "stop"
 
                     # Close the parent pipe
                     parent_pipe.close()
@@ -757,6 +728,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     metrics = cls.calculate_durations(start_time, prompt_eval_time)
                     metrics["prompt_tokens"] = prompt_token_count
                     metrics["token_count"] = token_count
+                    metrics["finish_reason"] = finish_reason
                     metrics["prompt_eval"] = prompt_eval 
                     metrics["eval"] = eval
                     
@@ -807,26 +779,16 @@ class GenerateEndpointHandler(EndpointHandler):
         timeout = int(rkllama.config.get("model", "max_seconds_waiting_worker_response"))
 
         while not thread_finished:
-            if parent_pipe.poll(timeout):  # Timeout in seconds
-                token = parent_pipe.recv()
-            else:
-                # Abort the current inference
-                variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
-                
-                # Raise Exception
-                logger.error(f"No response received by the Worker of the model {model_name} in {timeout} seconds.")
-                
-                # Send message to the user
-                token=f"Aborted inference by Timeout ({timeout} seconds). Try again." 
-
-                # Set finished state of the thread inference
-                thread_finished = True
+            token = cls.read_worker_message(parent_pipe, model_name, timeout)
+            if isinstance(token, dict) and "error" in token:
+                return jsonify(token), (504 if token["error"].get("code") == "inference_timeout" else 500)
 
             # Checking if finished inference
             if isinstance(token, tuple):  
                 thread_finished = True
                 # Get the stats from the inference
-                _, prompt_token_count, token_count, prompt_eval, eval = token
+                _, prompt_token_count, token_count, prompt_eval, eval = token[:5]
+                finish_reason = token[5] if len(token) > 5 else "stop"
 
                 # Close the parent pipe
                 parent_pipe.close()
@@ -846,6 +808,7 @@ class GenerateEndpointHandler(EndpointHandler):
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
         metrics["prompt_tokens"] = prompt_token_count
         metrics["token_count"] = token_count
+        metrics["finish_reason"] = finish_reason
         metrics["prompt_eval"] = prompt_eval 
         metrics["eval"] = eval
         

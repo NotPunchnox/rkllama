@@ -22,6 +22,14 @@ from rkllama.api.model_utils import (
 )
 from rkllama.api.worker import WorkerManager
 
+from rkllama.api.request_options import RequestOptionError, validate_request_options
+
+
+def request_option_error(error):
+    return jsonify({"error": {"type": "invalid_request_error",
+                              "param": error.param, "message": str(error), "code": error.code}}), 400
+
+
 # Import the config module
 import rkllama.config
 
@@ -1029,6 +1037,8 @@ def generate_ollama():
 
     try:
         data = request.get_json(force=True)
+        if not isinstance(data, dict):
+            raise RequestOptionError(None, "Request body must be a JSON object")
 
         # Check if the model is GGFU to forward the request to the corresponding llama.cpp worker       
         if is_gguf_model(data.get('model')):
@@ -1038,6 +1048,8 @@ def generate_ollama():
            if DEBUG_MODE:
               logger.debug(f"API OpenAI completions request data: {data}")
            data = openai_to_ollama_generate_request(data)
+        else:
+            data = validate_request_options(data, chat=False)
 
         model_name = data.get('model')
         prompt = data.get('prompt')
@@ -1089,8 +1101,11 @@ def generate_ollama():
             options=options,
             enable_thinking=enable_thinking,
             is_openai_request=is_openai_request,
-            images=images
+            images=images,
+            stream_options=data.get('stream_options'),
         )
+    except RequestOptionError as e:
+        return request_option_error(e)
     except Exception as e:
         if DEBUG_MODE:
             logger.exception(f"Error in generate_ollama: {str(e)}")
@@ -1106,6 +1121,8 @@ def chat_ollama():
         
     try:
         data = request.get_json(force=True)
+        if not isinstance(data, dict):
+            raise RequestOptionError(None, "Request body must be a JSON object")
         
         # Check if the model is GGFU to forward the request to the corresponding llama.cpp worker     
         if is_gguf_model(data.get('model')):
@@ -1115,6 +1132,8 @@ def chat_ollama():
            if DEBUG_MODE:
               logger.debug(f"API OpenAI chat request data: {data}")
            data = openai_to_ollama_chat_request(data)
+        else:
+            data = validate_request_options(data, chat=True)
         
         model_name = data.get('model')
         messages = data.get('messages', [])
@@ -1203,8 +1222,11 @@ def chat_ollama():
               tools=tools,
               enable_thinking=enable_thinking,
               is_openai_request=is_openai_request,
-              images=images)
+              images=images,
+              stream_options=data.get('stream_options'))
 
+    except RequestOptionError as e:
+        return request_option_error(e)
     except Exception as e:
         logger.exception("Error in chat_ollama")
         return jsonify({"error": str(e)}), 500
