@@ -359,6 +359,9 @@ class ChatEndpointHandler(EndpointHandler):
                     # Set finished state of the thread inference
                     thread_finished = True
 
+                    # Close the parent pipe on the timeout path too, not just when finished normally
+                    parent_pipe.close()
+
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
@@ -503,6 +506,9 @@ class ChatEndpointHandler(EndpointHandler):
 
                 # Set finished state of the thread inference
                 thread_finished = True
+
+                # Close the parent pipe on the timeout path too, not just when finished normally
+                parent_pipe.close()
  
             # Checking if finished inference
             if isinstance(token, tuple):    
@@ -724,6 +730,9 @@ class GenerateEndpointHandler(EndpointHandler):
 
                     # Set finished state of the thread inference
                     thread_finished = True
+
+                    # Close the parent pipe on the timeout path too, not just when finished normally
+                    parent_pipe.close()
                
                 # Checking if finished inference
                 if isinstance(token, tuple):      
@@ -821,6 +830,9 @@ class GenerateEndpointHandler(EndpointHandler):
 
                 # Set finished state of the thread inference
                 thread_finished = True
+
+                # Close the parent pipe on the timeout path too, not just when finished normally
+                parent_pipe.close()
 
             # Checking if finished inference
             if isinstance(token, tuple):  

@@ -99,6 +99,19 @@ WORKER_TASK_GENERATE_TRANSCRIPTION = "GENERATE_TRANSCRIPTION"
 WORKER_TASK_GENERATE_TRANSLATION = "GENERATE_TRANSLATION"
 
 
+def _safe_send(conn, value, context):
+    """Send a worker's abort/error-report signal without crashing the
+    worker process if the requesting client already gave up and closed
+    its end (e.g. after its own read timeout). That peer can disappear
+    at any point once the client stops waiting, and every task's abort
+    or exception path funnels its outcome through one of these sends.
+    """
+    try:
+        conn.send(value)
+    except (BrokenPipeError, OSError):
+        logger.warning(f"Could not deliver {context}: the requesting client already disconnected")
+
+
 def run_encoder(model_input):
     """
     Run the vision encoder to get the image embedding
@@ -318,7 +331,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
                     eval = global_metrics[3] * 1000000 if global_metrics[3] is not None else 0
                 
                 # Send final signal of the inference
-                child_conn.send((WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval))   
+                _safe_send(child_conn, (WORKER_TASK_FINISHED,prompt_token_count, token_count, prompt_eval, eval), f"inference result for model {name}")
 
                 # Close the connection
                 child_conn.close()
@@ -364,7 +377,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
 
         except Exception as e:
             logger.error(f"Failed executing task the worker for model '{name}': {str(e)}")
-            child_conn.send(WORKER_TASK_ERROR)
+            _safe_send(child_conn, WORKER_TASK_ERROR, f"error report for model {name}")
 
             # Close the connection
             child_conn.close()
@@ -569,7 +582,7 @@ def run_rknn_worker(name, task_queue, result_queue, model_dir, options=None):
 
         except Exception as e:
             logger.error(f"Failed executing task the worker for model '{name}': {str(e)}")
-            child_conn.send(WORKER_TASK_ERROR)
+            _safe_send(child_conn, WORKER_TASK_ERROR, f"error report for model {name}")
 
             # Close the connection
             child_conn.close()
