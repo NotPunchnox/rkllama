@@ -13,7 +13,7 @@ import ctypes
 import atexit
 import subprocess
 import configparser
-from multiprocessing import Process, Queue, Value, Pipe
+from multiprocessing import Process, Queue, Value, Pipe, parent_process
 
 
 
@@ -99,6 +99,26 @@ WORKER_TASK_GENERATE_TRANSCRIPTION = "GENERATE_TRANSCRIPTION"
 WORKER_TASK_GENERATE_TRANSLATION = "GENERATE_TRANSLATION"
 
 
+def _reset_inherited_signal_handlers():
+    """Restore default signal handling in a forked child process.
+
+    Workers are forked from the server process and inherit the SIGTERM/SIGINT
+    handler that WorkerManager installs there. When the parent terminate()s a
+    child (failed model load, finished image generation), that inherited
+    handler would run stop_all() on the child's stale copy of the workers dict
+    and send ABORT/UNLOAD to the shared task queues of every other loaded
+    model. A child must just die on SIGTERM. SIGINT is ignored: on Ctrl+C the
+    parent stops the workers itself through the normal unload path.
+
+    No-op unless running as a multiprocessing child, so calling a worker
+    function in-process (tests) never changes the caller's signal handling.
+    """
+    if parent_process() is None:
+        return
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
 def _safe_send(conn, value, context):
     """Send a worker's abort/error-report signal without crashing the
     worker process if the requesting client already gave up and closed
@@ -144,6 +164,8 @@ def run_image_generator(model_input, child_conn):
     Returns:
         str: Image
     """
+
+    _reset_inherited_signal_handlers()
 
     from .image_generator import generate_image
 
@@ -231,6 +253,8 @@ def run_translation_generator(model_runtime, model_input):
 
 # RKLLM Worker 
 def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, base_domain_id = 0):
+    _reset_inherited_signal_handlers()
+
     # Die with the parent to prevent NPU memory leaks on parent crash
     _set_parent_death_signal()
 
@@ -487,6 +511,8 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
 
 # RKNN Worker 
 def run_rknn_worker(name, task_queue, result_queue, model_dir, options=None):
+    _reset_inherited_signal_handlers()
+
     # Die with the parent to prevent NPU memory leaks on parent crash
     _set_parent_death_signal()
 
