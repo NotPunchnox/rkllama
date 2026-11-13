@@ -8,6 +8,10 @@ both loaded it. Both picked the same free NPU domain; either both failed
 first in WorkerManager.workers, leaving an untracked worker holding NPU
 memory until the container restarted.
 
+RAM check: the free-RAM test before a load added psutil's `free` to
+`available`, which already includes it, so the least recently used model
+was evicted too late or not at all.
+
 Uses the fake-module harness from test_worker_pipe_guard.py (no NPU, no
 ctypes runtime).
 """
@@ -15,11 +19,13 @@ import signal
 import threading
 import time
 import types
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
 from test_worker_pipe_guard import _install_fakes, _load_worker_module
+
+GB = 1_000_000_000
 
 
 # --- helpers ------------------------------------------------------------------
@@ -139,3 +145,47 @@ def test_failed_load_registers_nothing_and_next_load_proceeds(env, monkeypatch):
     (result,) = _run_concurrently(lambda: env.manager.add_worker("qwen", "model.rkllm", "dir"))
     assert result is True
     assert env.manager.workers["qwen"] is created[2]
+
+
+# --- RAM check and least-recently-used eviction -----------------------------------
+
+def test_memory_check_does_not_count_free_ram_twice(monkeypatch):
+    """psutil's `available` (MemAvailable) already includes `free` (MemFree).
+    Adding them made a 5.4 GB load look like it fits into 4.0 GB available,
+    so no model was evicted and the load could run the box out of RAM."""
+    _, worker_mod = _fresh_worker_module()
+    fake_vm = types.SimpleNamespace(available=4 * GB, free=int(2.5 * GB))
+    monkeypatch.setattr(worker_mod.psutil, "virtual_memory", lambda: fake_vm)
+    manager = worker_mod.WorkerManager.__new__(worker_mod.WorkerManager)  # the check uses no instance state
+
+    model_size = int(4.5 * GB)  # needs 4.5 * 1.2 = 5.4 GB
+    assert not manager.is_memory_available_for_model(model_size), "5.4 GB needed, only 4.0 GB available"
+    assert manager.is_memory_available_for_model(3 * GB), "3.6 GB needed, 4.0 GB available"
+
+
+def test_add_worker_evicts_least_recently_used_model_until_ram_fits(env, monkeypatch):
+    # 3 GB really available (2 GB of it free); the new model needs 3.5 * 1.2 = 4.2 GB.
+    # Evicting the oldest model (2 GB) is enough; the double-counting formula
+    # (3 + 2 = 5 GB) would have evicted nothing.
+    fake_vm = types.SimpleNamespace(available=3 * GB, free=2 * GB)
+    monkeypatch.setattr(env.worker_mod.psutil, "virtual_memory", lambda: fake_vm)
+    monkeypatch.setattr(env.worker_mod.time, "sleep", lambda seconds: None)  # eviction waits 1 s per model
+
+    now = datetime.now()
+    for name, minutes_ago, size, domain in [("newest", 1, 1 * GB, 7), ("oldest", 30, 2 * GB, 9), ("middle", 10, 1 * GB, 8)]:
+        env.manager.workers[name] = types.SimpleNamespace(worker_model_info=types.SimpleNamespace(
+            model=name, size=size, base_domain_id=[domain], last_call=now - timedelta(minutes=minutes_ago)))
+
+    evicted = []
+
+    def fake_stop_worker(model_name, timeout=30):
+        evicted.append(model_name)
+        fake_vm.available += env.manager.workers.pop(model_name).worker_model_info.size
+
+    monkeypatch.setattr(env.manager, "stop_worker", fake_stop_worker)
+    created = []
+    _use_fake_workers(env, monkeypatch, created, size=int(3.5 * GB), ram_ok=False)
+
+    assert env.manager.add_worker("qwen-4b", "4b.rkllm", "dir") is True
+    assert evicted == ["oldest"], f"evicted {evicted}, expected only the least recently used model"
+    assert set(env.manager.workers) == {"newest", "middle", "qwen-4b"}

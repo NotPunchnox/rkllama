@@ -1045,7 +1045,9 @@ class WorkerManager:
         Args:
             model_size (int) -> Size of the model to load
         """
-        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > (model_size * 1.20) # Include 20% more memory required than the model size
+        # "available" (MemAvailable) already includes "free" (MemFree) plus reclaimable cache;
+        # adding "free" again overstated the RAM by MemFree and delayed eviction (OOM risk without swap)
+        return psutil.virtual_memory().available > (model_size * 1.20) # Include 20% more memory required than the model size
     
 
     def is_memory_available_for_rknn_model(self, model_size) -> bool:
