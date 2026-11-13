@@ -112,6 +112,19 @@ def _safe_send(conn, value, context):
         logger.warning(f"Could not deliver {context}: the requesting client already disconnected")
 
 
+def worker_error_message(message):
+    """Return the error text if ``message`` is a worker error report, else None.
+
+    A worker reports an error either as the bare ``WORKER_TASK_ERROR`` sentinel
+    or, when it knows why the task failed, as ``(WORKER_TASK_ERROR, reason)``.
+    """
+    if isinstance(message, str) and message == WORKER_TASK_ERROR:
+        return "The model worker failed to execute the task. Check the rkllama server log."
+    if isinstance(message, tuple) and len(message) == 2 and message[0] == WORKER_TASK_ERROR:
+        return str(message[1])
+    return None
+
+
 def run_encoder(model_input):
     """
     Run the vision encoder to get the image embedding

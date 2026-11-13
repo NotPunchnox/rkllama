@@ -7,6 +7,7 @@ import base64
 import os
 import re  # Add import for regex used in JSON extraction
 import rkllama.api.variables as variables
+from .worker import worker_error_message, WORKER_TASK_ERROR
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import create_format_instruction, validate_format_response, get_tool_calls, handle_ollama_response, handle_ollama_embedding_response, get_base64_image_from_pil, get_url_image_from_pil
@@ -38,6 +39,16 @@ class RequestWrapper:
 
 class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
+
+    @staticmethod
+    def receive_worker_message(parent_pipe):
+        """Receive the next message from a worker pipe. A worker that closed the pipe
+        without its final message (crash, killed) becomes an error report instead of
+        an EOFError escaping into the response generator."""
+        try:
+            return parent_pipe.recv()
+        except (EOFError, OSError):
+            return (WORKER_TASK_ERROR, "The model worker closed the connection without a result. Check the rkllama server log.")
     
     
     @staticmethod
@@ -288,7 +299,7 @@ class ChatEndpointHandler(EndpointHandler):
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
                                          format_spec, tools, enable_thinking,images, prompt_cache_file, options)
                 
-                if is_openai_request:
+                if is_openai_request and code == 200:
                     # Convert Ollama response to OpenAI format
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=True)
 
@@ -341,7 +352,7 @@ class ChatEndpointHandler(EndpointHandler):
 
             while not thread_finished or not final_sent:
                 if parent_pipe.poll(timeout):  # Timeout in seconds
-                    token = parent_pipe.recv()
+                    token = EndpointHandler.receive_worker_message(parent_pipe)
 
                     # Updating expiration date for the model during token generation to prevent expiration
                     variables.worker_manager_rkllm.update_expiration_date_for_model(model_name)
@@ -361,6 +372,14 @@ class ChatEndpointHandler(EndpointHandler):
 
                     # Close the parent pipe on the timeout path too, not just when finished normally
                     parent_pipe.close()
+
+                # Worker reported an error (e.g. prompt longer than the context): end the stream with it
+                worker_error = worker_error_message(token)
+                if worker_error is not None:
+                    logger.error(f"Inference failed for model {model_name}: {worker_error}")
+                    parent_pipe.close()
+                    yield f"{json.dumps({'error': worker_error})}\n"
+                    return
 
                 # Checking if finished inference
                 if isinstance(token, tuple):      
@@ -492,7 +511,7 @@ class ChatEndpointHandler(EndpointHandler):
 
         while not thread_finished:
             if parent_pipe.poll(timeout):  # Timeout in seconds
-                token = parent_pipe.recv()
+                token = EndpointHandler.receive_worker_message(parent_pipe)
             else:
 
                 # Abort the current inference
@@ -510,6 +529,13 @@ class ChatEndpointHandler(EndpointHandler):
                 # Close the parent pipe on the timeout path too, not just when finished normally
                 parent_pipe.close()
  
+            # Worker reported an error (e.g. prompt longer than the context)
+            worker_error = worker_error_message(token)
+            if worker_error is not None:
+                logger.error(f"Inference failed for model {model_name}: {worker_error}")
+                parent_pipe.close()
+                return jsonify({"error": worker_error}), 500
+
             # Checking if finished inference
             if isinstance(token, tuple):    
                 thread_finished = True
@@ -671,7 +697,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 ollama_response, code =  cls.handle_complete(model_name, final_prompt, 
                                           format_spec, enable_thinking, images, None, options) # No cache for generation (it is not a chat conversation)
                 
-                if is_openai_request:
+                if is_openai_request and code == 200:
                     # Convert Ollama response to OpenAI format
                     ollama_response = handle_ollama_response(ollama_response, stream=stream, is_chat=False)
 
@@ -713,7 +739,7 @@ class GenerateEndpointHandler(EndpointHandler):
   
             while not thread_finished or not final_sent:
                 if parent_pipe.poll(timeout):  # Timeout in seconds
-                    token = parent_pipe.recv()
+                    token = EndpointHandler.receive_worker_message(parent_pipe)
 
                     # Updating expiration date for the model during token generation to prevent expiration
                     variables.worker_manager_rkllm.update_expiration_date_for_model(model_name)
@@ -734,6 +760,14 @@ class GenerateEndpointHandler(EndpointHandler):
                     # Close the parent pipe on the timeout path too, not just when finished normally
                     parent_pipe.close()
                
+                # Worker reported an error (e.g. prompt longer than the context): end the stream with it
+                worker_error = worker_error_message(token)
+                if worker_error is not None:
+                    logger.error(f"Inference failed for model {model_name}: {worker_error}")
+                    parent_pipe.close()
+                    yield f"{json.dumps({'error': worker_error})}\n"
+                    return
+
                 # Checking if finished inference
                 if isinstance(token, tuple):      
                     thread_finished = True
@@ -817,7 +851,7 @@ class GenerateEndpointHandler(EndpointHandler):
 
         while not thread_finished:
             if parent_pipe.poll(timeout):  # Timeout in seconds
-                token = parent_pipe.recv()
+                token = EndpointHandler.receive_worker_message(parent_pipe)
             else:
                 # Abort the current inference
                 variables.worker_manager_rkllm.workers[model_name].abort_flag.value = True
@@ -833,6 +867,13 @@ class GenerateEndpointHandler(EndpointHandler):
 
                 # Close the parent pipe on the timeout path too, not just when finished normally
                 parent_pipe.close()
+
+            # Worker reported an error (e.g. prompt longer than the context)
+            worker_error = worker_error_message(token)
+            if worker_error is not None:
+                logger.error(f"Inference failed for model {model_name}: {worker_error}")
+                parent_pipe.close()
+                return jsonify({"error": worker_error}), 500
 
             # Checking if finished inference
             if isinstance(token, tuple):  
