@@ -202,6 +202,22 @@ class RKLLM(object):
         # Get the arguments
         inference_mode, model_input_type, input , options = param
 
+        # Why the last run produced no result (read by the worker), None if it ran
+        self.last_run_error = None
+
+        # The runtime rejects a prompt longer than the context with only a log line and
+        # no callback, so check it here and give the client a reason it can act on
+        if model_input_type == RKLLMInputType.RKLLM_INPUT_TOKEN:
+            n_prompt_tokens = len(input[0])
+            max_context = int(self.rkllm_param.max_context_len)
+            if n_prompt_tokens > max_context:
+                self.last_run_error = (
+                    f"The prompt has {n_prompt_tokens} tokens, more than the model's context length of {max_context} tokens. "
+                    "Shorten the prompt (chat history, system prompt, tool definitions) or use a model converted with a larger context."
+                )
+                logger.error(self.last_run_error)
+                return
+
         # Declare Empty Prompt Cache
         prompt_cache_file = None
 
@@ -312,8 +328,10 @@ class RKLLM(object):
 
         # Run the RKLLM model with the input
         logger.debug(f"Executing rkllm inference...")
-        self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
-        logger.debug(f"Finished inference")
+        ret = self.rkllm_run(self.handle, ctypes.byref(rkllm_input), ctypes.byref(self.rkllm_infer_params), None)
+        logger.debug(f"Finished inference (rkllm_run returned {ret})")
+        if ret != 0:
+            self.last_run_error = f"The RKLLM runtime failed to run the inference (rkllm_run returned {ret}). Check the 'E rkllm:' lines in the rkllama server log."
 
         # Delete previous old prompt cache if exists
         if os.path.exists(f"{self.prompt_cache_dir}/{prompt_cache_file}"):
