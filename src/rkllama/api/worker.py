@@ -296,6 +296,9 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
 
             elif task == WORKER_TASK_INFERENCE:
                 logger.info(f"Running inference for model {name}...")
+                # Drop the previous run's metrics: the RKLLM_RUN_FINISH callback refills
+                # them, so an empty list afterwards means this run produced no result
+                global_metrics.clear()
                 # Run inference
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input, options))
                 thread_model.start()
@@ -336,6 +339,16 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
                     token_count=0
                     prompt_eval=0
                     eval=0
+                elif not global_metrics:
+                    # RKLLM rejected the input or failed without calling back RKLLM_RUN_FINISH
+                    # (e.g. prompt longer than the context): report why instead of fake stats
+                    reason = getattr(model_rkllm, "last_run_error", None) or (
+                        "The RKLLM runtime finished without a result. Check the 'E rkllm:' lines in the rkllama server log."
+                    )
+                    logger.error(f"Inference failed for model {name}: {reason}")
+                    _safe_send(child_conn, (WORKER_TASK_ERROR, reason), f"error report for model {name}")
+                    child_conn.close()
+                    continue
                 else:
                     # Get the metricts of the inference
                     prompt_token_count = global_metrics[0]
