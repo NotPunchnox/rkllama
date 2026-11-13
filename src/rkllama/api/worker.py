@@ -651,6 +651,13 @@ class WorkerManager:
     def __init__(self):
         self.workers = {}  #  (name -> Worker)
 
+        # Serializes model loads. Flask serves requests on parallel threads, and a
+        # client often sends two requests at once (chat + title/tags task). Without
+        # it both see "not loaded", pick the same free NPU domain and either both
+        # fail (out of domain memory) or both load, and the second replaces the
+        # first in self.workers, leaving an untracked worker holding NPU memory.
+        self._load_lock = threading.Lock()
+
         # Reap any orphaned workers left behind by a previous rkllama run
         # (e.g. SIGKILL, power loss). Without this, restarting the server
         # would leave NPU memory occupied until the host reboots.
@@ -922,41 +929,50 @@ class WorkerManager:
         Args:
             model_name (str): model name to load in memory
             loaded_by (str): identifier of the client/process that triggered the load
+
+        Returns:
+            bool: True if the model is loaded (by this call or a concurrent one), False if the load failed.
         """
-        if model_name not in self.workers.keys():
-
-            if is_rkllm_model(model_name) or is_gguf_model(model_name):
-                # Get the available domain id for the RKLLM process
-                base_domain_ids = self.get_available_base_domain_id(reverse_order=True)
-            else:
-                # RKNNLite library doesnt allow to specify base domain id
-                base_domain_ids = [0]
-
-            # Add the worker to the dictionary of workers
-            worker_model = Worker(model_name,base_domain_ids[0],loaded_by=loaded_by)
-
-            # Check if available meory in server
-            if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
-                # Unload the oldest model until memory avilable
-                self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
-
-            # Ensure free space in first base domain (0) for rknn load (only 4GB allowed by rknn)
-            if not is_rkllm_model(model_name) and not is_gguf_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
-                # Unload the oldest RKNN models until memory avilable in first base domain 
-                self.unload_oldest_rknn_models_from_memory(worker_model.worker_model_info.size)
-
-            # Initializae de worker/model
-            model_loaded = worker_model.create_worker_process(base_domain_ids, model_path, model_dir, options, lora_model_path, prompt_cache_path)
-
-            # Check the load of the model
-            if not model_loaded:
-                # Error loading the model
-                return False
-            else:    
-                # Add the worker to the dictionary of workers
-                self.workers[model_name] = worker_model
-                logger.info(f"Worker for model {model_name} created and running...")
+        with self._load_lock:
+            if model_name in self.workers:
+                # A concurrent request loaded it while this one waited for the lock
                 return True
+            return self._create_worker(model_name, model_path, model_dir, options, lora_model_path, prompt_cache_path, loaded_by)
+
+    def _create_worker(self, model_name, model_path, model_dir, options, lora_model_path, prompt_cache_path, loaded_by) -> bool:
+        """Create and register the worker for a model. Caller must hold self._load_lock."""
+        if is_rkllm_model(model_name) or is_gguf_model(model_name):
+            # Get the available domain id for the RKLLM process
+            base_domain_ids = self.get_available_base_domain_id(reverse_order=True)
+        else:
+            # RKNNLite library doesnt allow to specify base domain id
+            base_domain_ids = [0]
+
+        # Add the worker to the dictionary of workers
+        worker_model = Worker(model_name,base_domain_ids[0],loaded_by=loaded_by)
+
+        # Check if available meory in server
+        if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
+            # Unload the oldest model until memory avilable
+            self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
+
+        # Ensure free space in first base domain (0) for rknn load (only 4GB allowed by rknn)
+        if not is_rkllm_model(model_name) and not is_gguf_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
+            # Unload the oldest RKNN models until memory avilable in first base domain 
+            self.unload_oldest_rknn_models_from_memory(worker_model.worker_model_info.size)
+
+        # Initializae de worker/model
+        model_loaded = worker_model.create_worker_process(base_domain_ids, model_path, model_dir, options, lora_model_path, prompt_cache_path)
+
+        # Check the load of the model
+        if not model_loaded:
+            # Error loading the model
+            return False
+        else:    
+            # Add the worker to the dictionary of workers
+            self.workers[model_name] = worker_model
+            logger.info(f"Worker for model {model_name} created and running...")
+            return True
 
     def unload_oldest_rknn_models_from_memory(self, memory_required):
         """
@@ -1029,7 +1045,9 @@ class WorkerManager:
         Args:
             model_size (int) -> Size of the model to load
         """
-        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > (model_size * 1.20) # Include 20% more memory required than the model size
+        # "available" (MemAvailable) already includes "free" (MemFree) plus reclaimable cache;
+        # adding "free" again overstated the RAM by MemFree and delayed eviction (OOM risk without swap)
+        return psutil.virtual_memory().available > (model_size * 1.20) # Include 20% more memory required than the model size
     
 
     def is_memory_available_for_rknn_model(self, model_size) -> bool:
