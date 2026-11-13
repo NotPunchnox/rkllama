@@ -1746,9 +1746,10 @@ def main():
     # Start the API server with the chosen port
     print_color(f"Start the API at http://localhost:{port}", "blue")
 
-    # Set Flask debug mode to match our debug flag
-    flask_debug = rkllama.config.is_debug_mode()
-    app.run(host=rkllama.config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
+    # rkllama's debug flag only raises log verbosity. Flask's own debug mode stays off: it adds the
+    # Werkzeug interactive debugger (runs code for anyone holding the PIN printed in the log) and
+    # the auto-reloader (a second server process with its own WorkerManager) to an API without auth.
+    app.run(host=rkllama.config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=False)
 
 if __name__ == "__main__":
     main()
