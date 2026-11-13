@@ -41,6 +41,21 @@ class EndpointHandler:
     """Base class for endpoint handlers with common functionality"""
 
     @staticmethod
+    def prompt_context_error(prompt_tokens, options):
+        """Return an error message if the tokenized prompt does not fit the context length
+        the model is loaded with (num_ctx), else None. Same check as RKLLM.run, done earlier."""
+        try:
+            max_context = int(float((options or {}).get("num_ctx", rkllama.config.get("model", "default_num_ctx"))))
+        except (TypeError, ValueError):
+            return None
+        if len(prompt_tokens) <= max_context:
+            return None
+        return (
+            f"The prompt has {len(prompt_tokens)} tokens, more than the model's context length of {max_context} tokens. "
+            "Shorten the prompt (chat history, system prompt, tool definitions) or use a model converted with a larger context."
+        )
+
+    @staticmethod
     def receive_worker_message(parent_pipe):
         """Receive the next message from a worker pipe. A worker that closed the pipe
         without its final message (crash, killed) becomes an error report instead of
@@ -273,6 +288,14 @@ class ChatEndpointHandler(EndpointHandler):
             if not images:    
                 # Create the final prompt for token input requests
                 final_prompt, prompt_cache_file, _ = cls.prepare_prompt(model_name, messages, system, tools, enable_thinking, images)
+
+                # Reject an over-long prompt before the response starts: a client gets an HTTP error it
+                # can show, while an error line inside an already started 200 stream is dropped by some
+                # clients (Open WebUI shows an empty answer)
+                context_error = cls.prompt_context_error(final_prompt, options)
+                if context_error:
+                    logger.error(f"Rejected request for model {model_name}: {context_error}")
+                    return jsonify({"error": context_error}), 400
             
             else:
                 if DEBUG_MODE:
@@ -672,6 +695,14 @@ class GenerateEndpointHandler(EndpointHandler):
             if not images:    
                 # Create the final prompts for token input requests
                 final_prompt, _, _ = cls.prepare_prompt(model_name=model_name, messages=messages, system=system,enable_thinking=enable_thinking, images=images)
+
+                # Reject an over-long prompt before the response starts: a client gets an HTTP error it
+                # can show, while an error line inside an already started 200 stream is dropped by some
+                # clients (Open WebUI shows an empty answer)
+                context_error = cls.prompt_context_error(final_prompt, options)
+                if context_error:
+                    logger.error(f"Rejected request for model {model_name}: {context_error}")
+                    return jsonify({"error": context_error}), 400
             else:
                 if DEBUG_MODE:
                     logger.debug(f"Multimodal request detected. Skipping tokenization.")
